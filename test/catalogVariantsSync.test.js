@@ -2,11 +2,27 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const {
+  NEW_BASE_INSUMOS,
+  NEW_PREPARED_INSUMOS,
   DRINK_PRODUCT_VARIANTS,
   FOOD_PRODUCT_VARIANTS,
   computeDeltasFromBase,
   resolveDrinkInsumoFallback
 } = require('../src/infrastructure/utils/catalogVariantsSync');
+
+test('NEW_BASE_INSUMOS y NEW_PREPARED_INSUMOS definen insumos #49-#56 completos con sub-receta y ficha técnica', () => {
+  assert.deepEqual(NEW_BASE_INSUMOS.map((i) => i.idInsumo), [49, 50, 51, 52, 53]);
+  for (const ins of NEW_BASE_INSUMOS) {
+    assert.ok(ins.nombre && ins.unidadMedida && ins.precioUnitario > 0 && ins.stock > 0);
+  }
+
+  assert.deepEqual(NEW_PREPARED_INSUMOS.map((p) => p.id), [54, 55, 56]);
+  for (const prep of NEW_PREPARED_INSUMOS) {
+    assert.ok(prep.nombre && prep.unidadMedida && prep.costoTotal > 0);
+    assert.ok(Array.isArray(prep.componentes) && prep.componentes.length >= 2);
+    assert.ok(prep.ficha && prep.ficha.procedimiento && prep.ficha.especificaciones && prep.ficha.informacionNutricional);
+  }
+});
 
 test('DRINK_PRODUCT_VARIANTS cubre todas las bebidas y precios superiores para tamaños 1.5L y 2.5L', () => {
   const drinkIds = DRINK_PRODUCT_VARIANTS.map((d) => d.idProducto).sort((a, b) => a - b);
@@ -27,20 +43,34 @@ test('DRINK_PRODUCT_VARIANTS cubre todas las bebidas y precios superiores para t
   }
 });
 
-test('FOOD_PRODUCT_VARIANTS define variantes coherentes con recetas válidas para hamburguesas, perros y salchipapas', () => {
+test('FOOD_PRODUCT_VARIANTS define variantes por categoría (Tamaño/Porción, Base/Proteína, Sabor/Salsa) sin adiciones disfrazadas', () => {
   const foodIds = FOOD_PRODUCT_VARIANTS.map((f) => f.idProducto).sort((a, b) => a - b);
   assert.deepEqual(foodIds, [1, 3, 4, 5, 6, 27, 28, 30, 32, 33]);
 
-  const redundantBaseNames = new Set([
+  const validCats = new Set(['tamano_porcion', 'base_proteina', 'sabor_salsa']);
+  const redundantAndAdditionNames = new Set([
     'individual bbq bacon 150g',
     'mexicana clásica',
-    'porción personal grande'
+    'porción personal grande',
+    'bbq ahumada especial',
+    'picante jalapeño & cheddar',
+    'pollo crispy bacon & bbq',
+    'bbq bacon cheddar & jalapeño',
+    'extra picante con doble jalapeño',
+    'doble salchicha & extra queso',
+    'con chili & cheddar fundido',
+    'bbq tocino & cebolla',
+    'suizo gratinado con tártara & cheddar',
+    'mexicano extra picante & doble salchicha',
+    'salvaje con carne & cheddar (mediana)',
+    'criolla especial con chili con carne'
   ]);
 
   for (const spec of FOOD_PRODUCT_VARIANTS) {
-    assert.ok(spec.variants.length >= 1);
+    assert.ok(spec.variants.length >= 2);
     for (const v of spec.variants) {
-      assert.equal(redundantBaseNames.has(v.nombre.toLowerCase()), false);
+      assert.equal(redundantAndAdditionNames.has(v.nombre.toLowerCase()), false);
+      assert.ok(validCats.has(v.categoriaVariante), `Categoría inválida en ${v.nombre}: ${v.categoriaVariante}`);
       assert.ok(v.precio >= 14000);
       assert.ok(Array.isArray(v.detalles) && v.detalles.length >= 4);
       for (const det of v.detalles) {

@@ -1297,11 +1297,50 @@ USE `chazinfood`;
 -- ============================================================================
 USE `chazinfood`;
 
--- 0. Desactivar variantes base repetidas o dummy de plantilla
+-- 0. Desactivar variantes base repetidas, dummy o adiciones disfrazadas de variante
 UPDATE `variante` SET `estado` = 0 WHERE LOWER(TRIM(`nombre`)) LIKE 'variante base%';
-UPDATE `variante` SET `estado` = 0 WHERE `idProducto` = 27 AND LOWER(TRIM(`nombre`)) IN ('individual bbq bacon 150g', 'individual bbq bacon');
-UPDATE `variante` SET `estado` = 0 WHERE `idProducto` = 28 AND LOWER(TRIM(`nombre`)) IN ('mexicana clásica', 'mexicana clasica');
-UPDATE `variante` SET `estado` = 0 WHERE `idProducto` = 32 AND LOWER(TRIM(`nombre`)) IN ('porción personal grande', 'porcion personal grande');
+UPDATE `variante` SET `estado` = 0 WHERE `idProducto` IN (1, 3, 4, 5, 6, 27, 28, 30, 32, 33) AND LOWER(TRIM(`nombre`)) IN ('individual bbq bacon 150g', 'individual bbq bacon', 'mexicana clásica', 'mexicana clasica', 'porción personal grande', 'porcion personal grande', 'bbq ahumada especial', 'picante jalapeño & cheddar', 'pollo crispy bacon & bbq', 'doble pollo crispy (360g)', 'bbq bacon cheddar & jalapeño', 'extra picante con doble jalapeño', 'doble salchicha & extra queso', 'con chili & cheddar fundido', 'bbq tocino & cebolla', 'suizo gratinado con tártara & cheddar', 'mexicano extra picante & doble salchicha', 'salvaje con carne & cheddar (mediana)', 'criolla especial con chili con carne');
+
+-- 0.5 Nuevos insumos materia prima (#49-#53) e insumos preparados (#54-#56)
+INSERT INTO `insumo` (`idInsumo`, `idCategoriaInsumo`, `nombre`, `unidadMedida`, `stock`, `stockMinimo`, `stockMaximo`, `estado`, `esAdicion`, `precioAdicion`, `porcionMinimaCantidad`, `porcionMinimaUnidad`, `eliminado`, `precioUnitario`, `costoPreparacion`, `idProveedor`, `descripcion`) SELECT 49, 1, 'Pan Integral Artesanal con Semillas', 'und', 90.00, 15.00, 120.00, 1, 0, 0.00, 1.00, 'und', 0, 2400.00, 0.00, 1, 'Pan artesanal elaborado con harina integral, avena y mezcla de semillas de ajonjolí y linaza' FROM DUAL WHERE NOT EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 49 OR LOWER(TRIM(i.`nombre`)) = LOWER('Pan Integral Artesanal con Semillas'));
+UPDATE `insumo` SET `estado` = 1, `eliminado` = 0, `precioUnitario` = 2400.00, `stock` = GREATEST(COALESCE(`stock`, 0), 15.00) WHERE LOWER(TRIM(`nombre`)) = LOWER('Pan Integral Artesanal con Semillas');
+INSERT INTO `insumo` (`idInsumo`, `idCategoriaInsumo`, `nombre`, `unidadMedida`, `stock`, `stockMinimo`, `stockMaximo`, `estado`, `esAdicion`, `precioAdicion`, `porcionMinimaCantidad`, `porcionMinimaUnidad`, `eliminado`, `precioUnitario`, `costoPreparacion`, `idProveedor`, `descripcion`) SELECT 50, 1, 'Pan Perro Brioche Dorado', 'und', 90.00, 15.00, 120.00, 1, 0, 0.00, 1.00, 'und', 0, 1800.00, 0.00, 1, 'Pan estilo brioche alargado dorado con mantequilla para perros calientes gourmet' FROM DUAL WHERE NOT EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 50 OR LOWER(TRIM(i.`nombre`)) = LOWER('Pan Perro Brioche Dorado'));
+UPDATE `insumo` SET `estado` = 1, `eliminado` = 0, `precioUnitario` = 1800.00, `stock` = GREATEST(COALESCE(`stock`, 0), 15.00) WHERE LOWER(TRIM(`nombre`)) = LOWER('Pan Perro Brioche Dorado');
+INSERT INTO `insumo` (`idInsumo`, `idCategoriaInsumo`, `nombre`, `unidadMedida`, `stock`, `stockMinimo`, `stockMaximo`, `estado`, `esAdicion`, `precioAdicion`, `porcionMinimaCantidad`, `porcionMinimaUnidad`, `eliminado`, `precioUnitario`, `costoPreparacion`, `idProveedor`, `descripcion`) SELECT 51, 3, 'Papas Criollas Doradas Seleccionadas', 'kg', 45.00, 8.00, 100.00, 1, 0, 0.00, 1.00, 'kg', 0, 8800.00, 0.00, 1, 'Papa criolla amarilla seleccionada pre-cocida lista para fritura crocante' FROM DUAL WHERE NOT EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 51 OR LOWER(TRIM(i.`nombre`)) = LOWER('Papas Criollas Doradas Seleccionadas'));
+UPDATE `insumo` SET `estado` = 1, `eliminado` = 0, `precioUnitario` = 8800.00, `stock` = GREATEST(COALESCE(`stock`, 0), 8.00) WHERE LOWER(TRIM(`nombre`)) = LOWER('Papas Criollas Doradas Seleccionadas');
+INSERT INTO `insumo` (`idInsumo`, `idCategoriaInsumo`, `nombre`, `unidadMedida`, `stock`, `stockMinimo`, `stockMaximo`, `estado`, `esAdicion`, `precioAdicion`, `porcionMinimaCantidad`, `porcionMinimaUnidad`, `eliminado`, `precioUnitario`, `costoPreparacion`, `idProveedor`, `descripcion`) SELECT 52, 8, 'Carne Angus Certified 100% Res', 'kg', 40.00, 8.00, 100.00, 1, 0, 0.00, 1.00, 'kg', 0, 36000.00, 0.00, 1, 'Corte premium de carne de res Angus marmoleada para medallones de hamburguesa gourmet' FROM DUAL WHERE NOT EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 52 OR LOWER(TRIM(i.`nombre`)) = LOWER('Carne Angus Certified 100% Res'));
+UPDATE `insumo` SET `estado` = 1, `eliminado` = 0, `precioUnitario` = 36000.00, `stock` = GREATEST(COALESCE(`stock`, 0), 8.00) WHERE LOWER(TRIM(`nombre`)) = LOWER('Carne Angus Certified 100% Res');
+INSERT INTO `insumo` (`idInsumo`, `idCategoriaInsumo`, `nombre`, `unidadMedida`, `stock`, `stockMinimo`, `stockMaximo`, `estado`, `esAdicion`, `precioAdicion`, `porcionMinimaCantidad`, `porcionMinimaUnidad`, `eliminado`, `precioUnitario`, `costoPreparacion`, `idProveedor`, `descripcion`) SELECT 53, 8, 'Chorizo Santarrosano Artesanal', 'und', 70.00, 15.00, 120.00, 1, 0, 0.00, 1.00, 'und', 0, 3200.00, 0.00, 1, 'Chorizo artesanal tipo santarrosano ligeramente ahumado y especiado' FROM DUAL WHERE NOT EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 53 OR LOWER(TRIM(i.`nombre`)) = LOWER('Chorizo Santarrosano Artesanal'));
+UPDATE `insumo` SET `estado` = 1, `eliminado` = 0, `precioUnitario` = 3200.00, `stock` = GREATEST(COALESCE(`stock`, 0), 15.00) WHERE LOWER(TRIM(`nombre`)) = LOWER('Chorizo Santarrosano Artesanal');
+INSERT INTO `insumo` (`idInsumo`, `idCategoriaInsumo`, `nombre`, `unidadMedida`, `stock`, `stockMinimo`, `stockMaximo`, `estado`, `esAdicion`, `precioAdicion`, `porcionMinimaCantidad`, `porcionMinimaUnidad`, `eliminado`, `precioUnitario`, `costoPreparacion`, `idProveedor`, `descripcion`) SELECT 54, 8, 'Filete de Pechuga Grillé a las Finas Hierbas', 'kg', 30.00, 6.00, 80.00, 1, 0, 0.00, 1.00, 'kg', 0, 22000.00, 17850.00, NULL, 'Pechuga marinada con finas hierbas, sellada a la plancha para variante proteica ligera' FROM DUAL WHERE NOT EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 54 OR LOWER(TRIM(i.`nombre`)) = LOWER('Filete de Pechuga Grillé a las Finas Hierbas'));
+INSERT INTO `insumopreparado` (`id`, `nombre`, `descripcion`, `precioVenta`, `porcionMinimaCantidad`, `porcionMinimaUnidad`, `porcionMinimaPrecio`, `unidadMedida`, `fechaCreacion`, `estado`, `eliminado`, `rendimiento`, `unidadRendimiento`, `costoTotal`) SELECT i.`idInsumo`, 'Filete de Pechuga Grillé a las Finas Hierbas', 'Pechuga marinada con finas hierbas, sellada a la plancha para variante proteica ligera', 0.00, 1.00, 'kg', 0.00, 'kg', NOW(), 1, 0, 1.00, 'kg', 17850.00 FROM `insumo` i WHERE LOWER(TRIM(i.`nombre`)) = LOWER('Filete de Pechuga Grillé a las Finas Hierbas') AND NOT EXISTS (SELECT 1 FROM `insumopreparado` ip WHERE ip.`id` = i.`idInsumo` OR LOWER(TRIM(ip.`nombre`)) = LOWER('Filete de Pechuga Grillé a las Finas Hierbas')) LIMIT 1;
+INSERT INTO `detalleinsumopreparadoinsumo` (`idPreparado`, `idInsumo`, `cantidad`, `unidadMedida`, `precioUnitario`) SELECT ip.`id`, 15, 1.00, 'kg', 17500.00 FROM `insumopreparado` ip WHERE LOWER(TRIM(ip.`nombre`)) = LOWER('Filete de Pechuga Grillé a las Finas Hierbas') AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 15) AND NOT EXISTS (SELECT 1 FROM `detalleinsumopreparadoinsumo` d WHERE d.`idPreparado` = ip.`id` AND d.`idInsumo` = 15) LIMIT 1;
+INSERT INTO `detalleinsumopreparadoinsumo` (`idPreparado`, `idInsumo`, `cantidad`, `unidadMedida`, `precioUnitario`) SELECT ip.`id`, 24, 0.10, 'kg', 3500.00 FROM `insumopreparado` ip WHERE LOWER(TRIM(ip.`nombre`)) = LOWER('Filete de Pechuga Grillé a las Finas Hierbas') AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 24) AND NOT EXISTS (SELECT 1 FROM `detalleinsumopreparadoinsumo` d WHERE d.`idPreparado` = ip.`id` AND d.`idInsumo` = 24) LIMIT 1;
+INSERT INTO `fichatecnica` (`idVariante`, `descripcion`, `fechaCreacion`, `idProducto`, `idInsumo`, `tipo`, `procedimiento`, `tiempoPreparacion`, `rendimiento`, `especificaciones`, `caracteristicas`, `informacionNutricional`, `condicionesAlmacenamiento`, `vidaUtil`, `observaciones`, `versionActual`, `estado`) SELECT 0, 'Pechuga marinada con finas hierbas, sellada a la plancha para variante proteica ligera', NOW(), NULL, ip.`id`, 'INSUMO_PREPARADO', '1. Limpiar y filetear la pechuga de pollo fresca en porciones uniformes de 180g.
+2. Marinar con cebolla finamente picada, ajo y finas hierbas durante al menos 30 minutos.
+3. Sellar en plancha precalentada a 190°C por 3-4 minutos por lado hasta alcanzar 74°C internos.', 15, '1.00 kg (5 porciones de 180g aprox.)', 'Cocción interna mínima de 74°C, sellado dorado uniforme sin resecar la fibra muscular.', 'Filete tierno y jugoso con aroma herbal equilibrado y marcas suaves de plancha.', 'Por 100g: Calorías ~145 kcal | Proteína: 26g | Carbohidratos: 1.5g | Grasas: 3.5g.', 'Conservar marinado y porcionado en refrigeración estricta entre 0°C y 4°C.', '48 horas refrigerado después de marinado', '', 1, 1 FROM `insumopreparado` ip WHERE LOWER(TRIM(ip.`nombre`)) = LOWER('Filete de Pechuga Grillé a las Finas Hierbas') AND NOT EXISTS (SELECT 1 FROM `fichatecnica` ft WHERE ft.`idInsumo` = ip.`id` AND ft.`tipo` = 'INSUMO_PREPARADO') LIMIT 1;
+INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`) SELECT ft.`idFichaTecnica`, 15, 1.00, 'kg' FROM `fichatecnica` ft INNER JOIN `insumopreparado` ip ON ip.`id` = ft.`idInsumo` WHERE LOWER(TRIM(ip.`nombre`)) = LOWER('Filete de Pechuga Grillé a las Finas Hierbas') AND ft.`tipo` = 'INSUMO_PREPARADO' AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 15) LIMIT 1;
+INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`) SELECT ft.`idFichaTecnica`, 24, 0.10, 'kg' FROM `fichatecnica` ft INNER JOIN `insumopreparado` ip ON ip.`id` = ft.`idInsumo` WHERE LOWER(TRIM(ip.`nombre`)) = LOWER('Filete de Pechuga Grillé a las Finas Hierbas') AND ft.`tipo` = 'INSUMO_PREPARADO' AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 24) LIMIT 1;
+INSERT INTO `insumo` (`idInsumo`, `idCategoriaInsumo`, `nombre`, `unidadMedida`, `stock`, `stockMinimo`, `stockMaximo`, `estado`, `esAdicion`, `precioAdicion`, `porcionMinimaCantidad`, `porcionMinimaUnidad`, `eliminado`, `precioUnitario`, `costoPreparacion`, `idProveedor`, `descripcion`) SELECT 55, 4, 'Salsa Miel Mostaza Artesanal', 'kg', 20.00, 4.00, 60.00, 1, 0, 0.00, 1.00, 'kg', 0, 13500.00, 11800.00, NULL, 'Salsa emulsión equilibrada de mostaza americana y mayonesa con toque dulce para variantes y glaseado' FROM DUAL WHERE NOT EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 55 OR LOWER(TRIM(i.`nombre`)) = LOWER('Salsa Miel Mostaza Artesanal'));
+INSERT INTO `insumopreparado` (`id`, `nombre`, `descripcion`, `precioVenta`, `porcionMinimaCantidad`, `porcionMinimaUnidad`, `porcionMinimaPrecio`, `unidadMedida`, `fechaCreacion`, `estado`, `eliminado`, `rendimiento`, `unidadRendimiento`, `costoTotal`) SELECT i.`idInsumo`, 'Salsa Miel Mostaza Artesanal', 'Salsa emulsión equilibrada de mostaza americana y mayonesa con toque dulce para variantes y glaseado', 0.00, 1.00, 'kg', 0.00, 'kg', NOW(), 1, 0, 1.00, 'kg', 11800.00 FROM `insumo` i WHERE LOWER(TRIM(i.`nombre`)) = LOWER('Salsa Miel Mostaza Artesanal') AND NOT EXISTS (SELECT 1 FROM `insumopreparado` ip WHERE ip.`id` = i.`idInsumo` OR LOWER(TRIM(ip.`nombre`)) = LOWER('Salsa Miel Mostaza Artesanal')) LIMIT 1;
+INSERT INTO `detalleinsumopreparadoinsumo` (`idPreparado`, `idInsumo`, `cantidad`, `unidadMedida`, `precioUnitario`) SELECT ip.`id`, 27, 0.55, 'kg', 10000.00 FROM `insumopreparado` ip WHERE LOWER(TRIM(ip.`nombre`)) = LOWER('Salsa Miel Mostaza Artesanal') AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 27) AND NOT EXISTS (SELECT 1 FROM `detalleinsumopreparadoinsumo` d WHERE d.`idPreparado` = ip.`id` AND d.`idInsumo` = 27) LIMIT 1;
+INSERT INTO `detalleinsumopreparadoinsumo` (`idPreparado`, `idInsumo`, `cantidad`, `unidadMedida`, `precioUnitario`) SELECT ip.`id`, 28, 0.45, 'kg', 14000.00 FROM `insumopreparado` ip WHERE LOWER(TRIM(ip.`nombre`)) = LOWER('Salsa Miel Mostaza Artesanal') AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 28) AND NOT EXISTS (SELECT 1 FROM `detalleinsumopreparadoinsumo` d WHERE d.`idPreparado` = ip.`id` AND d.`idInsumo` = 28) LIMIT 1;
+INSERT INTO `fichatecnica` (`idVariante`, `descripcion`, `fechaCreacion`, `idProducto`, `idInsumo`, `tipo`, `procedimiento`, `tiempoPreparacion`, `rendimiento`, `especificaciones`, `caracteristicas`, `informacionNutricional`, `condicionesAlmacenamiento`, `vidaUtil`, `observaciones`, `versionActual`, `estado`) SELECT 0, 'Salsa emulsión equilibrada de mostaza americana y mayonesa con toque dulce para variantes y glaseado', NOW(), NULL, ip.`id`, 'INSUMO_PREPARADO', '1. Incorporar la mostaza americana y la mayonesa real en bowl acero inoxidable frío.
+2. Batir suavemente de forma envolvente hasta lograr una emulsión sedosa homogénea.
+3. Envasar en biberones gastronómicos etiquetados y refrigerar.', 10, '1.00 kg', 'Emulsión estable libre de grumos, acidez balanceada y viscosidad uniforme.', 'Color amarillo dorado brillante, aroma intenso a mostaza suave y textura cremosa.', 'Por 30g: Calorías ~95 kcal | Proteína: 0.5g | Carbohidratos: 3g | Grasas: 9g.', 'Mantener en refrigeración entre 2°C y 4°C en recipiente hermético.', '7 días refrigerado', '', 1, 1 FROM `insumopreparado` ip WHERE LOWER(TRIM(ip.`nombre`)) = LOWER('Salsa Miel Mostaza Artesanal') AND NOT EXISTS (SELECT 1 FROM `fichatecnica` ft WHERE ft.`idInsumo` = ip.`id` AND ft.`tipo` = 'INSUMO_PREPARADO') LIMIT 1;
+INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`) SELECT ft.`idFichaTecnica`, 27, 0.55, 'kg' FROM `fichatecnica` ft INNER JOIN `insumopreparado` ip ON ip.`id` = ft.`idInsumo` WHERE LOWER(TRIM(ip.`nombre`)) = LOWER('Salsa Miel Mostaza Artesanal') AND ft.`tipo` = 'INSUMO_PREPARADO' AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 27) LIMIT 1;
+INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`) SELECT ft.`idFichaTecnica`, 28, 0.45, 'kg' FROM `fichatecnica` ft INNER JOIN `insumopreparado` ip ON ip.`id` = ft.`idInsumo` WHERE LOWER(TRIM(ip.`nombre`)) = LOWER('Salsa Miel Mostaza Artesanal') AND ft.`tipo` = 'INSUMO_PREPARADO' AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 28) LIMIT 1;
+INSERT INTO `insumo` (`idInsumo`, `idCategoriaInsumo`, `nombre`, `unidadMedida`, `stock`, `stockMinimo`, `stockMaximo`, `estado`, `esAdicion`, `precioAdicion`, `porcionMinimaCantidad`, `porcionMinimaUnidad`, `eliminado`, `precioUnitario`, `costoPreparacion`, `idProveedor`, `descripcion`) SELECT 56, 4, 'Salsa Buffalo Picante Artesanal', 'kg', 20.00, 4.00, 60.00, 1, 0, 0.00, 1.00, 'kg', 0, 14500.00, 12550.00, NULL, 'Salsa picante estilo buffalo preparada con base de tomate, jalapeños triturados y notas BBQ ahumadas' FROM DUAL WHERE NOT EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 56 OR LOWER(TRIM(i.`nombre`)) = LOWER('Salsa Buffalo Picante Artesanal'));
+INSERT INTO `insumopreparado` (`id`, `nombre`, `descripcion`, `precioVenta`, `porcionMinimaCantidad`, `porcionMinimaUnidad`, `porcionMinimaPrecio`, `unidadMedida`, `fechaCreacion`, `estado`, `eliminado`, `rendimiento`, `unidadRendimiento`, `costoTotal`) SELECT i.`idInsumo`, 'Salsa Buffalo Picante Artesanal', 'Salsa picante estilo buffalo preparada con base de tomate, jalapeños triturados y notas BBQ ahumadas', 0.00, 1.00, 'kg', 0.00, 'kg', NOW(), 1, 0, 1.00, 'kg', 12550.00 FROM `insumo` i WHERE LOWER(TRIM(i.`nombre`)) = LOWER('Salsa Buffalo Picante Artesanal') AND NOT EXISTS (SELECT 1 FROM `insumopreparado` ip WHERE ip.`id` = i.`idInsumo` OR LOWER(TRIM(ip.`nombre`)) = LOWER('Salsa Buffalo Picante Artesanal')) LIMIT 1;
+INSERT INTO `detalleinsumopreparadoinsumo` (`idPreparado`, `idInsumo`, `cantidad`, `unidadMedida`, `precioUnitario`) SELECT ip.`id`, 26, 0.60, 'kg', 11500.00 FROM `insumopreparado` ip WHERE LOWER(TRIM(ip.`nombre`)) = LOWER('Salsa Buffalo Picante Artesanal') AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 26) AND NOT EXISTS (SELECT 1 FROM `detalleinsumopreparadoinsumo` d WHERE d.`idPreparado` = ip.`id` AND d.`idInsumo` = 26) LIMIT 1;
+INSERT INTO `detalleinsumopreparadoinsumo` (`idPreparado`, `idInsumo`, `cantidad`, `unidadMedida`, `precioUnitario`) SELECT ip.`id`, 25, 0.25, 'kg', 16000.00 FROM `insumopreparado` ip WHERE LOWER(TRIM(ip.`nombre`)) = LOWER('Salsa Buffalo Picante Artesanal') AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 25) AND NOT EXISTS (SELECT 1 FROM `detalleinsumopreparadoinsumo` d WHERE d.`idPreparado` = ip.`id` AND d.`idInsumo` = 25) LIMIT 1;
+INSERT INTO `detalleinsumopreparadoinsumo` (`idPreparado`, `idInsumo`, `cantidad`, `unidadMedida`, `precioUnitario`) SELECT ip.`id`, 44, 0.15, 'kg', 11000.00 FROM `insumopreparado` ip WHERE LOWER(TRIM(ip.`nombre`)) = LOWER('Salsa Buffalo Picante Artesanal') AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 44) AND NOT EXISTS (SELECT 1 FROM `detalleinsumopreparadoinsumo` d WHERE d.`idPreparado` = ip.`id` AND d.`idInsumo` = 44) LIMIT 1;
+INSERT INTO `fichatecnica` (`idVariante`, `descripcion`, `fechaCreacion`, `idProducto`, `idInsumo`, `tipo`, `procedimiento`, `tiempoPreparacion`, `rendimiento`, `especificaciones`, `caracteristicas`, `informacionNutricional`, `condicionesAlmacenamiento`, `vidaUtil`, `observaciones`, `versionActual`, `estado`) SELECT 0, 'Salsa picante estilo buffalo preparada con base de tomate, jalapeños triturados y notas BBQ ahumadas', NOW(), NULL, ip.`id`, 'INSUMO_PREPARADO', '1. Procesar los jalapeños encurtidos junto con la salsa de tomate Heinz hasta obtener textura fina.
+2. Incorporar la salsa BBQ ahumada y reducir a fuego bajo 5 minutos removiendo constantemente.
+3. Dejar enfriar a temperatura ambiente antes de refrigerar en dosificadores.', 12, '1.00 kg', 'Salsa homogeneizada con picor medio-alto constante y densidad fluida para glasear.', 'Color rojo cobrizo intenso, aroma ahumado picante y sabor vibrante.', 'Por 30g: Calorías ~35 kcal | Proteína: 0.5g | Carbohidratos: 7g | Grasas: 0.5g.', 'Mantener refrigerado entre 2°C y 5°C bien tapado.', '10 días refrigerado', '', 1, 1 FROM `insumopreparado` ip WHERE LOWER(TRIM(ip.`nombre`)) = LOWER('Salsa Buffalo Picante Artesanal') AND NOT EXISTS (SELECT 1 FROM `fichatecnica` ft WHERE ft.`idInsumo` = ip.`id` AND ft.`tipo` = 'INSUMO_PREPARADO') LIMIT 1;
+INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`) SELECT ft.`idFichaTecnica`, 26, 0.60, 'kg' FROM `fichatecnica` ft INNER JOIN `insumopreparado` ip ON ip.`id` = ft.`idInsumo` WHERE LOWER(TRIM(ip.`nombre`)) = LOWER('Salsa Buffalo Picante Artesanal') AND ft.`tipo` = 'INSUMO_PREPARADO' AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 26) LIMIT 1;
+INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`) SELECT ft.`idFichaTecnica`, 25, 0.25, 'kg' FROM `fichatecnica` ft INNER JOIN `insumopreparado` ip ON ip.`id` = ft.`idInsumo` WHERE LOWER(TRIM(ip.`nombre`)) = LOWER('Salsa Buffalo Picante Artesanal') AND ft.`tipo` = 'INSUMO_PREPARADO' AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 25) LIMIT 1;
+INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`) SELECT ft.`idFichaTecnica`, 44, 0.15, 'kg' FROM `fichatecnica` ft INNER JOIN `insumopreparado` ip ON ip.`id` = ft.`idInsumo` WHERE LOWER(TRIM(ip.`nombre`)) = LOWER('Salsa Buffalo Picante Artesanal') AND ft.`tipo` = 'INSUMO_PREPARADO' AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 44) LIMIT 1;
 
 -- ============================================================================
 -- 1. BEBIDAS Y GASEOSAS (#8, #9, #10, #11, #12, #13, #14, #16, #38, #39)
@@ -2273,1590 +2312,945 @@ LIMIT 1;
 -- ============================================================================
 -- Producto #1
 INSERT INTO `variante` (`idProducto`, `nombre`, `descripcion`, `precio`, `estado`)
-SELECT p.`idProducto`, 'Doble Carne Clásica (300g)', 'Hamburguesa doble carne de res molida 80/20 (300g), doble queso cheddar y tocineta ahumada.', 24000.00, COALESCE(p.`estado`, 1)
+SELECT p.`idProducto`, 'Doble Carne Clásica (300g)', 'Hamburguesa doble carne de res molida 80/20 (300g) en receta clásica original.', 23500.00, COALESCE(p.`estado`, 1)
 FROM `producto` p
 WHERE p.`idProducto` = 1 AND COALESCE(p.`eliminado`, 0) = 0
   AND NOT EXISTS (SELECT 1 FROM `variante` v WHERE v.`idProducto` = 1 AND LOWER(TRIM(v.`nombre`)) = LOWER('Doble Carne Clásica (300g)'));
-UPDATE `variante`
-SET `precio` = CASE WHEN COALESCE(`precio`, 0) <= 0 THEN 24000.00 ELSE `precio` END,
-    `descripcion` = CASE WHEN `descripcion` IS NULL OR TRIM(`descripcion`) = '' THEN 'Hamburguesa doble carne de res molida 80/20 (300g), doble queso cheddar y tocineta ahumada.' ELSE `descripcion` END
+UPDATE `variante` SET `precio` = 23500.00, `descripcion` = 'Hamburguesa doble carne de res molida 80/20 (300g) en receta clásica original.', `estado` = 1
 WHERE `idProducto` = 1 AND LOWER(TRIM(`nombre`)) = LOWER('Doble Carne Clásica (300g)');
+DELETE FROM `variante_insumo` WHERE `idVariante` IN (SELECT `idVariante` FROM `variante` WHERE `idProducto` = 1 AND LOWER(TRIM(`nombre`)) = LOWER('Doble Carne Clásica (300g)'));
 INSERT INTO `variante_insumo` (`idVariante`, `tipoAccion`, `idInsumo`, `idInsumoReemplazado`, `cantidad`, `unidadMedida`, `observaciones`)
 SELECT v.`idVariante`, 'MODIFICAR_CANTIDAD', 14, NULL, 0.30, 'kg', NULL
-FROM `variante` v
-WHERE v.`idProducto` = 1 AND LOWER(TRIM(v.`nombre`)) = LOWER('Doble Carne Clásica (300g)')
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 14)
-  AND NOT EXISTS (SELECT 1 FROM `variante_insumo` vi WHERE vi.`idVariante` = v.`idVariante` AND vi.`idInsumo` = 14)
-LIMIT 1;
-INSERT INTO `variante_insumo` (`idVariante`, `tipoAccion`, `idInsumo`, `idInsumoReemplazado`, `cantidad`, `unidadMedida`, `observaciones`)
-SELECT v.`idVariante`, 'MODIFICAR_CANTIDAD', 19, NULL, 2.00, 'und', NULL
-FROM `variante` v
-WHERE v.`idProducto` = 1 AND LOWER(TRIM(v.`nombre`)) = LOWER('Doble Carne Clásica (300g)')
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 19)
-  AND NOT EXISTS (SELECT 1 FROM `variante_insumo` vi WHERE vi.`idVariante` = v.`idVariante` AND vi.`idInsumo` = 19)
-LIMIT 1;
-INSERT INTO `variante_insumo` (`idVariante`, `tipoAccion`, `idInsumo`, `idInsumoReemplazado`, `cantidad`, `unidadMedida`, `observaciones`)
-SELECT v.`idVariante`, 'MODIFICAR_CANTIDAD', 18, NULL, 0.05, 'kg', NULL
-FROM `variante` v
-WHERE v.`idProducto` = 1 AND LOWER(TRIM(v.`nombre`)) = LOWER('Doble Carne Clásica (300g)')
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 18)
-  AND NOT EXISTS (SELECT 1 FROM `variante_insumo` vi WHERE vi.`idVariante` = v.`idVariante` AND vi.`idInsumo` = 18)
-LIMIT 1;
+FROM `variante` v WHERE v.`idProducto` = 1 AND LOWER(TRIM(v.`nombre`)) = LOWER('Doble Carne Clásica (300g)') AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 14) LIMIT 1;
 INSERT INTO `fichatecnica` (`idVariante`, `descripcion`, `fechaCreacion`, `idProducto`, `idInsumo`, `tipo`, `procedimiento`, `tiempoPreparacion`, `rendimiento`, `especificaciones`, `caracteristicas`, `informacionNutricional`, `condicionesAlmacenamiento`, `vidaUtil`, `observaciones`, `versionActual`, `estado`)
-SELECT v.`idVariante`, 'Hamburguesa doble carne de res molida 80/20 (300g), doble queso cheddar y tocineta ahumada.', NOW(), 1, NULL, 'VARIANTE', CONCAT('Preparación estándar Chazin Food para ', v.`nombre`), 14, '1 porción (300g)', '', CONCAT('Variante: ', v.`nombre`), '', '', '', '', 1, 1
-FROM `variante` v
-WHERE v.`idProducto` = 1 AND LOWER(TRIM(v.`nombre`)) = LOWER('Doble Carne Clásica (300g)')
-  AND NOT EXISTS (SELECT 1 FROM `fichatecnica` ft WHERE ft.`idVariante` = v.`idVariante` AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1)
-LIMIT 1;
+SELECT v.`idVariante`, 'Hamburguesa doble carne de res molida 80/20 (300g) en receta clásica original.', NOW(), 1, NULL, 'VARIANTE', CONCAT('Preparación estándar Chazin Food para ', v.`nombre`), 14, '1 porción (300g)', 'Cocción completa (>70°C en el centro), empaque térmico y control de gramaje estándar.', CONCAT('Presentación ', v.`nombre`, ', aroma fresco, color dorado uniforme y textura equilibrada.'), 'Porción estándar: ~680 kcal | Proteínas: 34g | Carbohidratos: 48g | Grasas: 35g.', 'Consumo inmediato en mesa o en empaque térmico antigrasa antes de 25 minutos.', 'Consumo inmediato', '', 1, 1
+FROM `variante` v WHERE v.`idProducto` = 1 AND LOWER(TRIM(v.`nombre`)) = LOWER('Doble Carne Clásica (300g)')
+  AND NOT EXISTS (SELECT 1 FROM `fichatecnica` ft WHERE ft.`idVariante` = v.`idVariante` AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1) LIMIT 1;
+DELETE FROM `detallefichainsumo` WHERE `idFichaTecnica` IN (SELECT ft.`idFichaTecnica` FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante` WHERE v.`idProducto` = 1 AND LOWER(TRIM(v.`nombre`)) = LOWER('Doble Carne Clásica (300g)') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1);
 INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
 SELECT ft.`idFichaTecnica`, 12, 1.00, 'und'
 FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
-WHERE v.`idProducto` = 1 AND LOWER(TRIM(v.`nombre`)) = LOWER('Doble Carne Clásica (300g)') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 12)
-  AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 12)
-LIMIT 1;
+WHERE v.`idProducto` = 1 AND LOWER(TRIM(v.`nombre`)) = LOWER('Doble Carne Clásica (300g)') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1 AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 12) LIMIT 1;
 INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
 SELECT ft.`idFichaTecnica`, 14, 0.30, 'kg'
 FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
-WHERE v.`idProducto` = 1 AND LOWER(TRIM(v.`nombre`)) = LOWER('Doble Carne Clásica (300g)') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 14)
-  AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 14)
-LIMIT 1;
-INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
-SELECT ft.`idFichaTecnica`, 19, 2.00, 'und'
-FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
-WHERE v.`idProducto` = 1 AND LOWER(TRIM(v.`nombre`)) = LOWER('Doble Carne Clásica (300g)') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 19)
-  AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 19)
-LIMIT 1;
-INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
-SELECT ft.`idFichaTecnica`, 18, 0.05, 'kg'
-FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
-WHERE v.`idProducto` = 1 AND LOWER(TRIM(v.`nombre`)) = LOWER('Doble Carne Clásica (300g)') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 18)
-  AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 18)
-LIMIT 1;
-INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
-SELECT ft.`idFichaTecnica`, 22, 0.02, 'kg'
-FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
-WHERE v.`idProducto` = 1 AND LOWER(TRIM(v.`nombre`)) = LOWER('Doble Carne Clásica (300g)') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 22)
-  AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 22)
-LIMIT 1;
-INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
-SELECT ft.`idFichaTecnica`, 23, 0.03, 'kg'
-FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
-WHERE v.`idProducto` = 1 AND LOWER(TRIM(v.`nombre`)) = LOWER('Doble Carne Clásica (300g)') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 23)
-  AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 23)
-LIMIT 1;
-
-INSERT INTO `variante` (`idProducto`, `nombre`, `descripcion`, `precio`, `estado`)
-SELECT p.`idProducto`, 'BBQ Ahumada Especial', 'Hamburguesa clásica bañada en salsa BBQ ahumada artesanal, cebolla cabezona y doble cheddar.', 20500.00, COALESCE(p.`estado`, 1)
-FROM `producto` p
-WHERE p.`idProducto` = 1 AND COALESCE(p.`eliminado`, 0) = 0
-  AND NOT EXISTS (SELECT 1 FROM `variante` v WHERE v.`idProducto` = 1 AND LOWER(TRIM(v.`nombre`)) = LOWER('BBQ Ahumada Especial'));
-UPDATE `variante`
-SET `precio` = CASE WHEN COALESCE(`precio`, 0) <= 0 THEN 20500.00 ELSE `precio` END,
-    `descripcion` = CASE WHEN `descripcion` IS NULL OR TRIM(`descripcion`) = '' THEN 'Hamburguesa clásica bañada en salsa BBQ ahumada artesanal, cebolla cabezona y doble cheddar.' ELSE `descripcion` END
-WHERE `idProducto` = 1 AND LOWER(TRIM(`nombre`)) = LOWER('BBQ Ahumada Especial');
-INSERT INTO `variante_insumo` (`idVariante`, `tipoAccion`, `idInsumo`, `idInsumoReemplazado`, `cantidad`, `unidadMedida`, `observaciones`)
-SELECT v.`idVariante`, 'MODIFICAR_CANTIDAD', 19, NULL, 2.00, 'und', NULL
-FROM `variante` v
-WHERE v.`idProducto` = 1 AND LOWER(TRIM(v.`nombre`)) = LOWER('BBQ Ahumada Especial')
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 19)
-  AND NOT EXISTS (SELECT 1 FROM `variante_insumo` vi WHERE vi.`idVariante` = v.`idVariante` AND vi.`idInsumo` = 19)
-LIMIT 1;
-INSERT INTO `variante_insumo` (`idVariante`, `tipoAccion`, `idInsumo`, `idInsumoReemplazado`, `cantidad`, `unidadMedida`, `observaciones`)
-SELECT v.`idVariante`, 'AGREGAR', 44, NULL, 0.03, 'kg', NULL
-FROM `variante` v
-WHERE v.`idProducto` = 1 AND LOWER(TRIM(v.`nombre`)) = LOWER('BBQ Ahumada Especial')
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 44)
-  AND NOT EXISTS (SELECT 1 FROM `variante_insumo` vi WHERE vi.`idVariante` = v.`idVariante` AND vi.`idInsumo` = 44)
-LIMIT 1;
-INSERT INTO `variante_insumo` (`idVariante`, `tipoAccion`, `idInsumo`, `idInsumoReemplazado`, `cantidad`, `unidadMedida`, `observaciones`)
-SELECT v.`idVariante`, 'AGREGAR', 24, NULL, 0.03, 'kg', NULL
-FROM `variante` v
-WHERE v.`idProducto` = 1 AND LOWER(TRIM(v.`nombre`)) = LOWER('BBQ Ahumada Especial')
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 24)
-  AND NOT EXISTS (SELECT 1 FROM `variante_insumo` vi WHERE vi.`idVariante` = v.`idVariante` AND vi.`idInsumo` = 24)
-LIMIT 1;
-INSERT INTO `fichatecnica` (`idVariante`, `descripcion`, `fechaCreacion`, `idProducto`, `idInsumo`, `tipo`, `procedimiento`, `tiempoPreparacion`, `rendimiento`, `especificaciones`, `caracteristicas`, `informacionNutricional`, `condicionesAlmacenamiento`, `vidaUtil`, `observaciones`, `versionActual`, `estado`)
-SELECT v.`idVariante`, 'Hamburguesa clásica bañada en salsa BBQ ahumada artesanal, cebolla cabezona y doble cheddar.', NOW(), 1, NULL, 'VARIANTE', CONCAT('Preparación estándar Chazin Food para ', v.`nombre`), 12, '1 porción', '', CONCAT('Variante: ', v.`nombre`), '', '', '', '', 1, 1
-FROM `variante` v
-WHERE v.`idProducto` = 1 AND LOWER(TRIM(v.`nombre`)) = LOWER('BBQ Ahumada Especial')
-  AND NOT EXISTS (SELECT 1 FROM `fichatecnica` ft WHERE ft.`idVariante` = v.`idVariante` AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1)
-LIMIT 1;
-INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
-SELECT ft.`idFichaTecnica`, 12, 1.00, 'und'
-FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
-WHERE v.`idProducto` = 1 AND LOWER(TRIM(v.`nombre`)) = LOWER('BBQ Ahumada Especial') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 12)
-  AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 12)
-LIMIT 1;
-INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
-SELECT ft.`idFichaTecnica`, 14, 0.15, 'kg'
-FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
-WHERE v.`idProducto` = 1 AND LOWER(TRIM(v.`nombre`)) = LOWER('BBQ Ahumada Especial') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 14)
-  AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 14)
-LIMIT 1;
-INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
-SELECT ft.`idFichaTecnica`, 19, 2.00, 'und'
-FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
-WHERE v.`idProducto` = 1 AND LOWER(TRIM(v.`nombre`)) = LOWER('BBQ Ahumada Especial') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 19)
-  AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 19)
-LIMIT 1;
-INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
-SELECT ft.`idFichaTecnica`, 18, 0.03, 'kg'
-FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
-WHERE v.`idProducto` = 1 AND LOWER(TRIM(v.`nombre`)) = LOWER('BBQ Ahumada Especial') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 18)
-  AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 18)
-LIMIT 1;
-INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
-SELECT ft.`idFichaTecnica`, 44, 0.03, 'kg'
-FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
-WHERE v.`idProducto` = 1 AND LOWER(TRIM(v.`nombre`)) = LOWER('BBQ Ahumada Especial') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 44)
-  AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 44)
-LIMIT 1;
-INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
-SELECT ft.`idFichaTecnica`, 24, 0.03, 'kg'
-FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
-WHERE v.`idProducto` = 1 AND LOWER(TRIM(v.`nombre`)) = LOWER('BBQ Ahumada Especial') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 24)
-  AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 24)
-LIMIT 1;
-INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
-SELECT ft.`idFichaTecnica`, 22, 0.02, 'kg'
-FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
-WHERE v.`idProducto` = 1 AND LOWER(TRIM(v.`nombre`)) = LOWER('BBQ Ahumada Especial') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 22)
-  AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 22)
-LIMIT 1;
-INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
-SELECT ft.`idFichaTecnica`, 23, 0.03, 'kg'
-FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
-WHERE v.`idProducto` = 1 AND LOWER(TRIM(v.`nombre`)) = LOWER('BBQ Ahumada Especial') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 23)
-  AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 23)
-LIMIT 1;
-
-INSERT INTO `variante` (`idProducto`, `nombre`, `descripcion`, `precio`, `estado`)
-SELECT p.`idProducto`, 'Picante Jalapeño & Cheddar', 'Hamburguesa con rodajas de jalapeño encurtido y salsa cremosa de queso cheddar fundido.', 21000.00, COALESCE(p.`estado`, 1)
-FROM `producto` p
-WHERE p.`idProducto` = 1 AND COALESCE(p.`eliminado`, 0) = 0
-  AND NOT EXISTS (SELECT 1 FROM `variante` v WHERE v.`idProducto` = 1 AND LOWER(TRIM(v.`nombre`)) = LOWER('Picante Jalapeño & Cheddar'));
-UPDATE `variante`
-SET `precio` = CASE WHEN COALESCE(`precio`, 0) <= 0 THEN 21000.00 ELSE `precio` END,
-    `descripcion` = CASE WHEN `descripcion` IS NULL OR TRIM(`descripcion`) = '' THEN 'Hamburguesa con rodajas de jalapeño encurtido y salsa cremosa de queso cheddar fundido.' ELSE `descripcion` END
-WHERE `idProducto` = 1 AND LOWER(TRIM(`nombre`)) = LOWER('Picante Jalapeño & Cheddar');
-INSERT INTO `variante_insumo` (`idVariante`, `tipoAccion`, `idInsumo`, `idInsumoReemplazado`, `cantidad`, `unidadMedida`, `observaciones`)
-SELECT v.`idVariante`, 'AGREGAR', 25, NULL, 0.02, 'kg', NULL
-FROM `variante` v
-WHERE v.`idProducto` = 1 AND LOWER(TRIM(v.`nombre`)) = LOWER('Picante Jalapeño & Cheddar')
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 25)
-  AND NOT EXISTS (SELECT 1 FROM `variante_insumo` vi WHERE vi.`idVariante` = v.`idVariante` AND vi.`idInsumo` = 25)
-LIMIT 1;
-INSERT INTO `variante_insumo` (`idVariante`, `tipoAccion`, `idInsumo`, `idInsumoReemplazado`, `cantidad`, `unidadMedida`, `observaciones`)
-SELECT v.`idVariante`, 'AGREGAR', 43, NULL, 0.03, 'kg', NULL
-FROM `variante` v
-WHERE v.`idProducto` = 1 AND LOWER(TRIM(v.`nombre`)) = LOWER('Picante Jalapeño & Cheddar')
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 43)
-  AND NOT EXISTS (SELECT 1 FROM `variante_insumo` vi WHERE vi.`idVariante` = v.`idVariante` AND vi.`idInsumo` = 43)
-LIMIT 1;
-INSERT INTO `fichatecnica` (`idVariante`, `descripcion`, `fechaCreacion`, `idProducto`, `idInsumo`, `tipo`, `procedimiento`, `tiempoPreparacion`, `rendimiento`, `especificaciones`, `caracteristicas`, `informacionNutricional`, `condicionesAlmacenamiento`, `vidaUtil`, `observaciones`, `versionActual`, `estado`)
-SELECT v.`idVariante`, 'Hamburguesa con rodajas de jalapeño encurtido y salsa cremosa de queso cheddar fundido.', NOW(), 1, NULL, 'VARIANTE', CONCAT('Preparación estándar Chazin Food para ', v.`nombre`), 12, '1 porción', '', CONCAT('Variante: ', v.`nombre`), '', '', '', '', 1, 1
-FROM `variante` v
-WHERE v.`idProducto` = 1 AND LOWER(TRIM(v.`nombre`)) = LOWER('Picante Jalapeño & Cheddar')
-  AND NOT EXISTS (SELECT 1 FROM `fichatecnica` ft WHERE ft.`idVariante` = v.`idVariante` AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1)
-LIMIT 1;
-INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
-SELECT ft.`idFichaTecnica`, 12, 1.00, 'und'
-FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
-WHERE v.`idProducto` = 1 AND LOWER(TRIM(v.`nombre`)) = LOWER('Picante Jalapeño & Cheddar') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 12)
-  AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 12)
-LIMIT 1;
-INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
-SELECT ft.`idFichaTecnica`, 14, 0.15, 'kg'
-FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
-WHERE v.`idProducto` = 1 AND LOWER(TRIM(v.`nombre`)) = LOWER('Picante Jalapeño & Cheddar') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 14)
-  AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 14)
-LIMIT 1;
+WHERE v.`idProducto` = 1 AND LOWER(TRIM(v.`nombre`)) = LOWER('Doble Carne Clásica (300g)') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1 AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 14) LIMIT 1;
 INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
 SELECT ft.`idFichaTecnica`, 19, 1.00, 'und'
 FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
-WHERE v.`idProducto` = 1 AND LOWER(TRIM(v.`nombre`)) = LOWER('Picante Jalapeño & Cheddar') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 19)
-  AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 19)
-LIMIT 1;
+WHERE v.`idProducto` = 1 AND LOWER(TRIM(v.`nombre`)) = LOWER('Doble Carne Clásica (300g)') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1 AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 19) LIMIT 1;
 INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
 SELECT ft.`idFichaTecnica`, 18, 0.03, 'kg'
 FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
-WHERE v.`idProducto` = 1 AND LOWER(TRIM(v.`nombre`)) = LOWER('Picante Jalapeño & Cheddar') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 18)
-  AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 18)
-LIMIT 1;
-INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
-SELECT ft.`idFichaTecnica`, 25, 0.02, 'kg'
-FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
-WHERE v.`idProducto` = 1 AND LOWER(TRIM(v.`nombre`)) = LOWER('Picante Jalapeño & Cheddar') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 25)
-  AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 25)
-LIMIT 1;
-INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
-SELECT ft.`idFichaTecnica`, 43, 0.03, 'kg'
-FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
-WHERE v.`idProducto` = 1 AND LOWER(TRIM(v.`nombre`)) = LOWER('Picante Jalapeño & Cheddar') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 43)
-  AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 43)
-LIMIT 1;
+WHERE v.`idProducto` = 1 AND LOWER(TRIM(v.`nombre`)) = LOWER('Doble Carne Clásica (300g)') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1 AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 18) LIMIT 1;
 INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
 SELECT ft.`idFichaTecnica`, 22, 0.02, 'kg'
 FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
-WHERE v.`idProducto` = 1 AND LOWER(TRIM(v.`nombre`)) = LOWER('Picante Jalapeño & Cheddar') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 22)
-  AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 22)
-LIMIT 1;
+WHERE v.`idProducto` = 1 AND LOWER(TRIM(v.`nombre`)) = LOWER('Doble Carne Clásica (300g)') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1 AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 22) LIMIT 1;
 INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
 SELECT ft.`idFichaTecnica`, 23, 0.03, 'kg'
 FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
-WHERE v.`idProducto` = 1 AND LOWER(TRIM(v.`nombre`)) = LOWER('Picante Jalapeño & Cheddar') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 23)
-  AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 23)
-LIMIT 1;
+WHERE v.`idProducto` = 1 AND LOWER(TRIM(v.`nombre`)) = LOWER('Doble Carne Clásica (300g)') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1 AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 23) LIMIT 1;
+
+INSERT INTO `variante` (`idProducto`, `nombre`, `descripcion`, `precio`, `estado`)
+SELECT p.`idProducto`, 'En Pan Integral Artesanal con Semillas', 'Reemplaza el pan brioche tradicional por pan integral artesanal con semillas.', 19000.00, COALESCE(p.`estado`, 1)
+FROM `producto` p
+WHERE p.`idProducto` = 1 AND COALESCE(p.`eliminado`, 0) = 0
+  AND NOT EXISTS (SELECT 1 FROM `variante` v WHERE v.`idProducto` = 1 AND LOWER(TRIM(v.`nombre`)) = LOWER('En Pan Integral Artesanal con Semillas'));
+UPDATE `variante` SET `precio` = 19000.00, `descripcion` = 'Reemplaza el pan brioche tradicional por pan integral artesanal con semillas.', `estado` = 1
+WHERE `idProducto` = 1 AND LOWER(TRIM(`nombre`)) = LOWER('En Pan Integral Artesanal con Semillas');
+DELETE FROM `variante_insumo` WHERE `idVariante` IN (SELECT `idVariante` FROM `variante` WHERE `idProducto` = 1 AND LOWER(TRIM(`nombre`)) = LOWER('En Pan Integral Artesanal con Semillas'));
+INSERT INTO `variante_insumo` (`idVariante`, `tipoAccion`, `idInsumo`, `idInsumoReemplazado`, `cantidad`, `unidadMedida`, `observaciones`)
+SELECT v.`idVariante`, 'REEMPLAZAR', 49, 12, 1.00, 'und', NULL
+FROM `variante` v WHERE v.`idProducto` = 1 AND LOWER(TRIM(v.`nombre`)) = LOWER('En Pan Integral Artesanal con Semillas') AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 49) LIMIT 1;
+INSERT INTO `fichatecnica` (`idVariante`, `descripcion`, `fechaCreacion`, `idProducto`, `idInsumo`, `tipo`, `procedimiento`, `tiempoPreparacion`, `rendimiento`, `especificaciones`, `caracteristicas`, `informacionNutricional`, `condicionesAlmacenamiento`, `vidaUtil`, `observaciones`, `versionActual`, `estado`)
+SELECT v.`idVariante`, 'Reemplaza el pan brioche tradicional por pan integral artesanal con semillas.', NOW(), 1, NULL, 'VARIANTE', CONCAT('Preparación estándar Chazin Food para ', v.`nombre`), 10, '1 porción', 'Cocción completa (>70°C en el centro), empaque térmico y control de gramaje estándar.', CONCAT('Presentación ', v.`nombre`, ', aroma fresco, color dorado uniforme y textura equilibrada.'), 'Porción estándar: ~680 kcal | Proteínas: 34g | Carbohidratos: 48g | Grasas: 35g.', 'Consumo inmediato en mesa o en empaque térmico antigrasa antes de 25 minutos.', 'Consumo inmediato', '', 1, 1
+FROM `variante` v WHERE v.`idProducto` = 1 AND LOWER(TRIM(v.`nombre`)) = LOWER('En Pan Integral Artesanal con Semillas')
+  AND NOT EXISTS (SELECT 1 FROM `fichatecnica` ft WHERE ft.`idVariante` = v.`idVariante` AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1) LIMIT 1;
+DELETE FROM `detallefichainsumo` WHERE `idFichaTecnica` IN (SELECT ft.`idFichaTecnica` FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante` WHERE v.`idProducto` = 1 AND LOWER(TRIM(v.`nombre`)) = LOWER('En Pan Integral Artesanal con Semillas') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1);
+INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
+SELECT ft.`idFichaTecnica`, 49, 1.00, 'und'
+FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
+WHERE v.`idProducto` = 1 AND LOWER(TRIM(v.`nombre`)) = LOWER('En Pan Integral Artesanal con Semillas') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1 AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 49) LIMIT 1;
+INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
+SELECT ft.`idFichaTecnica`, 14, 0.15, 'kg'
+FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
+WHERE v.`idProducto` = 1 AND LOWER(TRIM(v.`nombre`)) = LOWER('En Pan Integral Artesanal con Semillas') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1 AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 14) LIMIT 1;
+INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
+SELECT ft.`idFichaTecnica`, 19, 1.00, 'und'
+FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
+WHERE v.`idProducto` = 1 AND LOWER(TRIM(v.`nombre`)) = LOWER('En Pan Integral Artesanal con Semillas') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1 AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 19) LIMIT 1;
+INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
+SELECT ft.`idFichaTecnica`, 18, 0.03, 'kg'
+FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
+WHERE v.`idProducto` = 1 AND LOWER(TRIM(v.`nombre`)) = LOWER('En Pan Integral Artesanal con Semillas') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1 AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 18) LIMIT 1;
+INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
+SELECT ft.`idFichaTecnica`, 22, 0.02, 'kg'
+FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
+WHERE v.`idProducto` = 1 AND LOWER(TRIM(v.`nombre`)) = LOWER('En Pan Integral Artesanal con Semillas') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1 AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 22) LIMIT 1;
+INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
+SELECT ft.`idFichaTecnica`, 23, 0.03, 'kg'
+FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
+WHERE v.`idProducto` = 1 AND LOWER(TRIM(v.`nombre`)) = LOWER('En Pan Integral Artesanal con Semillas') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1 AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 23) LIMIT 1;
+
+INSERT INTO `variante` (`idProducto`, `nombre`, `descripcion`, `precio`, `estado`)
+SELECT p.`idProducto`, 'Proteína Carne Angus Certified (180g)', 'Sustituye la carne estándar por corte premium de Carne Angus Certified 180g.', 22500.00, COALESCE(p.`estado`, 1)
+FROM `producto` p
+WHERE p.`idProducto` = 1 AND COALESCE(p.`eliminado`, 0) = 0
+  AND NOT EXISTS (SELECT 1 FROM `variante` v WHERE v.`idProducto` = 1 AND LOWER(TRIM(v.`nombre`)) = LOWER('Proteína Carne Angus Certified (180g)'));
+UPDATE `variante` SET `precio` = 22500.00, `descripcion` = 'Sustituye la carne estándar por corte premium de Carne Angus Certified 180g.', `estado` = 1
+WHERE `idProducto` = 1 AND LOWER(TRIM(`nombre`)) = LOWER('Proteína Carne Angus Certified (180g)');
+DELETE FROM `variante_insumo` WHERE `idVariante` IN (SELECT `idVariante` FROM `variante` WHERE `idProducto` = 1 AND LOWER(TRIM(`nombre`)) = LOWER('Proteína Carne Angus Certified (180g)'));
+INSERT INTO `variante_insumo` (`idVariante`, `tipoAccion`, `idInsumo`, `idInsumoReemplazado`, `cantidad`, `unidadMedida`, `observaciones`)
+SELECT v.`idVariante`, 'REEMPLAZAR', 52, 14, 0.18, 'kg', NULL
+FROM `variante` v WHERE v.`idProducto` = 1 AND LOWER(TRIM(v.`nombre`)) = LOWER('Proteína Carne Angus Certified (180g)') AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 52) LIMIT 1;
+INSERT INTO `fichatecnica` (`idVariante`, `descripcion`, `fechaCreacion`, `idProducto`, `idInsumo`, `tipo`, `procedimiento`, `tiempoPreparacion`, `rendimiento`, `especificaciones`, `caracteristicas`, `informacionNutricional`, `condicionesAlmacenamiento`, `vidaUtil`, `observaciones`, `versionActual`, `estado`)
+SELECT v.`idVariante`, 'Sustituye la carne estándar por corte premium de Carne Angus Certified 180g.', NOW(), 1, NULL, 'VARIANTE', CONCAT('Preparación estándar Chazin Food para ', v.`nombre`), 12, '1 porción (180g)', 'Cocción completa (>70°C en el centro), empaque térmico y control de gramaje estándar.', CONCAT('Presentación ', v.`nombre`, ', aroma fresco, color dorado uniforme y textura equilibrada.'), 'Porción estándar: ~680 kcal | Proteínas: 34g | Carbohidratos: 48g | Grasas: 35g.', 'Consumo inmediato en mesa o en empaque térmico antigrasa antes de 25 minutos.', 'Consumo inmediato', '', 1, 1
+FROM `variante` v WHERE v.`idProducto` = 1 AND LOWER(TRIM(v.`nombre`)) = LOWER('Proteína Carne Angus Certified (180g)')
+  AND NOT EXISTS (SELECT 1 FROM `fichatecnica` ft WHERE ft.`idVariante` = v.`idVariante` AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1) LIMIT 1;
+DELETE FROM `detallefichainsumo` WHERE `idFichaTecnica` IN (SELECT ft.`idFichaTecnica` FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante` WHERE v.`idProducto` = 1 AND LOWER(TRIM(v.`nombre`)) = LOWER('Proteína Carne Angus Certified (180g)') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1);
+INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
+SELECT ft.`idFichaTecnica`, 12, 1.00, 'und'
+FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
+WHERE v.`idProducto` = 1 AND LOWER(TRIM(v.`nombre`)) = LOWER('Proteína Carne Angus Certified (180g)') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1 AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 12) LIMIT 1;
+INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
+SELECT ft.`idFichaTecnica`, 52, 0.18, 'kg'
+FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
+WHERE v.`idProducto` = 1 AND LOWER(TRIM(v.`nombre`)) = LOWER('Proteína Carne Angus Certified (180g)') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1 AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 52) LIMIT 1;
+INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
+SELECT ft.`idFichaTecnica`, 19, 1.00, 'und'
+FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
+WHERE v.`idProducto` = 1 AND LOWER(TRIM(v.`nombre`)) = LOWER('Proteína Carne Angus Certified (180g)') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1 AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 19) LIMIT 1;
+INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
+SELECT ft.`idFichaTecnica`, 18, 0.03, 'kg'
+FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
+WHERE v.`idProducto` = 1 AND LOWER(TRIM(v.`nombre`)) = LOWER('Proteína Carne Angus Certified (180g)') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1 AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 18) LIMIT 1;
+INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
+SELECT ft.`idFichaTecnica`, 22, 0.02, 'kg'
+FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
+WHERE v.`idProducto` = 1 AND LOWER(TRIM(v.`nombre`)) = LOWER('Proteína Carne Angus Certified (180g)') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1 AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 22) LIMIT 1;
+INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
+SELECT ft.`idFichaTecnica`, 23, 0.03, 'kg'
+FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
+WHERE v.`idProducto` = 1 AND LOWER(TRIM(v.`nombre`)) = LOWER('Proteína Carne Angus Certified (180g)') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1 AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 23) LIMIT 1;
 
 -- Producto #3
 INSERT INTO `variante` (`idProducto`, `nombre`, `descripcion`, `precio`, `estado`)
-SELECT p.`idProducto`, 'Pollo Crispy Bacon & BBQ', 'Pechuga crispy crujiente con tocineta ahumada, queso cheddar y salsa BBQ artesanal.', 24500.00, COALESCE(p.`estado`, 1)
+SELECT p.`idProducto`, 'Doble Filete Pollo Crispy (360g)', 'Porción doble con 360g de pechuga crispy crujiente manteniendo la receta original.', 27000.00, COALESCE(p.`estado`, 1)
 FROM `producto` p
 WHERE p.`idProducto` = 3 AND COALESCE(p.`eliminado`, 0) = 0
-  AND NOT EXISTS (SELECT 1 FROM `variante` v WHERE v.`idProducto` = 3 AND LOWER(TRIM(v.`nombre`)) = LOWER('Pollo Crispy Bacon & BBQ'));
-UPDATE `variante`
-SET `precio` = CASE WHEN COALESCE(`precio`, 0) <= 0 THEN 24500.00 ELSE `precio` END,
-    `descripcion` = CASE WHEN `descripcion` IS NULL OR TRIM(`descripcion`) = '' THEN 'Pechuga crispy crujiente con tocineta ahumada, queso cheddar y salsa BBQ artesanal.' ELSE `descripcion` END
-WHERE `idProducto` = 3 AND LOWER(TRIM(`nombre`)) = LOWER('Pollo Crispy Bacon & BBQ');
-INSERT INTO `variante_insumo` (`idVariante`, `tipoAccion`, `idInsumo`, `idInsumoReemplazado`, `cantidad`, `unidadMedida`, `observaciones`)
-SELECT v.`idVariante`, 'AGREGAR', 18, NULL, 0.04, 'kg', NULL
-FROM `variante` v
-WHERE v.`idProducto` = 3 AND LOWER(TRIM(v.`nombre`)) = LOWER('Pollo Crispy Bacon & BBQ')
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 18)
-  AND NOT EXISTS (SELECT 1 FROM `variante_insumo` vi WHERE vi.`idVariante` = v.`idVariante` AND vi.`idInsumo` = 18)
-LIMIT 1;
-INSERT INTO `variante_insumo` (`idVariante`, `tipoAccion`, `idInsumo`, `idInsumoReemplazado`, `cantidad`, `unidadMedida`, `observaciones`)
-SELECT v.`idVariante`, 'AGREGAR', 19, NULL, 1.00, 'und', NULL
-FROM `variante` v
-WHERE v.`idProducto` = 3 AND LOWER(TRIM(v.`nombre`)) = LOWER('Pollo Crispy Bacon & BBQ')
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 19)
-  AND NOT EXISTS (SELECT 1 FROM `variante_insumo` vi WHERE vi.`idVariante` = v.`idVariante` AND vi.`idInsumo` = 19)
-LIMIT 1;
-INSERT INTO `variante_insumo` (`idVariante`, `tipoAccion`, `idInsumo`, `idInsumoReemplazado`, `cantidad`, `unidadMedida`, `observaciones`)
-SELECT v.`idVariante`, 'AGREGAR', 44, NULL, 0.03, 'kg', NULL
-FROM `variante` v
-WHERE v.`idProducto` = 3 AND LOWER(TRIM(v.`nombre`)) = LOWER('Pollo Crispy Bacon & BBQ')
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 44)
-  AND NOT EXISTS (SELECT 1 FROM `variante_insumo` vi WHERE vi.`idVariante` = v.`idVariante` AND vi.`idInsumo` = 44)
-LIMIT 1;
-INSERT INTO `fichatecnica` (`idVariante`, `descripcion`, `fechaCreacion`, `idProducto`, `idInsumo`, `tipo`, `procedimiento`, `tiempoPreparacion`, `rendimiento`, `especificaciones`, `caracteristicas`, `informacionNutricional`, `condicionesAlmacenamiento`, `vidaUtil`, `observaciones`, `versionActual`, `estado`)
-SELECT v.`idVariante`, 'Pechuga crispy crujiente con tocineta ahumada, queso cheddar y salsa BBQ artesanal.', NOW(), 3, NULL, 'VARIANTE', CONCAT('Preparación estándar Chazin Food para ', v.`nombre`), 13, '1 porción', '', CONCAT('Variante: ', v.`nombre`), '', '', '', '', 1, 1
-FROM `variante` v
-WHERE v.`idProducto` = 3 AND LOWER(TRIM(v.`nombre`)) = LOWER('Pollo Crispy Bacon & BBQ')
-  AND NOT EXISTS (SELECT 1 FROM `fichatecnica` ft WHERE ft.`idVariante` = v.`idVariante` AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1)
-LIMIT 1;
-INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
-SELECT ft.`idFichaTecnica`, 12, 1.00, 'und'
-FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
-WHERE v.`idProducto` = 3 AND LOWER(TRIM(v.`nombre`)) = LOWER('Pollo Crispy Bacon & BBQ') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 12)
-  AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 12)
-LIMIT 1;
-INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
-SELECT ft.`idFichaTecnica`, 15, 0.18, 'kg'
-FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
-WHERE v.`idProducto` = 3 AND LOWER(TRIM(v.`nombre`)) = LOWER('Pollo Crispy Bacon & BBQ') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 15)
-  AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 15)
-LIMIT 1;
-INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
-SELECT ft.`idFichaTecnica`, 20, 0.04, 'kg'
-FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
-WHERE v.`idProducto` = 3 AND LOWER(TRIM(v.`nombre`)) = LOWER('Pollo Crispy Bacon & BBQ') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 20)
-  AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 20)
-LIMIT 1;
-INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
-SELECT ft.`idFichaTecnica`, 18, 0.04, 'kg'
-FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
-WHERE v.`idProducto` = 3 AND LOWER(TRIM(v.`nombre`)) = LOWER('Pollo Crispy Bacon & BBQ') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 18)
-  AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 18)
-LIMIT 1;
-INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
-SELECT ft.`idFichaTecnica`, 19, 1.00, 'und'
-FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
-WHERE v.`idProducto` = 3 AND LOWER(TRIM(v.`nombre`)) = LOWER('Pollo Crispy Bacon & BBQ') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 19)
-  AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 19)
-LIMIT 1;
-INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
-SELECT ft.`idFichaTecnica`, 44, 0.03, 'kg'
-FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
-WHERE v.`idProducto` = 3 AND LOWER(TRIM(v.`nombre`)) = LOWER('Pollo Crispy Bacon & BBQ') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 44)
-  AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 44)
-LIMIT 1;
-INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
-SELECT ft.`idFichaTecnica`, 22, 0.02, 'kg'
-FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
-WHERE v.`idProducto` = 3 AND LOWER(TRIM(v.`nombre`)) = LOWER('Pollo Crispy Bacon & BBQ') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 22)
-  AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 22)
-LIMIT 1;
-INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
-SELECT ft.`idFichaTecnica`, 23, 0.03, 'kg'
-FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
-WHERE v.`idProducto` = 3 AND LOWER(TRIM(v.`nombre`)) = LOWER('Pollo Crispy Bacon & BBQ') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 23)
-  AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 23)
-LIMIT 1;
-
-INSERT INTO `variante` (`idProducto`, `nombre`, `descripcion`, `precio`, `estado`)
-SELECT p.`idProducto`, 'Doble Pollo Crispy (360g)', 'Doble filete de pechuga crispy (360g) con doble mozzarella gratinado y salsa tártara especial.', 27500.00, COALESCE(p.`estado`, 1)
-FROM `producto` p
-WHERE p.`idProducto` = 3 AND COALESCE(p.`eliminado`, 0) = 0
-  AND NOT EXISTS (SELECT 1 FROM `variante` v WHERE v.`idProducto` = 3 AND LOWER(TRIM(v.`nombre`)) = LOWER('Doble Pollo Crispy (360g)'));
-UPDATE `variante`
-SET `precio` = CASE WHEN COALESCE(`precio`, 0) <= 0 THEN 27500.00 ELSE `precio` END,
-    `descripcion` = CASE WHEN `descripcion` IS NULL OR TRIM(`descripcion`) = '' THEN 'Doble filete de pechuga crispy (360g) con doble mozzarella gratinado y salsa tártara especial.' ELSE `descripcion` END
-WHERE `idProducto` = 3 AND LOWER(TRIM(`nombre`)) = LOWER('Doble Pollo Crispy (360g)');
+  AND NOT EXISTS (SELECT 1 FROM `variante` v WHERE v.`idProducto` = 3 AND LOWER(TRIM(v.`nombre`)) = LOWER('Doble Filete Pollo Crispy (360g)'));
+UPDATE `variante` SET `precio` = 27000.00, `descripcion` = 'Porción doble con 360g de pechuga crispy crujiente manteniendo la receta original.', `estado` = 1
+WHERE `idProducto` = 3 AND LOWER(TRIM(`nombre`)) = LOWER('Doble Filete Pollo Crispy (360g)');
+DELETE FROM `variante_insumo` WHERE `idVariante` IN (SELECT `idVariante` FROM `variante` WHERE `idProducto` = 3 AND LOWER(TRIM(`nombre`)) = LOWER('Doble Filete Pollo Crispy (360g)'));
 INSERT INTO `variante_insumo` (`idVariante`, `tipoAccion`, `idInsumo`, `idInsumoReemplazado`, `cantidad`, `unidadMedida`, `observaciones`)
 SELECT v.`idVariante`, 'MODIFICAR_CANTIDAD', 15, NULL, 0.36, 'kg', NULL
-FROM `variante` v
-WHERE v.`idProducto` = 3 AND LOWER(TRIM(v.`nombre`)) = LOWER('Doble Pollo Crispy (360g)')
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 15)
-  AND NOT EXISTS (SELECT 1 FROM `variante_insumo` vi WHERE vi.`idVariante` = v.`idVariante` AND vi.`idInsumo` = 15)
-LIMIT 1;
-INSERT INTO `variante_insumo` (`idVariante`, `tipoAccion`, `idInsumo`, `idInsumoReemplazado`, `cantidad`, `unidadMedida`, `observaciones`)
-SELECT v.`idVariante`, 'MODIFICAR_CANTIDAD', 20, NULL, 0.08, 'kg', NULL
-FROM `variante` v
-WHERE v.`idProducto` = 3 AND LOWER(TRIM(v.`nombre`)) = LOWER('Doble Pollo Crispy (360g)')
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 20)
-  AND NOT EXISTS (SELECT 1 FROM `variante_insumo` vi WHERE vi.`idVariante` = v.`idVariante` AND vi.`idInsumo` = 20)
-LIMIT 1;
-INSERT INTO `variante_insumo` (`idVariante`, `tipoAccion`, `idInsumo`, `idInsumoReemplazado`, `cantidad`, `unidadMedida`, `observaciones`)
-SELECT v.`idVariante`, 'AGREGAR', 45, NULL, 0.03, 'kg', NULL
-FROM `variante` v
-WHERE v.`idProducto` = 3 AND LOWER(TRIM(v.`nombre`)) = LOWER('Doble Pollo Crispy (360g)')
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 45)
-  AND NOT EXISTS (SELECT 1 FROM `variante_insumo` vi WHERE vi.`idVariante` = v.`idVariante` AND vi.`idInsumo` = 45)
-LIMIT 1;
+FROM `variante` v WHERE v.`idProducto` = 3 AND LOWER(TRIM(v.`nombre`)) = LOWER('Doble Filete Pollo Crispy (360g)') AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 15) LIMIT 1;
 INSERT INTO `fichatecnica` (`idVariante`, `descripcion`, `fechaCreacion`, `idProducto`, `idInsumo`, `tipo`, `procedimiento`, `tiempoPreparacion`, `rendimiento`, `especificaciones`, `caracteristicas`, `informacionNutricional`, `condicionesAlmacenamiento`, `vidaUtil`, `observaciones`, `versionActual`, `estado`)
-SELECT v.`idVariante`, 'Doble filete de pechuga crispy (360g) con doble mozzarella gratinado y salsa tártara especial.', NOW(), 3, NULL, 'VARIANTE', CONCAT('Preparación estándar Chazin Food para ', v.`nombre`), 15, '1 porción (360g)', '', CONCAT('Variante: ', v.`nombre`), '', '', '', '', 1, 1
-FROM `variante` v
-WHERE v.`idProducto` = 3 AND LOWER(TRIM(v.`nombre`)) = LOWER('Doble Pollo Crispy (360g)')
-  AND NOT EXISTS (SELECT 1 FROM `fichatecnica` ft WHERE ft.`idVariante` = v.`idVariante` AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1)
-LIMIT 1;
+SELECT v.`idVariante`, 'Porción doble con 360g de pechuga crispy crujiente manteniendo la receta original.', NOW(), 3, NULL, 'VARIANTE', CONCAT('Preparación estándar Chazin Food para ', v.`nombre`), 15, '1 porción (360g)', 'Cocción completa (>70°C en el centro), empaque térmico y control de gramaje estándar.', CONCAT('Presentación ', v.`nombre`, ', aroma fresco, color dorado uniforme y textura equilibrada.'), 'Porción estándar: ~680 kcal | Proteínas: 34g | Carbohidratos: 48g | Grasas: 35g.', 'Consumo inmediato en mesa o en empaque térmico antigrasa antes de 25 minutos.', 'Consumo inmediato', '', 1, 1
+FROM `variante` v WHERE v.`idProducto` = 3 AND LOWER(TRIM(v.`nombre`)) = LOWER('Doble Filete Pollo Crispy (360g)')
+  AND NOT EXISTS (SELECT 1 FROM `fichatecnica` ft WHERE ft.`idVariante` = v.`idVariante` AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1) LIMIT 1;
+DELETE FROM `detallefichainsumo` WHERE `idFichaTecnica` IN (SELECT ft.`idFichaTecnica` FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante` WHERE v.`idProducto` = 3 AND LOWER(TRIM(v.`nombre`)) = LOWER('Doble Filete Pollo Crispy (360g)') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1);
 INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
 SELECT ft.`idFichaTecnica`, 12, 1.00, 'und'
 FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
-WHERE v.`idProducto` = 3 AND LOWER(TRIM(v.`nombre`)) = LOWER('Doble Pollo Crispy (360g)') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 12)
-  AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 12)
-LIMIT 1;
+WHERE v.`idProducto` = 3 AND LOWER(TRIM(v.`nombre`)) = LOWER('Doble Filete Pollo Crispy (360g)') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1 AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 12) LIMIT 1;
 INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
 SELECT ft.`idFichaTecnica`, 15, 0.36, 'kg'
 FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
-WHERE v.`idProducto` = 3 AND LOWER(TRIM(v.`nombre`)) = LOWER('Doble Pollo Crispy (360g)') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 15)
-  AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 15)
-LIMIT 1;
+WHERE v.`idProducto` = 3 AND LOWER(TRIM(v.`nombre`)) = LOWER('Doble Filete Pollo Crispy (360g)') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1 AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 15) LIMIT 1;
 INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
-SELECT ft.`idFichaTecnica`, 20, 0.08, 'kg'
+SELECT ft.`idFichaTecnica`, 20, 0.04, 'kg'
 FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
-WHERE v.`idProducto` = 3 AND LOWER(TRIM(v.`nombre`)) = LOWER('Doble Pollo Crispy (360g)') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 20)
-  AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 20)
-LIMIT 1;
-INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
-SELECT ft.`idFichaTecnica`, 45, 0.03, 'kg'
-FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
-WHERE v.`idProducto` = 3 AND LOWER(TRIM(v.`nombre`)) = LOWER('Doble Pollo Crispy (360g)') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 45)
-  AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 45)
-LIMIT 1;
+WHERE v.`idProducto` = 3 AND LOWER(TRIM(v.`nombre`)) = LOWER('Doble Filete Pollo Crispy (360g)') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1 AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 20) LIMIT 1;
 INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
 SELECT ft.`idFichaTecnica`, 22, 0.02, 'kg'
 FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
-WHERE v.`idProducto` = 3 AND LOWER(TRIM(v.`nombre`)) = LOWER('Doble Pollo Crispy (360g)') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 22)
-  AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 22)
-LIMIT 1;
+WHERE v.`idProducto` = 3 AND LOWER(TRIM(v.`nombre`)) = LOWER('Doble Filete Pollo Crispy (360g)') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1 AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 22) LIMIT 1;
 INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
 SELECT ft.`idFichaTecnica`, 23, 0.03, 'kg'
 FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
-WHERE v.`idProducto` = 3 AND LOWER(TRIM(v.`nombre`)) = LOWER('Doble Pollo Crispy (360g)') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 23)
-  AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 23)
-LIMIT 1;
+WHERE v.`idProducto` = 3 AND LOWER(TRIM(v.`nombre`)) = LOWER('Doble Filete Pollo Crispy (360g)') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1 AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 23) LIMIT 1;
+
+INSERT INTO `variante` (`idProducto`, `nombre`, `descripcion`, `precio`, `estado`)
+SELECT p.`idProducto`, 'Proteína Pechuga Grillé a las Finas Hierbas', 'Cambia el filete crispy por filete de pechuga grillé a las finas hierbas a la plancha.', 21500.00, COALESCE(p.`estado`, 1)
+FROM `producto` p
+WHERE p.`idProducto` = 3 AND COALESCE(p.`eliminado`, 0) = 0
+  AND NOT EXISTS (SELECT 1 FROM `variante` v WHERE v.`idProducto` = 3 AND LOWER(TRIM(v.`nombre`)) = LOWER('Proteína Pechuga Grillé a las Finas Hierbas'));
+UPDATE `variante` SET `precio` = 21500.00, `descripcion` = 'Cambia el filete crispy por filete de pechuga grillé a las finas hierbas a la plancha.', `estado` = 1
+WHERE `idProducto` = 3 AND LOWER(TRIM(`nombre`)) = LOWER('Proteína Pechuga Grillé a las Finas Hierbas');
+DELETE FROM `variante_insumo` WHERE `idVariante` IN (SELECT `idVariante` FROM `variante` WHERE `idProducto` = 3 AND LOWER(TRIM(`nombre`)) = LOWER('Proteína Pechuga Grillé a las Finas Hierbas'));
+INSERT INTO `variante_insumo` (`idVariante`, `tipoAccion`, `idInsumo`, `idInsumoReemplazado`, `cantidad`, `unidadMedida`, `observaciones`)
+SELECT v.`idVariante`, 'REEMPLAZAR', 54, 15, 0.18, 'kg', NULL
+FROM `variante` v WHERE v.`idProducto` = 3 AND LOWER(TRIM(v.`nombre`)) = LOWER('Proteína Pechuga Grillé a las Finas Hierbas') AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 54) LIMIT 1;
+INSERT INTO `fichatecnica` (`idVariante`, `descripcion`, `fechaCreacion`, `idProducto`, `idInsumo`, `tipo`, `procedimiento`, `tiempoPreparacion`, `rendimiento`, `especificaciones`, `caracteristicas`, `informacionNutricional`, `condicionesAlmacenamiento`, `vidaUtil`, `observaciones`, `versionActual`, `estado`)
+SELECT v.`idVariante`, 'Cambia el filete crispy por filete de pechuga grillé a las finas hierbas a la plancha.', NOW(), 3, NULL, 'VARIANTE', CONCAT('Preparación estándar Chazin Food para ', v.`nombre`), 11, '1 porción', 'Cocción completa (>70°C en el centro), empaque térmico y control de gramaje estándar.', CONCAT('Presentación ', v.`nombre`, ', aroma fresco, color dorado uniforme y textura equilibrada.'), 'Porción estándar: ~680 kcal | Proteínas: 34g | Carbohidratos: 48g | Grasas: 35g.', 'Consumo inmediato en mesa o en empaque térmico antigrasa antes de 25 minutos.', 'Consumo inmediato', '', 1, 1
+FROM `variante` v WHERE v.`idProducto` = 3 AND LOWER(TRIM(v.`nombre`)) = LOWER('Proteína Pechuga Grillé a las Finas Hierbas')
+  AND NOT EXISTS (SELECT 1 FROM `fichatecnica` ft WHERE ft.`idVariante` = v.`idVariante` AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1) LIMIT 1;
+DELETE FROM `detallefichainsumo` WHERE `idFichaTecnica` IN (SELECT ft.`idFichaTecnica` FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante` WHERE v.`idProducto` = 3 AND LOWER(TRIM(v.`nombre`)) = LOWER('Proteína Pechuga Grillé a las Finas Hierbas') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1);
+INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
+SELECT ft.`idFichaTecnica`, 12, 1.00, 'und'
+FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
+WHERE v.`idProducto` = 3 AND LOWER(TRIM(v.`nombre`)) = LOWER('Proteína Pechuga Grillé a las Finas Hierbas') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1 AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 12) LIMIT 1;
+INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
+SELECT ft.`idFichaTecnica`, 54, 0.18, 'kg'
+FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
+WHERE v.`idProducto` = 3 AND LOWER(TRIM(v.`nombre`)) = LOWER('Proteína Pechuga Grillé a las Finas Hierbas') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1 AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 54) LIMIT 1;
+INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
+SELECT ft.`idFichaTecnica`, 20, 0.04, 'kg'
+FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
+WHERE v.`idProducto` = 3 AND LOWER(TRIM(v.`nombre`)) = LOWER('Proteína Pechuga Grillé a las Finas Hierbas') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1 AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 20) LIMIT 1;
+INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
+SELECT ft.`idFichaTecnica`, 22, 0.02, 'kg'
+FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
+WHERE v.`idProducto` = 3 AND LOWER(TRIM(v.`nombre`)) = LOWER('Proteína Pechuga Grillé a las Finas Hierbas') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1 AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 22) LIMIT 1;
+INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
+SELECT ft.`idFichaTecnica`, 23, 0.03, 'kg'
+FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
+WHERE v.`idProducto` = 3 AND LOWER(TRIM(v.`nombre`)) = LOWER('Proteína Pechuga Grillé a las Finas Hierbas') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1 AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 23) LIMIT 1;
+
+INSERT INTO `variante` (`idProducto`, `nombre`, `descripcion`, `precio`, `estado`)
+SELECT p.`idProducto`, 'Bañada en Salsa Miel Mostaza Artesanal', 'Hamburguesa Pollo Crispy glaseada con salsa miel mostaza artesanal.', 22000.00, COALESCE(p.`estado`, 1)
+FROM `producto` p
+WHERE p.`idProducto` = 3 AND COALESCE(p.`eliminado`, 0) = 0
+  AND NOT EXISTS (SELECT 1 FROM `variante` v WHERE v.`idProducto` = 3 AND LOWER(TRIM(v.`nombre`)) = LOWER('Bañada en Salsa Miel Mostaza Artesanal'));
+UPDATE `variante` SET `precio` = 22000.00, `descripcion` = 'Hamburguesa Pollo Crispy glaseada con salsa miel mostaza artesanal.', `estado` = 1
+WHERE `idProducto` = 3 AND LOWER(TRIM(`nombre`)) = LOWER('Bañada en Salsa Miel Mostaza Artesanal');
+DELETE FROM `variante_insumo` WHERE `idVariante` IN (SELECT `idVariante` FROM `variante` WHERE `idProducto` = 3 AND LOWER(TRIM(`nombre`)) = LOWER('Bañada en Salsa Miel Mostaza Artesanal'));
+INSERT INTO `variante_insumo` (`idVariante`, `tipoAccion`, `idInsumo`, `idInsumoReemplazado`, `cantidad`, `unidadMedida`, `observaciones`)
+SELECT v.`idVariante`, 'AGREGAR', 55, NULL, 0.03, 'kg', NULL
+FROM `variante` v WHERE v.`idProducto` = 3 AND LOWER(TRIM(v.`nombre`)) = LOWER('Bañada en Salsa Miel Mostaza Artesanal') AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 55) LIMIT 1;
+INSERT INTO `fichatecnica` (`idVariante`, `descripcion`, `fechaCreacion`, `idProducto`, `idInsumo`, `tipo`, `procedimiento`, `tiempoPreparacion`, `rendimiento`, `especificaciones`, `caracteristicas`, `informacionNutricional`, `condicionesAlmacenamiento`, `vidaUtil`, `observaciones`, `versionActual`, `estado`)
+SELECT v.`idVariante`, 'Hamburguesa Pollo Crispy glaseada con salsa miel mostaza artesanal.', NOW(), 3, NULL, 'VARIANTE', CONCAT('Preparación estándar Chazin Food para ', v.`nombre`), 11, '1 porción', 'Cocción completa (>70°C en el centro), empaque térmico y control de gramaje estándar.', CONCAT('Presentación ', v.`nombre`, ', aroma fresco, color dorado uniforme y textura equilibrada.'), 'Porción estándar: ~680 kcal | Proteínas: 34g | Carbohidratos: 48g | Grasas: 35g.', 'Consumo inmediato en mesa o en empaque térmico antigrasa antes de 25 minutos.', 'Consumo inmediato', '', 1, 1
+FROM `variante` v WHERE v.`idProducto` = 3 AND LOWER(TRIM(v.`nombre`)) = LOWER('Bañada en Salsa Miel Mostaza Artesanal')
+  AND NOT EXISTS (SELECT 1 FROM `fichatecnica` ft WHERE ft.`idVariante` = v.`idVariante` AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1) LIMIT 1;
+DELETE FROM `detallefichainsumo` WHERE `idFichaTecnica` IN (SELECT ft.`idFichaTecnica` FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante` WHERE v.`idProducto` = 3 AND LOWER(TRIM(v.`nombre`)) = LOWER('Bañada en Salsa Miel Mostaza Artesanal') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1);
+INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
+SELECT ft.`idFichaTecnica`, 12, 1.00, 'und'
+FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
+WHERE v.`idProducto` = 3 AND LOWER(TRIM(v.`nombre`)) = LOWER('Bañada en Salsa Miel Mostaza Artesanal') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1 AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 12) LIMIT 1;
+INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
+SELECT ft.`idFichaTecnica`, 15, 0.18, 'kg'
+FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
+WHERE v.`idProducto` = 3 AND LOWER(TRIM(v.`nombre`)) = LOWER('Bañada en Salsa Miel Mostaza Artesanal') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1 AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 15) LIMIT 1;
+INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
+SELECT ft.`idFichaTecnica`, 20, 0.04, 'kg'
+FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
+WHERE v.`idProducto` = 3 AND LOWER(TRIM(v.`nombre`)) = LOWER('Bañada en Salsa Miel Mostaza Artesanal') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1 AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 20) LIMIT 1;
+INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
+SELECT ft.`idFichaTecnica`, 55, 0.03, 'kg'
+FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
+WHERE v.`idProducto` = 3 AND LOWER(TRIM(v.`nombre`)) = LOWER('Bañada en Salsa Miel Mostaza Artesanal') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1 AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 55) LIMIT 1;
+INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
+SELECT ft.`idFichaTecnica`, 22, 0.02, 'kg'
+FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
+WHERE v.`idProducto` = 3 AND LOWER(TRIM(v.`nombre`)) = LOWER('Bañada en Salsa Miel Mostaza Artesanal') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1 AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 22) LIMIT 1;
+INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
+SELECT ft.`idFichaTecnica`, 23, 0.03, 'kg'
+FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
+WHERE v.`idProducto` = 3 AND LOWER(TRIM(v.`nombre`)) = LOWER('Bañada en Salsa Miel Mostaza Artesanal') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1 AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 23) LIMIT 1;
 
 -- Producto #27
 INSERT INTO `variante` (`idProducto`, `nombre`, `descripcion`, `precio`, `estado`)
-SELECT p.`idProducto`, 'BBQ Bacon Cheddar & Jalapeño', 'BBQ Bacon 150g enriquecida con cremosa salsa de queso cheddar fundido y rodajas de jalapeños picantes.', 25000.00, COALESCE(p.`estado`, 1)
-FROM `producto` p
-WHERE p.`idProducto` = 27 AND COALESCE(p.`eliminado`, 0) = 0
-  AND NOT EXISTS (SELECT 1 FROM `variante` v WHERE v.`idProducto` = 27 AND LOWER(TRIM(v.`nombre`)) = LOWER('BBQ Bacon Cheddar & Jalapeño'));
-UPDATE `variante`
-SET `precio` = CASE WHEN COALESCE(`precio`, 0) <= 0 THEN 25000.00 ELSE `precio` END,
-    `descripcion` = CASE WHEN `descripcion` IS NULL OR TRIM(`descripcion`) = '' THEN 'BBQ Bacon 150g enriquecida con cremosa salsa de queso cheddar fundido y rodajas de jalapeños picantes.' ELSE `descripcion` END
-WHERE `idProducto` = 27 AND LOWER(TRIM(`nombre`)) = LOWER('BBQ Bacon Cheddar & Jalapeño');
-INSERT INTO `variante_insumo` (`idVariante`, `tipoAccion`, `idInsumo`, `idInsumoReemplazado`, `cantidad`, `unidadMedida`, `observaciones`)
-SELECT v.`idVariante`, 'AGREGAR', 43, NULL, 0.03, 'kg', NULL
-FROM `variante` v
-WHERE v.`idProducto` = 27 AND LOWER(TRIM(v.`nombre`)) = LOWER('BBQ Bacon Cheddar & Jalapeño')
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 43)
-  AND NOT EXISTS (SELECT 1 FROM `variante_insumo` vi WHERE vi.`idVariante` = v.`idVariante` AND vi.`idInsumo` = 43)
-LIMIT 1;
-INSERT INTO `variante_insumo` (`idVariante`, `tipoAccion`, `idInsumo`, `idInsumoReemplazado`, `cantidad`, `unidadMedida`, `observaciones`)
-SELECT v.`idVariante`, 'AGREGAR', 25, NULL, 0.02, 'kg', NULL
-FROM `variante` v
-WHERE v.`idProducto` = 27 AND LOWER(TRIM(v.`nombre`)) = LOWER('BBQ Bacon Cheddar & Jalapeño')
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 25)
-  AND NOT EXISTS (SELECT 1 FROM `variante_insumo` vi WHERE vi.`idVariante` = v.`idVariante` AND vi.`idInsumo` = 25)
-LIMIT 1;
-INSERT INTO `fichatecnica` (`idVariante`, `descripcion`, `fechaCreacion`, `idProducto`, `idInsumo`, `tipo`, `procedimiento`, `tiempoPreparacion`, `rendimiento`, `especificaciones`, `caracteristicas`, `informacionNutricional`, `condicionesAlmacenamiento`, `vidaUtil`, `observaciones`, `versionActual`, `estado`)
-SELECT v.`idVariante`, 'BBQ Bacon 150g enriquecida con cremosa salsa de queso cheddar fundido y rodajas de jalapeños picantes.', NOW(), 27, NULL, 'VARIANTE', CONCAT('Preparación estándar Chazin Food para ', v.`nombre`), 13, '1 porción (150g)', '', CONCAT('Variante: ', v.`nombre`), '', '', '', '', 1, 1
-FROM `variante` v
-WHERE v.`idProducto` = 27 AND LOWER(TRIM(v.`nombre`)) = LOWER('BBQ Bacon Cheddar & Jalapeño')
-  AND NOT EXISTS (SELECT 1 FROM `fichatecnica` ft WHERE ft.`idVariante` = v.`idVariante` AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1)
-LIMIT 1;
-INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
-SELECT ft.`idFichaTecnica`, 12, 1.00, 'und'
-FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
-WHERE v.`idProducto` = 27 AND LOWER(TRIM(v.`nombre`)) = LOWER('BBQ Bacon Cheddar & Jalapeño') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 12)
-  AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 12)
-LIMIT 1;
-INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
-SELECT ft.`idFichaTecnica`, 14, 0.15, 'kg'
-FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
-WHERE v.`idProducto` = 27 AND LOWER(TRIM(v.`nombre`)) = LOWER('BBQ Bacon Cheddar & Jalapeño') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 14)
-  AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 14)
-LIMIT 1;
-INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
-SELECT ft.`idFichaTecnica`, 18, 0.04, 'kg'
-FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
-WHERE v.`idProducto` = 27 AND LOWER(TRIM(v.`nombre`)) = LOWER('BBQ Bacon Cheddar & Jalapeño') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 18)
-  AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 18)
-LIMIT 1;
-INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
-SELECT ft.`idFichaTecnica`, 19, 2.00, 'und'
-FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
-WHERE v.`idProducto` = 27 AND LOWER(TRIM(v.`nombre`)) = LOWER('BBQ Bacon Cheddar & Jalapeño') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 19)
-  AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 19)
-LIMIT 1;
-INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
-SELECT ft.`idFichaTecnica`, 24, 0.04, 'kg'
-FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
-WHERE v.`idProducto` = 27 AND LOWER(TRIM(v.`nombre`)) = LOWER('BBQ Bacon Cheddar & Jalapeño') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 24)
-  AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 24)
-LIMIT 1;
-INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
-SELECT ft.`idFichaTecnica`, 44, 0.03, 'kg'
-FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
-WHERE v.`idProducto` = 27 AND LOWER(TRIM(v.`nombre`)) = LOWER('BBQ Bacon Cheddar & Jalapeño') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 44)
-  AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 44)
-LIMIT 1;
-INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
-SELECT ft.`idFichaTecnica`, 43, 0.03, 'kg'
-FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
-WHERE v.`idProducto` = 27 AND LOWER(TRIM(v.`nombre`)) = LOWER('BBQ Bacon Cheddar & Jalapeño') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 43)
-  AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 43)
-LIMIT 1;
-INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
-SELECT ft.`idFichaTecnica`, 25, 0.02, 'kg'
-FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
-WHERE v.`idProducto` = 27 AND LOWER(TRIM(v.`nombre`)) = LOWER('BBQ Bacon Cheddar & Jalapeño') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 25)
-  AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 25)
-LIMIT 1;
-
-INSERT INTO `variante` (`idProducto`, `nombre`, `descripcion`, `precio`, `estado`)
-SELECT p.`idProducto`, 'Doble Carne BBQ Bacon 300g', 'Doble carne de res 300g con tocineta extra, triple cheddar y abundante salsa BBQ ahumada.', 28000.00, COALESCE(p.`estado`, 1)
+SELECT p.`idProducto`, 'Doble Carne BBQ Bacon 300g', 'Doble carne de res 300g a la parrilla glaseada con abundante salsa BBQ ahumada.', 27500.00, COALESCE(p.`estado`, 1)
 FROM `producto` p
 WHERE p.`idProducto` = 27 AND COALESCE(p.`eliminado`, 0) = 0
   AND NOT EXISTS (SELECT 1 FROM `variante` v WHERE v.`idProducto` = 27 AND LOWER(TRIM(v.`nombre`)) = LOWER('Doble Carne BBQ Bacon 300g'));
-UPDATE `variante`
-SET `precio` = CASE WHEN COALESCE(`precio`, 0) <= 0 THEN 28000.00 ELSE `precio` END,
-    `descripcion` = CASE WHEN `descripcion` IS NULL OR TRIM(`descripcion`) = '' THEN 'Doble carne de res 300g con tocineta extra, triple cheddar y abundante salsa BBQ ahumada.' ELSE `descripcion` END
+UPDATE `variante` SET `precio` = 27500.00, `descripcion` = 'Doble carne de res 300g a la parrilla glaseada con abundante salsa BBQ ahumada.', `estado` = 1
 WHERE `idProducto` = 27 AND LOWER(TRIM(`nombre`)) = LOWER('Doble Carne BBQ Bacon 300g');
+DELETE FROM `variante_insumo` WHERE `idVariante` IN (SELECT `idVariante` FROM `variante` WHERE `idProducto` = 27 AND LOWER(TRIM(`nombre`)) = LOWER('Doble Carne BBQ Bacon 300g'));
 INSERT INTO `variante_insumo` (`idVariante`, `tipoAccion`, `idInsumo`, `idInsumoReemplazado`, `cantidad`, `unidadMedida`, `observaciones`)
 SELECT v.`idVariante`, 'MODIFICAR_CANTIDAD', 14, NULL, 0.30, 'kg', NULL
-FROM `variante` v
-WHERE v.`idProducto` = 27 AND LOWER(TRIM(v.`nombre`)) = LOWER('Doble Carne BBQ Bacon 300g')
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 14)
-  AND NOT EXISTS (SELECT 1 FROM `variante_insumo` vi WHERE vi.`idVariante` = v.`idVariante` AND vi.`idInsumo` = 14)
-LIMIT 1;
+FROM `variante` v WHERE v.`idProducto` = 27 AND LOWER(TRIM(v.`nombre`)) = LOWER('Doble Carne BBQ Bacon 300g') AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 14) LIMIT 1;
 INSERT INTO `variante_insumo` (`idVariante`, `tipoAccion`, `idInsumo`, `idInsumoReemplazado`, `cantidad`, `unidadMedida`, `observaciones`)
-SELECT v.`idVariante`, 'MODIFICAR_CANTIDAD', 18, NULL, 0.06, 'kg', NULL
-FROM `variante` v
-WHERE v.`idProducto` = 27 AND LOWER(TRIM(v.`nombre`)) = LOWER('Doble Carne BBQ Bacon 300g')
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 18)
-  AND NOT EXISTS (SELECT 1 FROM `variante_insumo` vi WHERE vi.`idVariante` = v.`idVariante` AND vi.`idInsumo` = 18)
-LIMIT 1;
-INSERT INTO `variante_insumo` (`idVariante`, `tipoAccion`, `idInsumo`, `idInsumoReemplazado`, `cantidad`, `unidadMedida`, `observaciones`)
-SELECT v.`idVariante`, 'MODIFICAR_CANTIDAD', 19, NULL, 3.00, 'und', NULL
-FROM `variante` v
-WHERE v.`idProducto` = 27 AND LOWER(TRIM(v.`nombre`)) = LOWER('Doble Carne BBQ Bacon 300g')
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 19)
-  AND NOT EXISTS (SELECT 1 FROM `variante_insumo` vi WHERE vi.`idVariante` = v.`idVariante` AND vi.`idInsumo` = 19)
-LIMIT 1;
-INSERT INTO `variante_insumo` (`idVariante`, `tipoAccion`, `idInsumo`, `idInsumoReemplazado`, `cantidad`, `unidadMedida`, `observaciones`)
-SELECT v.`idVariante`, 'MODIFICAR_CANTIDAD', 44, NULL, 0.04, 'kg', NULL
-FROM `variante` v
-WHERE v.`idProducto` = 27 AND LOWER(TRIM(v.`nombre`)) = LOWER('Doble Carne BBQ Bacon 300g')
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 44)
-  AND NOT EXISTS (SELECT 1 FROM `variante_insumo` vi WHERE vi.`idVariante` = v.`idVariante` AND vi.`idInsumo` = 44)
-LIMIT 1;
+SELECT v.`idVariante`, 'MODIFICAR_CANTIDAD', 44, NULL, 0.05, 'kg', NULL
+FROM `variante` v WHERE v.`idProducto` = 27 AND LOWER(TRIM(v.`nombre`)) = LOWER('Doble Carne BBQ Bacon 300g') AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 44) LIMIT 1;
 INSERT INTO `fichatecnica` (`idVariante`, `descripcion`, `fechaCreacion`, `idProducto`, `idInsumo`, `tipo`, `procedimiento`, `tiempoPreparacion`, `rendimiento`, `especificaciones`, `caracteristicas`, `informacionNutricional`, `condicionesAlmacenamiento`, `vidaUtil`, `observaciones`, `versionActual`, `estado`)
-SELECT v.`idVariante`, 'Doble carne de res 300g con tocineta extra, triple cheddar y abundante salsa BBQ ahumada.', NOW(), 27, NULL, 'VARIANTE', CONCAT('Preparación estándar Chazin Food para ', v.`nombre`), 15, '1 porción (300g)', '', CONCAT('Variante: ', v.`nombre`), '', '', '', '', 1, 1
-FROM `variante` v
-WHERE v.`idProducto` = 27 AND LOWER(TRIM(v.`nombre`)) = LOWER('Doble Carne BBQ Bacon 300g')
-  AND NOT EXISTS (SELECT 1 FROM `fichatecnica` ft WHERE ft.`idVariante` = v.`idVariante` AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1)
-LIMIT 1;
+SELECT v.`idVariante`, 'Doble carne de res 300g a la parrilla glaseada con abundante salsa BBQ ahumada.', NOW(), 27, NULL, 'VARIANTE', CONCAT('Preparación estándar Chazin Food para ', v.`nombre`), 15, '1 porción (300g)', 'Cocción completa (>70°C en el centro), empaque térmico y control de gramaje estándar.', CONCAT('Presentación ', v.`nombre`, ', aroma fresco, color dorado uniforme y textura equilibrada.'), 'Porción estándar: ~680 kcal | Proteínas: 34g | Carbohidratos: 48g | Grasas: 35g.', 'Consumo inmediato en mesa o en empaque térmico antigrasa antes de 25 minutos.', 'Consumo inmediato', '', 1, 1
+FROM `variante` v WHERE v.`idProducto` = 27 AND LOWER(TRIM(v.`nombre`)) = LOWER('Doble Carne BBQ Bacon 300g')
+  AND NOT EXISTS (SELECT 1 FROM `fichatecnica` ft WHERE ft.`idVariante` = v.`idVariante` AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1) LIMIT 1;
+DELETE FROM `detallefichainsumo` WHERE `idFichaTecnica` IN (SELECT ft.`idFichaTecnica` FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante` WHERE v.`idProducto` = 27 AND LOWER(TRIM(v.`nombre`)) = LOWER('Doble Carne BBQ Bacon 300g') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1);
 INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
 SELECT ft.`idFichaTecnica`, 12, 1.00, 'und'
 FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
-WHERE v.`idProducto` = 27 AND LOWER(TRIM(v.`nombre`)) = LOWER('Doble Carne BBQ Bacon 300g') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 12)
-  AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 12)
-LIMIT 1;
+WHERE v.`idProducto` = 27 AND LOWER(TRIM(v.`nombre`)) = LOWER('Doble Carne BBQ Bacon 300g') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1 AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 12) LIMIT 1;
 INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
 SELECT ft.`idFichaTecnica`, 14, 0.30, 'kg'
 FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
-WHERE v.`idProducto` = 27 AND LOWER(TRIM(v.`nombre`)) = LOWER('Doble Carne BBQ Bacon 300g') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 14)
-  AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 14)
-LIMIT 1;
+WHERE v.`idProducto` = 27 AND LOWER(TRIM(v.`nombre`)) = LOWER('Doble Carne BBQ Bacon 300g') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1 AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 14) LIMIT 1;
 INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
-SELECT ft.`idFichaTecnica`, 18, 0.06, 'kg'
+SELECT ft.`idFichaTecnica`, 18, 0.04, 'kg'
 FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
-WHERE v.`idProducto` = 27 AND LOWER(TRIM(v.`nombre`)) = LOWER('Doble Carne BBQ Bacon 300g') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 18)
-  AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 18)
-LIMIT 1;
+WHERE v.`idProducto` = 27 AND LOWER(TRIM(v.`nombre`)) = LOWER('Doble Carne BBQ Bacon 300g') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1 AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 18) LIMIT 1;
 INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
-SELECT ft.`idFichaTecnica`, 19, 3.00, 'und'
+SELECT ft.`idFichaTecnica`, 19, 2.00, 'und'
 FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
-WHERE v.`idProducto` = 27 AND LOWER(TRIM(v.`nombre`)) = LOWER('Doble Carne BBQ Bacon 300g') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 19)
-  AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 19)
-LIMIT 1;
+WHERE v.`idProducto` = 27 AND LOWER(TRIM(v.`nombre`)) = LOWER('Doble Carne BBQ Bacon 300g') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1 AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 19) LIMIT 1;
 INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
 SELECT ft.`idFichaTecnica`, 24, 0.04, 'kg'
 FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
-WHERE v.`idProducto` = 27 AND LOWER(TRIM(v.`nombre`)) = LOWER('Doble Carne BBQ Bacon 300g') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 24)
-  AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 24)
-LIMIT 1;
+WHERE v.`idProducto` = 27 AND LOWER(TRIM(v.`nombre`)) = LOWER('Doble Carne BBQ Bacon 300g') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1 AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 24) LIMIT 1;
 INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
-SELECT ft.`idFichaTecnica`, 44, 0.04, 'kg'
+SELECT ft.`idFichaTecnica`, 44, 0.05, 'kg'
 FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
-WHERE v.`idProducto` = 27 AND LOWER(TRIM(v.`nombre`)) = LOWER('Doble Carne BBQ Bacon 300g') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 44)
-  AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 44)
-LIMIT 1;
+WHERE v.`idProducto` = 27 AND LOWER(TRIM(v.`nombre`)) = LOWER('Doble Carne BBQ Bacon 300g') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1 AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 44) LIMIT 1;
 
--- Producto #28
 INSERT INTO `variante` (`idProducto`, `nombre`, `descripcion`, `precio`, `estado`)
-SELECT p.`idProducto`, 'Extra Picante con Doble Jalapeño', 'Versión intensa con doble porción de jalapeños, guacamole extra y salsa de cheddar fundido.', 25000.00, COALESCE(p.`estado`, 1)
+SELECT p.`idProducto`, 'En Pan de Papa Gourmet', 'Reemplaza el pan brioche por pan de papa gourmet extra suave y esponjoso.', 22800.00, COALESCE(p.`estado`, 1)
 FROM `producto` p
-WHERE p.`idProducto` = 28 AND COALESCE(p.`eliminado`, 0) = 0
-  AND NOT EXISTS (SELECT 1 FROM `variante` v WHERE v.`idProducto` = 28 AND LOWER(TRIM(v.`nombre`)) = LOWER('Extra Picante con Doble Jalapeño'));
-UPDATE `variante`
-SET `precio` = CASE WHEN COALESCE(`precio`, 0) <= 0 THEN 25000.00 ELSE `precio` END,
-    `descripcion` = CASE WHEN `descripcion` IS NULL OR TRIM(`descripcion`) = '' THEN 'Versión intensa con doble porción de jalapeños, guacamole extra y salsa de cheddar fundido.' ELSE `descripcion` END
-WHERE `idProducto` = 28 AND LOWER(TRIM(`nombre`)) = LOWER('Extra Picante con Doble Jalapeño');
+WHERE p.`idProducto` = 27 AND COALESCE(p.`eliminado`, 0) = 0
+  AND NOT EXISTS (SELECT 1 FROM `variante` v WHERE v.`idProducto` = 27 AND LOWER(TRIM(v.`nombre`)) = LOWER('En Pan de Papa Gourmet'));
+UPDATE `variante` SET `precio` = 22800.00, `descripcion` = 'Reemplaza el pan brioche por pan de papa gourmet extra suave y esponjoso.', `estado` = 1
+WHERE `idProducto` = 27 AND LOWER(TRIM(`nombre`)) = LOWER('En Pan de Papa Gourmet');
+DELETE FROM `variante_insumo` WHERE `idVariante` IN (SELECT `idVariante` FROM `variante` WHERE `idProducto` = 27 AND LOWER(TRIM(`nombre`)) = LOWER('En Pan de Papa Gourmet'));
 INSERT INTO `variante_insumo` (`idVariante`, `tipoAccion`, `idInsumo`, `idInsumoReemplazado`, `cantidad`, `unidadMedida`, `observaciones`)
-SELECT v.`idVariante`, 'MODIFICAR_CANTIDAD', 40, NULL, 0.07, 'kg', NULL
-FROM `variante` v
-WHERE v.`idProducto` = 28 AND LOWER(TRIM(v.`nombre`)) = LOWER('Extra Picante con Doble Jalapeño')
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 40)
-  AND NOT EXISTS (SELECT 1 FROM `variante_insumo` vi WHERE vi.`idVariante` = v.`idVariante` AND vi.`idInsumo` = 40)
-LIMIT 1;
-INSERT INTO `variante_insumo` (`idVariante`, `tipoAccion`, `idInsumo`, `idInsumoReemplazado`, `cantidad`, `unidadMedida`, `observaciones`)
-SELECT v.`idVariante`, 'MODIFICAR_CANTIDAD', 25, NULL, 0.04, 'kg', NULL
-FROM `variante` v
-WHERE v.`idProducto` = 28 AND LOWER(TRIM(v.`nombre`)) = LOWER('Extra Picante con Doble Jalapeño')
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 25)
-  AND NOT EXISTS (SELECT 1 FROM `variante_insumo` vi WHERE vi.`idVariante` = v.`idVariante` AND vi.`idInsumo` = 25)
-LIMIT 1;
-INSERT INTO `variante_insumo` (`idVariante`, `tipoAccion`, `idInsumo`, `idInsumoReemplazado`, `cantidad`, `unidadMedida`, `observaciones`)
-SELECT v.`idVariante`, 'AGREGAR', 43, NULL, 0.03, 'kg', NULL
-FROM `variante` v
-WHERE v.`idProducto` = 28 AND LOWER(TRIM(v.`nombre`)) = LOWER('Extra Picante con Doble Jalapeño')
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 43)
-  AND NOT EXISTS (SELECT 1 FROM `variante_insumo` vi WHERE vi.`idVariante` = v.`idVariante` AND vi.`idInsumo` = 43)
-LIMIT 1;
+SELECT v.`idVariante`, 'REEMPLAZAR', 8, 12, 1.00, 'und', NULL
+FROM `variante` v WHERE v.`idProducto` = 27 AND LOWER(TRIM(v.`nombre`)) = LOWER('En Pan de Papa Gourmet') AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 8) LIMIT 1;
 INSERT INTO `fichatecnica` (`idVariante`, `descripcion`, `fechaCreacion`, `idProducto`, `idInsumo`, `tipo`, `procedimiento`, `tiempoPreparacion`, `rendimiento`, `especificaciones`, `caracteristicas`, `informacionNutricional`, `condicionesAlmacenamiento`, `vidaUtil`, `observaciones`, `versionActual`, `estado`)
-SELECT v.`idVariante`, 'Versión intensa con doble porción de jalapeños, guacamole extra y salsa de cheddar fundido.', NOW(), 28, NULL, 'VARIANTE', CONCAT('Preparación estándar Chazin Food para ', v.`nombre`), 12, '1 porción', '', CONCAT('Variante: ', v.`nombre`), '', '', '', '', 1, 1
-FROM `variante` v
-WHERE v.`idProducto` = 28 AND LOWER(TRIM(v.`nombre`)) = LOWER('Extra Picante con Doble Jalapeño')
-  AND NOT EXISTS (SELECT 1 FROM `fichatecnica` ft WHERE ft.`idVariante` = v.`idVariante` AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1)
-LIMIT 1;
+SELECT v.`idVariante`, 'Reemplaza el pan brioche por pan de papa gourmet extra suave y esponjoso.', NOW(), 27, NULL, 'VARIANTE', CONCAT('Preparación estándar Chazin Food para ', v.`nombre`), 10, '1 porción', 'Cocción completa (>70°C en el centro), empaque térmico y control de gramaje estándar.', CONCAT('Presentación ', v.`nombre`, ', aroma fresco, color dorado uniforme y textura equilibrada.'), 'Porción estándar: ~680 kcal | Proteínas: 34g | Carbohidratos: 48g | Grasas: 35g.', 'Consumo inmediato en mesa o en empaque térmico antigrasa antes de 25 minutos.', 'Consumo inmediato', '', 1, 1
+FROM `variante` v WHERE v.`idProducto` = 27 AND LOWER(TRIM(v.`nombre`)) = LOWER('En Pan de Papa Gourmet')
+  AND NOT EXISTS (SELECT 1 FROM `fichatecnica` ft WHERE ft.`idVariante` = v.`idVariante` AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1) LIMIT 1;
+DELETE FROM `detallefichainsumo` WHERE `idFichaTecnica` IN (SELECT ft.`idFichaTecnica` FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante` WHERE v.`idProducto` = 27 AND LOWER(TRIM(v.`nombre`)) = LOWER('En Pan de Papa Gourmet') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1);
 INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
-SELECT ft.`idFichaTecnica`, 12, 1.00, 'und'
+SELECT ft.`idFichaTecnica`, 8, 1.00, 'und'
 FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
-WHERE v.`idProducto` = 28 AND LOWER(TRIM(v.`nombre`)) = LOWER('Extra Picante con Doble Jalapeño') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 12)
-  AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 12)
-LIMIT 1;
+WHERE v.`idProducto` = 27 AND LOWER(TRIM(v.`nombre`)) = LOWER('En Pan de Papa Gourmet') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1 AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 8) LIMIT 1;
 INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
 SELECT ft.`idFichaTecnica`, 14, 0.15, 'kg'
 FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
-WHERE v.`idProducto` = 28 AND LOWER(TRIM(v.`nombre`)) = LOWER('Extra Picante con Doble Jalapeño') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 14)
-  AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 14)
-LIMIT 1;
-INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
-SELECT ft.`idFichaTecnica`, 40, 0.07, 'kg'
-FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
-WHERE v.`idProducto` = 28 AND LOWER(TRIM(v.`nombre`)) = LOWER('Extra Picante con Doble Jalapeño') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 40)
-  AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 40)
-LIMIT 1;
-INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
-SELECT ft.`idFichaTecnica`, 25, 0.04, 'kg'
-FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
-WHERE v.`idProducto` = 28 AND LOWER(TRIM(v.`nombre`)) = LOWER('Extra Picante con Doble Jalapeño') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 25)
-  AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 25)
-LIMIT 1;
-INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
-SELECT ft.`idFichaTecnica`, 20, 0.04, 'kg'
-FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
-WHERE v.`idProducto` = 28 AND LOWER(TRIM(v.`nombre`)) = LOWER('Extra Picante con Doble Jalapeño') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 20)
-  AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 20)
-LIMIT 1;
-INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
-SELECT ft.`idFichaTecnica`, 43, 0.03, 'kg'
-FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
-WHERE v.`idProducto` = 28 AND LOWER(TRIM(v.`nombre`)) = LOWER('Extra Picante con Doble Jalapeño') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 43)
-  AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 43)
-LIMIT 1;
-INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
-SELECT ft.`idFichaTecnica`, 22, 0.02, 'kg'
-FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
-WHERE v.`idProducto` = 28 AND LOWER(TRIM(v.`nombre`)) = LOWER('Extra Picante con Doble Jalapeño') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 22)
-  AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 22)
-LIMIT 1;
-
-INSERT INTO `variante` (`idProducto`, `nombre`, `descripcion`, `precio`, `estado`)
-SELECT p.`idProducto`, 'Doble Carne Mexicana (300g)', 'Doble carne de res 300g con doble mozzarella gratinado, extra guacamole artesanal y jalapeños.', 29500.00, COALESCE(p.`estado`, 1)
-FROM `producto` p
-WHERE p.`idProducto` = 28 AND COALESCE(p.`eliminado`, 0) = 0
-  AND NOT EXISTS (SELECT 1 FROM `variante` v WHERE v.`idProducto` = 28 AND LOWER(TRIM(v.`nombre`)) = LOWER('Doble Carne Mexicana (300g)'));
-UPDATE `variante`
-SET `precio` = CASE WHEN COALESCE(`precio`, 0) <= 0 THEN 29500.00 ELSE `precio` END,
-    `descripcion` = CASE WHEN `descripcion` IS NULL OR TRIM(`descripcion`) = '' THEN 'Doble carne de res 300g con doble mozzarella gratinado, extra guacamole artesanal y jalapeños.' ELSE `descripcion` END
-WHERE `idProducto` = 28 AND LOWER(TRIM(`nombre`)) = LOWER('Doble Carne Mexicana (300g)');
-INSERT INTO `variante_insumo` (`idVariante`, `tipoAccion`, `idInsumo`, `idInsumoReemplazado`, `cantidad`, `unidadMedida`, `observaciones`)
-SELECT v.`idVariante`, 'MODIFICAR_CANTIDAD', 14, NULL, 0.30, 'kg', NULL
-FROM `variante` v
-WHERE v.`idProducto` = 28 AND LOWER(TRIM(v.`nombre`)) = LOWER('Doble Carne Mexicana (300g)')
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 14)
-  AND NOT EXISTS (SELECT 1 FROM `variante_insumo` vi WHERE vi.`idVariante` = v.`idVariante` AND vi.`idInsumo` = 14)
-LIMIT 1;
-INSERT INTO `variante_insumo` (`idVariante`, `tipoAccion`, `idInsumo`, `idInsumoReemplazado`, `cantidad`, `unidadMedida`, `observaciones`)
-SELECT v.`idVariante`, 'MODIFICAR_CANTIDAD', 40, NULL, 0.06, 'kg', NULL
-FROM `variante` v
-WHERE v.`idProducto` = 28 AND LOWER(TRIM(v.`nombre`)) = LOWER('Doble Carne Mexicana (300g)')
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 40)
-  AND NOT EXISTS (SELECT 1 FROM `variante_insumo` vi WHERE vi.`idVariante` = v.`idVariante` AND vi.`idInsumo` = 40)
-LIMIT 1;
-INSERT INTO `variante_insumo` (`idVariante`, `tipoAccion`, `idInsumo`, `idInsumoReemplazado`, `cantidad`, `unidadMedida`, `observaciones`)
-SELECT v.`idVariante`, 'MODIFICAR_CANTIDAD', 20, NULL, 0.08, 'kg', NULL
-FROM `variante` v
-WHERE v.`idProducto` = 28 AND LOWER(TRIM(v.`nombre`)) = LOWER('Doble Carne Mexicana (300g)')
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 20)
-  AND NOT EXISTS (SELECT 1 FROM `variante_insumo` vi WHERE vi.`idVariante` = v.`idVariante` AND vi.`idInsumo` = 20)
-LIMIT 1;
-INSERT INTO `fichatecnica` (`idVariante`, `descripcion`, `fechaCreacion`, `idProducto`, `idInsumo`, `tipo`, `procedimiento`, `tiempoPreparacion`, `rendimiento`, `especificaciones`, `caracteristicas`, `informacionNutricional`, `condicionesAlmacenamiento`, `vidaUtil`, `observaciones`, `versionActual`, `estado`)
-SELECT v.`idVariante`, 'Doble carne de res 300g con doble mozzarella gratinado, extra guacamole artesanal y jalapeños.', NOW(), 28, NULL, 'VARIANTE', CONCAT('Preparación estándar Chazin Food para ', v.`nombre`), 15, '1 porción (300g)', '', CONCAT('Variante: ', v.`nombre`), '', '', '', '', 1, 1
-FROM `variante` v
-WHERE v.`idProducto` = 28 AND LOWER(TRIM(v.`nombre`)) = LOWER('Doble Carne Mexicana (300g)')
-  AND NOT EXISTS (SELECT 1 FROM `fichatecnica` ft WHERE ft.`idVariante` = v.`idVariante` AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1)
-LIMIT 1;
-INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
-SELECT ft.`idFichaTecnica`, 12, 1.00, 'und'
-FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
-WHERE v.`idProducto` = 28 AND LOWER(TRIM(v.`nombre`)) = LOWER('Doble Carne Mexicana (300g)') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 12)
-  AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 12)
-LIMIT 1;
-INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
-SELECT ft.`idFichaTecnica`, 14, 0.30, 'kg'
-FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
-WHERE v.`idProducto` = 28 AND LOWER(TRIM(v.`nombre`)) = LOWER('Doble Carne Mexicana (300g)') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 14)
-  AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 14)
-LIMIT 1;
-INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
-SELECT ft.`idFichaTecnica`, 40, 0.06, 'kg'
-FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
-WHERE v.`idProducto` = 28 AND LOWER(TRIM(v.`nombre`)) = LOWER('Doble Carne Mexicana (300g)') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 40)
-  AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 40)
-LIMIT 1;
-INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
-SELECT ft.`idFichaTecnica`, 25, 0.02, 'kg'
-FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
-WHERE v.`idProducto` = 28 AND LOWER(TRIM(v.`nombre`)) = LOWER('Doble Carne Mexicana (300g)') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 25)
-  AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 25)
-LIMIT 1;
-INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
-SELECT ft.`idFichaTecnica`, 20, 0.08, 'kg'
-FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
-WHERE v.`idProducto` = 28 AND LOWER(TRIM(v.`nombre`)) = LOWER('Doble Carne Mexicana (300g)') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 20)
-  AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 20)
-LIMIT 1;
-INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
-SELECT ft.`idFichaTecnica`, 22, 0.02, 'kg'
-FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
-WHERE v.`idProducto` = 28 AND LOWER(TRIM(v.`nombre`)) = LOWER('Doble Carne Mexicana (300g)') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 22)
-  AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 22)
-LIMIT 1;
-
--- Producto #4
-INSERT INTO `variante` (`idProducto`, `nombre`, `descripcion`, `precio`, `estado`)
-SELECT p.`idProducto`, 'Doble Salchicha & Extra Queso', 'Perro americano con doble salchicha premium, tocineta ahumada y extra mozzarella gratinado.', 18000.00, COALESCE(p.`estado`, 1)
-FROM `producto` p
-WHERE p.`idProducto` = 4 AND COALESCE(p.`eliminado`, 0) = 0
-  AND NOT EXISTS (SELECT 1 FROM `variante` v WHERE v.`idProducto` = 4 AND LOWER(TRIM(v.`nombre`)) = LOWER('Doble Salchicha & Extra Queso'));
-UPDATE `variante`
-SET `precio` = CASE WHEN COALESCE(`precio`, 0) <= 0 THEN 18000.00 ELSE `precio` END,
-    `descripcion` = CASE WHEN `descripcion` IS NULL OR TRIM(`descripcion`) = '' THEN 'Perro americano con doble salchicha premium, tocineta ahumada y extra mozzarella gratinado.' ELSE `descripcion` END
-WHERE `idProducto` = 4 AND LOWER(TRIM(`nombre`)) = LOWER('Doble Salchicha & Extra Queso');
-INSERT INTO `variante_insumo` (`idVariante`, `tipoAccion`, `idInsumo`, `idInsumoReemplazado`, `cantidad`, `unidadMedida`, `observaciones`)
-SELECT v.`idVariante`, 'MODIFICAR_CANTIDAD', 16, NULL, 2.00, 'und', NULL
-FROM `variante` v
-WHERE v.`idProducto` = 4 AND LOWER(TRIM(v.`nombre`)) = LOWER('Doble Salchicha & Extra Queso')
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 16)
-  AND NOT EXISTS (SELECT 1 FROM `variante_insumo` vi WHERE vi.`idVariante` = v.`idVariante` AND vi.`idInsumo` = 16)
-LIMIT 1;
-INSERT INTO `variante_insumo` (`idVariante`, `tipoAccion`, `idInsumo`, `idInsumoReemplazado`, `cantidad`, `unidadMedida`, `observaciones`)
-SELECT v.`idVariante`, 'MODIFICAR_CANTIDAD', 18, NULL, 0.04, 'kg', NULL
-FROM `variante` v
-WHERE v.`idProducto` = 4 AND LOWER(TRIM(v.`nombre`)) = LOWER('Doble Salchicha & Extra Queso')
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 18)
-  AND NOT EXISTS (SELECT 1 FROM `variante_insumo` vi WHERE vi.`idVariante` = v.`idVariante` AND vi.`idInsumo` = 18)
-LIMIT 1;
-INSERT INTO `variante_insumo` (`idVariante`, `tipoAccion`, `idInsumo`, `idInsumoReemplazado`, `cantidad`, `unidadMedida`, `observaciones`)
-SELECT v.`idVariante`, 'MODIFICAR_CANTIDAD', 20, NULL, 0.07, 'kg', NULL
-FROM `variante` v
-WHERE v.`idProducto` = 4 AND LOWER(TRIM(v.`nombre`)) = LOWER('Doble Salchicha & Extra Queso')
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 20)
-  AND NOT EXISTS (SELECT 1 FROM `variante_insumo` vi WHERE vi.`idVariante` = v.`idVariante` AND vi.`idInsumo` = 20)
-LIMIT 1;
-INSERT INTO `fichatecnica` (`idVariante`, `descripcion`, `fechaCreacion`, `idProducto`, `idInsumo`, `tipo`, `procedimiento`, `tiempoPreparacion`, `rendimiento`, `especificaciones`, `caracteristicas`, `informacionNutricional`, `condicionesAlmacenamiento`, `vidaUtil`, `observaciones`, `versionActual`, `estado`)
-SELECT v.`idVariante`, 'Perro americano con doble salchicha premium, tocineta ahumada y extra mozzarella gratinado.', NOW(), 4, NULL, 'VARIANTE', CONCAT('Preparación estándar Chazin Food para ', v.`nombre`), 10, '1 porción', '', CONCAT('Variante: ', v.`nombre`), '', '', '', '', 1, 1
-FROM `variante` v
-WHERE v.`idProducto` = 4 AND LOWER(TRIM(v.`nombre`)) = LOWER('Doble Salchicha & Extra Queso')
-  AND NOT EXISTS (SELECT 1 FROM `fichatecnica` ft WHERE ft.`idVariante` = v.`idVariante` AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1)
-LIMIT 1;
-INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
-SELECT ft.`idFichaTecnica`, 13, 1.00, 'und'
-FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
-WHERE v.`idProducto` = 4 AND LOWER(TRIM(v.`nombre`)) = LOWER('Doble Salchicha & Extra Queso') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 13)
-  AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 13)
-LIMIT 1;
-INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
-SELECT ft.`idFichaTecnica`, 16, 2.00, 'und'
-FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
-WHERE v.`idProducto` = 4 AND LOWER(TRIM(v.`nombre`)) = LOWER('Doble Salchicha & Extra Queso') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 16)
-  AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 16)
-LIMIT 1;
+WHERE v.`idProducto` = 27 AND LOWER(TRIM(v.`nombre`)) = LOWER('En Pan de Papa Gourmet') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1 AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 14) LIMIT 1;
 INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
 SELECT ft.`idFichaTecnica`, 18, 0.04, 'kg'
 FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
-WHERE v.`idProducto` = 4 AND LOWER(TRIM(v.`nombre`)) = LOWER('Doble Salchicha & Extra Queso') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 18)
-  AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 18)
-LIMIT 1;
+WHERE v.`idProducto` = 27 AND LOWER(TRIM(v.`nombre`)) = LOWER('En Pan de Papa Gourmet') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1 AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 18) LIMIT 1;
 INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
-SELECT ft.`idFichaTecnica`, 20, 0.07, 'kg'
+SELECT ft.`idFichaTecnica`, 19, 2.00, 'und'
 FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
-WHERE v.`idProducto` = 4 AND LOWER(TRIM(v.`nombre`)) = LOWER('Doble Salchicha & Extra Queso') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 20)
-  AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 20)
-LIMIT 1;
-
-INSERT INTO `variante` (`idProducto`, `nombre`, `descripcion`, `precio`, `estado`)
-SELECT p.`idProducto`, 'Con Chili & Cheddar Fundido', 'Perro americano cubierto con chili con carne artesanal y salsa de queso cheddar fundido.', 18500.00, COALESCE(p.`estado`, 1)
-FROM `producto` p
-WHERE p.`idProducto` = 4 AND COALESCE(p.`eliminado`, 0) = 0
-  AND NOT EXISTS (SELECT 1 FROM `variante` v WHERE v.`idProducto` = 4 AND LOWER(TRIM(v.`nombre`)) = LOWER('Con Chili & Cheddar Fundido'));
-UPDATE `variante`
-SET `precio` = CASE WHEN COALESCE(`precio`, 0) <= 0 THEN 18500.00 ELSE `precio` END,
-    `descripcion` = CASE WHEN `descripcion` IS NULL OR TRIM(`descripcion`) = '' THEN 'Perro americano cubierto con chili con carne artesanal y salsa de queso cheddar fundido.' ELSE `descripcion` END
-WHERE `idProducto` = 4 AND LOWER(TRIM(`nombre`)) = LOWER('Con Chili & Cheddar Fundido');
-INSERT INTO `variante_insumo` (`idVariante`, `tipoAccion`, `idInsumo`, `idInsumoReemplazado`, `cantidad`, `unidadMedida`, `observaciones`)
-SELECT v.`idVariante`, 'AGREGAR', 39, NULL, 0.06, 'kg', NULL
-FROM `variante` v
-WHERE v.`idProducto` = 4 AND LOWER(TRIM(v.`nombre`)) = LOWER('Con Chili & Cheddar Fundido')
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 39)
-  AND NOT EXISTS (SELECT 1 FROM `variante_insumo` vi WHERE vi.`idVariante` = v.`idVariante` AND vi.`idInsumo` = 39)
-LIMIT 1;
-INSERT INTO `variante_insumo` (`idVariante`, `tipoAccion`, `idInsumo`, `idInsumoReemplazado`, `cantidad`, `unidadMedida`, `observaciones`)
-SELECT v.`idVariante`, 'AGREGAR', 43, NULL, 0.03, 'kg', NULL
-FROM `variante` v
-WHERE v.`idProducto` = 4 AND LOWER(TRIM(v.`nombre`)) = LOWER('Con Chili & Cheddar Fundido')
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 43)
-  AND NOT EXISTS (SELECT 1 FROM `variante_insumo` vi WHERE vi.`idVariante` = v.`idVariante` AND vi.`idInsumo` = 43)
-LIMIT 1;
-INSERT INTO `fichatecnica` (`idVariante`, `descripcion`, `fechaCreacion`, `idProducto`, `idInsumo`, `tipo`, `procedimiento`, `tiempoPreparacion`, `rendimiento`, `especificaciones`, `caracteristicas`, `informacionNutricional`, `condicionesAlmacenamiento`, `vidaUtil`, `observaciones`, `versionActual`, `estado`)
-SELECT v.`idVariante`, 'Perro americano cubierto con chili con carne artesanal y salsa de queso cheddar fundido.', NOW(), 4, NULL, 'VARIANTE', CONCAT('Preparación estándar Chazin Food para ', v.`nombre`), 10, '1 porción', '', CONCAT('Variante: ', v.`nombre`), '', '', '', '', 1, 1
-FROM `variante` v
-WHERE v.`idProducto` = 4 AND LOWER(TRIM(v.`nombre`)) = LOWER('Con Chili & Cheddar Fundido')
-  AND NOT EXISTS (SELECT 1 FROM `fichatecnica` ft WHERE ft.`idVariante` = v.`idVariante` AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1)
-LIMIT 1;
+WHERE v.`idProducto` = 27 AND LOWER(TRIM(v.`nombre`)) = LOWER('En Pan de Papa Gourmet') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1 AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 19) LIMIT 1;
 INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
-SELECT ft.`idFichaTecnica`, 13, 1.00, 'und'
+SELECT ft.`idFichaTecnica`, 24, 0.04, 'kg'
 FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
-WHERE v.`idProducto` = 4 AND LOWER(TRIM(v.`nombre`)) = LOWER('Con Chili & Cheddar Fundido') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 13)
-  AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 13)
-LIMIT 1;
-INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
-SELECT ft.`idFichaTecnica`, 16, 1.00, 'und'
-FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
-WHERE v.`idProducto` = 4 AND LOWER(TRIM(v.`nombre`)) = LOWER('Con Chili & Cheddar Fundido') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 16)
-  AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 16)
-LIMIT 1;
-INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
-SELECT ft.`idFichaTecnica`, 18, 0.03, 'kg'
-FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
-WHERE v.`idProducto` = 4 AND LOWER(TRIM(v.`nombre`)) = LOWER('Con Chili & Cheddar Fundido') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 18)
-  AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 18)
-LIMIT 1;
-INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
-SELECT ft.`idFichaTecnica`, 20, 0.04, 'kg'
-FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
-WHERE v.`idProducto` = 4 AND LOWER(TRIM(v.`nombre`)) = LOWER('Con Chili & Cheddar Fundido') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 20)
-  AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 20)
-LIMIT 1;
-INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
-SELECT ft.`idFichaTecnica`, 39, 0.06, 'kg'
-FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
-WHERE v.`idProducto` = 4 AND LOWER(TRIM(v.`nombre`)) = LOWER('Con Chili & Cheddar Fundido') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 39)
-  AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 39)
-LIMIT 1;
-INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
-SELECT ft.`idFichaTecnica`, 43, 0.03, 'kg'
-FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
-WHERE v.`idProducto` = 4 AND LOWER(TRIM(v.`nombre`)) = LOWER('Con Chili & Cheddar Fundido') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 43)
-  AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 43)
-LIMIT 1;
-
-INSERT INTO `variante` (`idProducto`, `nombre`, `descripcion`, `precio`, `estado`)
-SELECT p.`idProducto`, 'BBQ Tocino & Cebolla', 'Perro caliente americano con extra tocineta, cebolla caramelizada y salsa BBQ ahumada.', 16500.00, COALESCE(p.`estado`, 1)
-FROM `producto` p
-WHERE p.`idProducto` = 4 AND COALESCE(p.`eliminado`, 0) = 0
-  AND NOT EXISTS (SELECT 1 FROM `variante` v WHERE v.`idProducto` = 4 AND LOWER(TRIM(v.`nombre`)) = LOWER('BBQ Tocino & Cebolla'));
-UPDATE `variante`
-SET `precio` = CASE WHEN COALESCE(`precio`, 0) <= 0 THEN 16500.00 ELSE `precio` END,
-    `descripcion` = CASE WHEN `descripcion` IS NULL OR TRIM(`descripcion`) = '' THEN 'Perro caliente americano con extra tocineta, cebolla caramelizada y salsa BBQ ahumada.' ELSE `descripcion` END
-WHERE `idProducto` = 4 AND LOWER(TRIM(`nombre`)) = LOWER('BBQ Tocino & Cebolla');
-INSERT INTO `variante_insumo` (`idVariante`, `tipoAccion`, `idInsumo`, `idInsumoReemplazado`, `cantidad`, `unidadMedida`, `observaciones`)
-SELECT v.`idVariante`, 'MODIFICAR_CANTIDAD', 18, NULL, 0.05, 'kg', NULL
-FROM `variante` v
-WHERE v.`idProducto` = 4 AND LOWER(TRIM(v.`nombre`)) = LOWER('BBQ Tocino & Cebolla')
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 18)
-  AND NOT EXISTS (SELECT 1 FROM `variante_insumo` vi WHERE vi.`idVariante` = v.`idVariante` AND vi.`idInsumo` = 18)
-LIMIT 1;
-INSERT INTO `variante_insumo` (`idVariante`, `tipoAccion`, `idInsumo`, `idInsumoReemplazado`, `cantidad`, `unidadMedida`, `observaciones`)
-SELECT v.`idVariante`, 'AGREGAR', 24, NULL, 0.02, 'kg', NULL
-FROM `variante` v
-WHERE v.`idProducto` = 4 AND LOWER(TRIM(v.`nombre`)) = LOWER('BBQ Tocino & Cebolla')
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 24)
-  AND NOT EXISTS (SELECT 1 FROM `variante_insumo` vi WHERE vi.`idVariante` = v.`idVariante` AND vi.`idInsumo` = 24)
-LIMIT 1;
-INSERT INTO `variante_insumo` (`idVariante`, `tipoAccion`, `idInsumo`, `idInsumoReemplazado`, `cantidad`, `unidadMedida`, `observaciones`)
-SELECT v.`idVariante`, 'AGREGAR', 44, NULL, 0.03, 'kg', NULL
-FROM `variante` v
-WHERE v.`idProducto` = 4 AND LOWER(TRIM(v.`nombre`)) = LOWER('BBQ Tocino & Cebolla')
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 44)
-  AND NOT EXISTS (SELECT 1 FROM `variante_insumo` vi WHERE vi.`idVariante` = v.`idVariante` AND vi.`idInsumo` = 44)
-LIMIT 1;
-INSERT INTO `fichatecnica` (`idVariante`, `descripcion`, `fechaCreacion`, `idProducto`, `idInsumo`, `tipo`, `procedimiento`, `tiempoPreparacion`, `rendimiento`, `especificaciones`, `caracteristicas`, `informacionNutricional`, `condicionesAlmacenamiento`, `vidaUtil`, `observaciones`, `versionActual`, `estado`)
-SELECT v.`idVariante`, 'Perro caliente americano con extra tocineta, cebolla caramelizada y salsa BBQ ahumada.', NOW(), 4, NULL, 'VARIANTE', CONCAT('Preparación estándar Chazin Food para ', v.`nombre`), 10, '1 porción', '', CONCAT('Variante: ', v.`nombre`), '', '', '', '', 1, 1
-FROM `variante` v
-WHERE v.`idProducto` = 4 AND LOWER(TRIM(v.`nombre`)) = LOWER('BBQ Tocino & Cebolla')
-  AND NOT EXISTS (SELECT 1 FROM `fichatecnica` ft WHERE ft.`idVariante` = v.`idVariante` AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1)
-LIMIT 1;
-INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
-SELECT ft.`idFichaTecnica`, 13, 1.00, 'und'
-FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
-WHERE v.`idProducto` = 4 AND LOWER(TRIM(v.`nombre`)) = LOWER('BBQ Tocino & Cebolla') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 13)
-  AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 13)
-LIMIT 1;
-INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
-SELECT ft.`idFichaTecnica`, 16, 1.00, 'und'
-FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
-WHERE v.`idProducto` = 4 AND LOWER(TRIM(v.`nombre`)) = LOWER('BBQ Tocino & Cebolla') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 16)
-  AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 16)
-LIMIT 1;
-INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
-SELECT ft.`idFichaTecnica`, 18, 0.05, 'kg'
-FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
-WHERE v.`idProducto` = 4 AND LOWER(TRIM(v.`nombre`)) = LOWER('BBQ Tocino & Cebolla') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 18)
-  AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 18)
-LIMIT 1;
-INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
-SELECT ft.`idFichaTecnica`, 20, 0.04, 'kg'
-FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
-WHERE v.`idProducto` = 4 AND LOWER(TRIM(v.`nombre`)) = LOWER('BBQ Tocino & Cebolla') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 20)
-  AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 20)
-LIMIT 1;
-INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
-SELECT ft.`idFichaTecnica`, 24, 0.02, 'kg'
-FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
-WHERE v.`idProducto` = 4 AND LOWER(TRIM(v.`nombre`)) = LOWER('BBQ Tocino & Cebolla') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 24)
-  AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 24)
-LIMIT 1;
+WHERE v.`idProducto` = 27 AND LOWER(TRIM(v.`nombre`)) = LOWER('En Pan de Papa Gourmet') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1 AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 24) LIMIT 1;
 INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
 SELECT ft.`idFichaTecnica`, 44, 0.03, 'kg'
 FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
-WHERE v.`idProducto` = 4 AND LOWER(TRIM(v.`nombre`)) = LOWER('BBQ Tocino & Cebolla') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 44)
-  AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 44)
-LIMIT 1;
+WHERE v.`idProducto` = 27 AND LOWER(TRIM(v.`nombre`)) = LOWER('En Pan de Papa Gourmet') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1 AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 44) LIMIT 1;
 
--- Producto #5
+-- Producto #28
 INSERT INTO `variante` (`idProducto`, `nombre`, `descripcion`, `precio`, `estado`)
-SELECT p.`idProducto`, 'Suizo Gratinado con Tártara & Cheddar', 'Salchicha suiza ahumada con gratinado extra de mozzarella, salsa cheddar y tártara de la casa.', 19500.00, COALESCE(p.`estado`, 1)
+SELECT p.`idProducto`, 'Doble Carne Mexicana (300g)', 'Doble carne de res 300g manteniendo guacamole fresco, jalapeños y mozzarella.', 29000.00, COALESCE(p.`estado`, 1)
 FROM `producto` p
-WHERE p.`idProducto` = 5 AND COALESCE(p.`eliminado`, 0) = 0
-  AND NOT EXISTS (SELECT 1 FROM `variante` v WHERE v.`idProducto` = 5 AND LOWER(TRIM(v.`nombre`)) = LOWER('Suizo Gratinado con Tártara & Cheddar'));
-UPDATE `variante`
-SET `precio` = CASE WHEN COALESCE(`precio`, 0) <= 0 THEN 19500.00 ELSE `precio` END,
-    `descripcion` = CASE WHEN `descripcion` IS NULL OR TRIM(`descripcion`) = '' THEN 'Salchicha suiza ahumada con gratinado extra de mozzarella, salsa cheddar y tártara de la casa.' ELSE `descripcion` END
-WHERE `idProducto` = 5 AND LOWER(TRIM(`nombre`)) = LOWER('Suizo Gratinado con Tártara & Cheddar');
+WHERE p.`idProducto` = 28 AND COALESCE(p.`eliminado`, 0) = 0
+  AND NOT EXISTS (SELECT 1 FROM `variante` v WHERE v.`idProducto` = 28 AND LOWER(TRIM(v.`nombre`)) = LOWER('Doble Carne Mexicana (300g)'));
+UPDATE `variante` SET `precio` = 29000.00, `descripcion` = 'Doble carne de res 300g manteniendo guacamole fresco, jalapeños y mozzarella.', `estado` = 1
+WHERE `idProducto` = 28 AND LOWER(TRIM(`nombre`)) = LOWER('Doble Carne Mexicana (300g)');
+DELETE FROM `variante_insumo` WHERE `idVariante` IN (SELECT `idVariante` FROM `variante` WHERE `idProducto` = 28 AND LOWER(TRIM(`nombre`)) = LOWER('Doble Carne Mexicana (300g)'));
 INSERT INTO `variante_insumo` (`idVariante`, `tipoAccion`, `idInsumo`, `idInsumoReemplazado`, `cantidad`, `unidadMedida`, `observaciones`)
-SELECT v.`idVariante`, 'MODIFICAR_CANTIDAD', 20, NULL, 0.08, 'kg', NULL
-FROM `variante` v
-WHERE v.`idProducto` = 5 AND LOWER(TRIM(v.`nombre`)) = LOWER('Suizo Gratinado con Tártara & Cheddar')
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 20)
-  AND NOT EXISTS (SELECT 1 FROM `variante_insumo` vi WHERE vi.`idVariante` = v.`idVariante` AND vi.`idInsumo` = 20)
-LIMIT 1;
-INSERT INTO `variante_insumo` (`idVariante`, `tipoAccion`, `idInsumo`, `idInsumoReemplazado`, `cantidad`, `unidadMedida`, `observaciones`)
-SELECT v.`idVariante`, 'AGREGAR', 43, NULL, 0.03, 'kg', NULL
-FROM `variante` v
-WHERE v.`idProducto` = 5 AND LOWER(TRIM(v.`nombre`)) = LOWER('Suizo Gratinado con Tártara & Cheddar')
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 43)
-  AND NOT EXISTS (SELECT 1 FROM `variante_insumo` vi WHERE vi.`idVariante` = v.`idVariante` AND vi.`idInsumo` = 43)
-LIMIT 1;
-INSERT INTO `variante_insumo` (`idVariante`, `tipoAccion`, `idInsumo`, `idInsumoReemplazado`, `cantidad`, `unidadMedida`, `observaciones`)
-SELECT v.`idVariante`, 'AGREGAR', 45, NULL, 0.03, 'kg', NULL
-FROM `variante` v
-WHERE v.`idProducto` = 5 AND LOWER(TRIM(v.`nombre`)) = LOWER('Suizo Gratinado con Tártara & Cheddar')
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 45)
-  AND NOT EXISTS (SELECT 1 FROM `variante_insumo` vi WHERE vi.`idVariante` = v.`idVariante` AND vi.`idInsumo` = 45)
-LIMIT 1;
+SELECT v.`idVariante`, 'MODIFICAR_CANTIDAD', 14, NULL, 0.30, 'kg', NULL
+FROM `variante` v WHERE v.`idProducto` = 28 AND LOWER(TRIM(v.`nombre`)) = LOWER('Doble Carne Mexicana (300g)') AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 14) LIMIT 1;
 INSERT INTO `fichatecnica` (`idVariante`, `descripcion`, `fechaCreacion`, `idProducto`, `idInsumo`, `tipo`, `procedimiento`, `tiempoPreparacion`, `rendimiento`, `especificaciones`, `caracteristicas`, `informacionNutricional`, `condicionesAlmacenamiento`, `vidaUtil`, `observaciones`, `versionActual`, `estado`)
-SELECT v.`idVariante`, 'Salchicha suiza ahumada con gratinado extra de mozzarella, salsa cheddar y tártara de la casa.', NOW(), 5, NULL, 'VARIANTE', CONCAT('Preparación estándar Chazin Food para ', v.`nombre`), 11, '1 porción', '', CONCAT('Variante: ', v.`nombre`), '', '', '', '', 1, 1
-FROM `variante` v
-WHERE v.`idProducto` = 5 AND LOWER(TRIM(v.`nombre`)) = LOWER('Suizo Gratinado con Tártara & Cheddar')
-  AND NOT EXISTS (SELECT 1 FROM `fichatecnica` ft WHERE ft.`idVariante` = v.`idVariante` AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1)
-LIMIT 1;
+SELECT v.`idVariante`, 'Doble carne de res 300g manteniendo guacamole fresco, jalapeños y mozzarella.', NOW(), 28, NULL, 'VARIANTE', CONCAT('Preparación estándar Chazin Food para ', v.`nombre`), 15, '1 porción (300g)', 'Cocción completa (>70°C en el centro), empaque térmico y control de gramaje estándar.', CONCAT('Presentación ', v.`nombre`, ', aroma fresco, color dorado uniforme y textura equilibrada.'), 'Porción estándar: ~680 kcal | Proteínas: 34g | Carbohidratos: 48g | Grasas: 35g.', 'Consumo inmediato en mesa o en empaque térmico antigrasa antes de 25 minutos.', 'Consumo inmediato', '', 1, 1
+FROM `variante` v WHERE v.`idProducto` = 28 AND LOWER(TRIM(v.`nombre`)) = LOWER('Doble Carne Mexicana (300g)')
+  AND NOT EXISTS (SELECT 1 FROM `fichatecnica` ft WHERE ft.`idVariante` = v.`idVariante` AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1) LIMIT 1;
+DELETE FROM `detallefichainsumo` WHERE `idFichaTecnica` IN (SELECT ft.`idFichaTecnica` FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante` WHERE v.`idProducto` = 28 AND LOWER(TRIM(v.`nombre`)) = LOWER('Doble Carne Mexicana (300g)') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1);
 INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
-SELECT ft.`idFichaTecnica`, 13, 1.00, 'und'
+SELECT ft.`idFichaTecnica`, 12, 1.00, 'und'
 FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
-WHERE v.`idProducto` = 5 AND LOWER(TRIM(v.`nombre`)) = LOWER('Suizo Gratinado con Tártara & Cheddar') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 13)
-  AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 13)
-LIMIT 1;
+WHERE v.`idProducto` = 28 AND LOWER(TRIM(v.`nombre`)) = LOWER('Doble Carne Mexicana (300g)') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1 AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 12) LIMIT 1;
 INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
-SELECT ft.`idFichaTecnica`, 17, 1.00, 'und'
+SELECT ft.`idFichaTecnica`, 14, 0.30, 'kg'
 FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
-WHERE v.`idProducto` = 5 AND LOWER(TRIM(v.`nombre`)) = LOWER('Suizo Gratinado con Tártara & Cheddar') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 17)
-  AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 17)
-LIMIT 1;
+WHERE v.`idProducto` = 28 AND LOWER(TRIM(v.`nombre`)) = LOWER('Doble Carne Mexicana (300g)') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1 AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 14) LIMIT 1;
 INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
-SELECT ft.`idFichaTecnica`, 18, 0.03, 'kg'
+SELECT ft.`idFichaTecnica`, 40, 0.05, 'kg'
 FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
-WHERE v.`idProducto` = 5 AND LOWER(TRIM(v.`nombre`)) = LOWER('Suizo Gratinado con Tártara & Cheddar') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 18)
-  AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 18)
-LIMIT 1;
+WHERE v.`idProducto` = 28 AND LOWER(TRIM(v.`nombre`)) = LOWER('Doble Carne Mexicana (300g)') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1 AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 40) LIMIT 1;
 INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
-SELECT ft.`idFichaTecnica`, 20, 0.08, 'kg'
+SELECT ft.`idFichaTecnica`, 25, 0.02, 'kg'
 FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
-WHERE v.`idProducto` = 5 AND LOWER(TRIM(v.`nombre`)) = LOWER('Suizo Gratinado con Tártara & Cheddar') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 20)
-  AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 20)
-LIMIT 1;
+WHERE v.`idProducto` = 28 AND LOWER(TRIM(v.`nombre`)) = LOWER('Doble Carne Mexicana (300g)') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1 AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 25) LIMIT 1;
 INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
-SELECT ft.`idFichaTecnica`, 24, 0.03, 'kg'
+SELECT ft.`idFichaTecnica`, 20, 0.04, 'kg'
 FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
-WHERE v.`idProducto` = 5 AND LOWER(TRIM(v.`nombre`)) = LOWER('Suizo Gratinado con Tártara & Cheddar') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 24)
-  AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 24)
-LIMIT 1;
+WHERE v.`idProducto` = 28 AND LOWER(TRIM(v.`nombre`)) = LOWER('Doble Carne Mexicana (300g)') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1 AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 20) LIMIT 1;
 INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
-SELECT ft.`idFichaTecnica`, 43, 0.03, 'kg'
+SELECT ft.`idFichaTecnica`, 22, 0.02, 'kg'
 FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
-WHERE v.`idProducto` = 5 AND LOWER(TRIM(v.`nombre`)) = LOWER('Suizo Gratinado con Tártara & Cheddar') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 43)
-  AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 43)
-LIMIT 1;
-INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
-SELECT ft.`idFichaTecnica`, 45, 0.03, 'kg'
-FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
-WHERE v.`idProducto` = 5 AND LOWER(TRIM(v.`nombre`)) = LOWER('Suizo Gratinado con Tártara & Cheddar') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 45)
-  AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 45)
-LIMIT 1;
+WHERE v.`idProducto` = 28 AND LOWER(TRIM(v.`nombre`)) = LOWER('Doble Carne Mexicana (300g)') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1 AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 22) LIMIT 1;
 
 INSERT INTO `variante` (`idProducto`, `nombre`, `descripcion`, `precio`, `estado`)
-SELECT p.`idProducto`, 'Doble Salchicha Suiza Jumbo', 'Edición jumbo con doble salchicha suiza artesanal ahumada, tocineta y queso mozzarella.', 22500.00, COALESCE(p.`estado`, 1)
+SELECT p.`idProducto`, 'En Pan Integral Artesanal con Semillas', 'Versión en pan integral artesanal con semillas en lugar de pan brioche.', 24500.00, COALESCE(p.`estado`, 1)
 FROM `producto` p
-WHERE p.`idProducto` = 5 AND COALESCE(p.`eliminado`, 0) = 0
-  AND NOT EXISTS (SELECT 1 FROM `variante` v WHERE v.`idProducto` = 5 AND LOWER(TRIM(v.`nombre`)) = LOWER('Doble Salchicha Suiza Jumbo'));
-UPDATE `variante`
-SET `precio` = CASE WHEN COALESCE(`precio`, 0) <= 0 THEN 22500.00 ELSE `precio` END,
-    `descripcion` = CASE WHEN `descripcion` IS NULL OR TRIM(`descripcion`) = '' THEN 'Edición jumbo con doble salchicha suiza artesanal ahumada, tocineta y queso mozzarella.' ELSE `descripcion` END
-WHERE `idProducto` = 5 AND LOWER(TRIM(`nombre`)) = LOWER('Doble Salchicha Suiza Jumbo');
+WHERE p.`idProducto` = 28 AND COALESCE(p.`eliminado`, 0) = 0
+  AND NOT EXISTS (SELECT 1 FROM `variante` v WHERE v.`idProducto` = 28 AND LOWER(TRIM(v.`nombre`)) = LOWER('En Pan Integral Artesanal con Semillas'));
+UPDATE `variante` SET `precio` = 24500.00, `descripcion` = 'Versión en pan integral artesanal con semillas en lugar de pan brioche.', `estado` = 1
+WHERE `idProducto` = 28 AND LOWER(TRIM(`nombre`)) = LOWER('En Pan Integral Artesanal con Semillas');
+DELETE FROM `variante_insumo` WHERE `idVariante` IN (SELECT `idVariante` FROM `variante` WHERE `idProducto` = 28 AND LOWER(TRIM(`nombre`)) = LOWER('En Pan Integral Artesanal con Semillas'));
 INSERT INTO `variante_insumo` (`idVariante`, `tipoAccion`, `idInsumo`, `idInsumoReemplazado`, `cantidad`, `unidadMedida`, `observaciones`)
-SELECT v.`idVariante`, 'MODIFICAR_CANTIDAD', 17, NULL, 2.00, 'und', NULL
-FROM `variante` v
-WHERE v.`idProducto` = 5 AND LOWER(TRIM(v.`nombre`)) = LOWER('Doble Salchicha Suiza Jumbo')
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 17)
-  AND NOT EXISTS (SELECT 1 FROM `variante_insumo` vi WHERE vi.`idVariante` = v.`idVariante` AND vi.`idInsumo` = 17)
-LIMIT 1;
-INSERT INTO `variante_insumo` (`idVariante`, `tipoAccion`, `idInsumo`, `idInsumoReemplazado`, `cantidad`, `unidadMedida`, `observaciones`)
-SELECT v.`idVariante`, 'MODIFICAR_CANTIDAD', 18, NULL, 0.05, 'kg', NULL
-FROM `variante` v
-WHERE v.`idProducto` = 5 AND LOWER(TRIM(v.`nombre`)) = LOWER('Doble Salchicha Suiza Jumbo')
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 18)
-  AND NOT EXISTS (SELECT 1 FROM `variante_insumo` vi WHERE vi.`idVariante` = v.`idVariante` AND vi.`idInsumo` = 18)
-LIMIT 1;
-INSERT INTO `variante_insumo` (`idVariante`, `tipoAccion`, `idInsumo`, `idInsumoReemplazado`, `cantidad`, `unidadMedida`, `observaciones`)
-SELECT v.`idVariante`, 'MODIFICAR_CANTIDAD', 20, NULL, 0.07, 'kg', NULL
-FROM `variante` v
-WHERE v.`idProducto` = 5 AND LOWER(TRIM(v.`nombre`)) = LOWER('Doble Salchicha Suiza Jumbo')
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 20)
-  AND NOT EXISTS (SELECT 1 FROM `variante_insumo` vi WHERE vi.`idVariante` = v.`idVariante` AND vi.`idInsumo` = 20)
-LIMIT 1;
+SELECT v.`idVariante`, 'REEMPLAZAR', 49, 12, 1.00, 'und', NULL
+FROM `variante` v WHERE v.`idProducto` = 28 AND LOWER(TRIM(v.`nombre`)) = LOWER('En Pan Integral Artesanal con Semillas') AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 49) LIMIT 1;
 INSERT INTO `fichatecnica` (`idVariante`, `descripcion`, `fechaCreacion`, `idProducto`, `idInsumo`, `tipo`, `procedimiento`, `tiempoPreparacion`, `rendimiento`, `especificaciones`, `caracteristicas`, `informacionNutricional`, `condicionesAlmacenamiento`, `vidaUtil`, `observaciones`, `versionActual`, `estado`)
-SELECT v.`idVariante`, 'Edición jumbo con doble salchicha suiza artesanal ahumada, tocineta y queso mozzarella.', NOW(), 5, NULL, 'VARIANTE', CONCAT('Preparación estándar Chazin Food para ', v.`nombre`), 12, '1 porción Jumbo', '', CONCAT('Variante: ', v.`nombre`), '', '', '', '', 1, 1
-FROM `variante` v
-WHERE v.`idProducto` = 5 AND LOWER(TRIM(v.`nombre`)) = LOWER('Doble Salchicha Suiza Jumbo')
-  AND NOT EXISTS (SELECT 1 FROM `fichatecnica` ft WHERE ft.`idVariante` = v.`idVariante` AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1)
-LIMIT 1;
+SELECT v.`idVariante`, 'Versión en pan integral artesanal con semillas en lugar de pan brioche.', NOW(), 28, NULL, 'VARIANTE', CONCAT('Preparación estándar Chazin Food para ', v.`nombre`), 10, '1 porción', 'Cocción completa (>70°C en el centro), empaque térmico y control de gramaje estándar.', CONCAT('Presentación ', v.`nombre`, ', aroma fresco, color dorado uniforme y textura equilibrada.'), 'Porción estándar: ~680 kcal | Proteínas: 34g | Carbohidratos: 48g | Grasas: 35g.', 'Consumo inmediato en mesa o en empaque térmico antigrasa antes de 25 minutos.', 'Consumo inmediato', '', 1, 1
+FROM `variante` v WHERE v.`idProducto` = 28 AND LOWER(TRIM(v.`nombre`)) = LOWER('En Pan Integral Artesanal con Semillas')
+  AND NOT EXISTS (SELECT 1 FROM `fichatecnica` ft WHERE ft.`idVariante` = v.`idVariante` AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1) LIMIT 1;
+DELETE FROM `detallefichainsumo` WHERE `idFichaTecnica` IN (SELECT ft.`idFichaTecnica` FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante` WHERE v.`idProducto` = 28 AND LOWER(TRIM(v.`nombre`)) = LOWER('En Pan Integral Artesanal con Semillas') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1);
 INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
-SELECT ft.`idFichaTecnica`, 13, 1.00, 'und'
+SELECT ft.`idFichaTecnica`, 49, 1.00, 'und'
 FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
-WHERE v.`idProducto` = 5 AND LOWER(TRIM(v.`nombre`)) = LOWER('Doble Salchicha Suiza Jumbo') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 13)
-  AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 13)
-LIMIT 1;
+WHERE v.`idProducto` = 28 AND LOWER(TRIM(v.`nombre`)) = LOWER('En Pan Integral Artesanal con Semillas') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1 AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 49) LIMIT 1;
 INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
-SELECT ft.`idFichaTecnica`, 17, 2.00, 'und'
+SELECT ft.`idFichaTecnica`, 14, 0.15, 'kg'
 FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
-WHERE v.`idProducto` = 5 AND LOWER(TRIM(v.`nombre`)) = LOWER('Doble Salchicha Suiza Jumbo') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 17)
-  AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 17)
-LIMIT 1;
+WHERE v.`idProducto` = 28 AND LOWER(TRIM(v.`nombre`)) = LOWER('En Pan Integral Artesanal con Semillas') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1 AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 14) LIMIT 1;
 INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
-SELECT ft.`idFichaTecnica`, 18, 0.05, 'kg'
+SELECT ft.`idFichaTecnica`, 40, 0.05, 'kg'
 FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
-WHERE v.`idProducto` = 5 AND LOWER(TRIM(v.`nombre`)) = LOWER('Doble Salchicha Suiza Jumbo') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 18)
-  AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 18)
-LIMIT 1;
+WHERE v.`idProducto` = 28 AND LOWER(TRIM(v.`nombre`)) = LOWER('En Pan Integral Artesanal con Semillas') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1 AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 40) LIMIT 1;
 INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
-SELECT ft.`idFichaTecnica`, 20, 0.07, 'kg'
+SELECT ft.`idFichaTecnica`, 25, 0.02, 'kg'
 FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
-WHERE v.`idProducto` = 5 AND LOWER(TRIM(v.`nombre`)) = LOWER('Doble Salchicha Suiza Jumbo') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 20)
-  AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 20)
-LIMIT 1;
+WHERE v.`idProducto` = 28 AND LOWER(TRIM(v.`nombre`)) = LOWER('En Pan Integral Artesanal con Semillas') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1 AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 25) LIMIT 1;
 INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
-SELECT ft.`idFichaTecnica`, 24, 0.03, 'kg'
+SELECT ft.`idFichaTecnica`, 20, 0.04, 'kg'
 FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
-WHERE v.`idProducto` = 5 AND LOWER(TRIM(v.`nombre`)) = LOWER('Doble Salchicha Suiza Jumbo') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 24)
-  AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 24)
-LIMIT 1;
+WHERE v.`idProducto` = 28 AND LOWER(TRIM(v.`nombre`)) = LOWER('En Pan Integral Artesanal con Semillas') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1 AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 20) LIMIT 1;
+INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
+SELECT ft.`idFichaTecnica`, 22, 0.02, 'kg'
+FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
+WHERE v.`idProducto` = 28 AND LOWER(TRIM(v.`nombre`)) = LOWER('En Pan Integral Artesanal con Semillas') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1 AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 22) LIMIT 1;
 
--- Producto #30
 INSERT INTO `variante` (`idProducto`, `nombre`, `descripcion`, `precio`, `estado`)
-SELECT p.`idProducto`, 'Mexicano Extra Picante & Doble Salchicha', 'Doble salchicha americana con extra guacamole, doble jalapeño picante, cheddar y tocineta.', 20500.00, COALESCE(p.`estado`, 1)
+SELECT p.`idProducto`, 'Sabor Salsa Buffalo Picante Artesanal', 'Perfil de sabor picante intenso bañado con salsa buffalo picante artesanal.', 24500.00, COALESCE(p.`estado`, 1)
 FROM `producto` p
-WHERE p.`idProducto` = 30 AND COALESCE(p.`eliminado`, 0) = 0
-  AND NOT EXISTS (SELECT 1 FROM `variante` v WHERE v.`idProducto` = 30 AND LOWER(TRIM(v.`nombre`)) = LOWER('Mexicano Extra Picante & Doble Salchicha'));
-UPDATE `variante`
-SET `precio` = CASE WHEN COALESCE(`precio`, 0) <= 0 THEN 20500.00 ELSE `precio` END,
-    `descripcion` = CASE WHEN `descripcion` IS NULL OR TRIM(`descripcion`) = '' THEN 'Doble salchicha americana con extra guacamole, doble jalapeño picante, cheddar y tocineta.' ELSE `descripcion` END
-WHERE `idProducto` = 30 AND LOWER(TRIM(`nombre`)) = LOWER('Mexicano Extra Picante & Doble Salchicha');
+WHERE p.`idProducto` = 28 AND COALESCE(p.`eliminado`, 0) = 0
+  AND NOT EXISTS (SELECT 1 FROM `variante` v WHERE v.`idProducto` = 28 AND LOWER(TRIM(v.`nombre`)) = LOWER('Sabor Salsa Buffalo Picante Artesanal'));
+UPDATE `variante` SET `precio` = 24500.00, `descripcion` = 'Perfil de sabor picante intenso bañado con salsa buffalo picante artesanal.', `estado` = 1
+WHERE `idProducto` = 28 AND LOWER(TRIM(`nombre`)) = LOWER('Sabor Salsa Buffalo Picante Artesanal');
+DELETE FROM `variante_insumo` WHERE `idVariante` IN (SELECT `idVariante` FROM `variante` WHERE `idProducto` = 28 AND LOWER(TRIM(`nombre`)) = LOWER('Sabor Salsa Buffalo Picante Artesanal'));
+INSERT INTO `variante_insumo` (`idVariante`, `tipoAccion`, `idInsumo`, `idInsumoReemplazado`, `cantidad`, `unidadMedida`, `observaciones`)
+SELECT v.`idVariante`, 'AGREGAR', 56, NULL, 0.03, 'kg', NULL
+FROM `variante` v WHERE v.`idProducto` = 28 AND LOWER(TRIM(v.`nombre`)) = LOWER('Sabor Salsa Buffalo Picante Artesanal') AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 56) LIMIT 1;
+INSERT INTO `fichatecnica` (`idVariante`, `descripcion`, `fechaCreacion`, `idProducto`, `idInsumo`, `tipo`, `procedimiento`, `tiempoPreparacion`, `rendimiento`, `especificaciones`, `caracteristicas`, `informacionNutricional`, `condicionesAlmacenamiento`, `vidaUtil`, `observaciones`, `versionActual`, `estado`)
+SELECT v.`idVariante`, 'Perfil de sabor picante intenso bañado con salsa buffalo picante artesanal.', NOW(), 28, NULL, 'VARIANTE', CONCAT('Preparación estándar Chazin Food para ', v.`nombre`), 11, '1 porción', 'Cocción completa (>70°C en el centro), empaque térmico y control de gramaje estándar.', CONCAT('Presentación ', v.`nombre`, ', aroma fresco, color dorado uniforme y textura equilibrada.'), 'Porción estándar: ~680 kcal | Proteínas: 34g | Carbohidratos: 48g | Grasas: 35g.', 'Consumo inmediato en mesa o en empaque térmico antigrasa antes de 25 minutos.', 'Consumo inmediato', '', 1, 1
+FROM `variante` v WHERE v.`idProducto` = 28 AND LOWER(TRIM(v.`nombre`)) = LOWER('Sabor Salsa Buffalo Picante Artesanal')
+  AND NOT EXISTS (SELECT 1 FROM `fichatecnica` ft WHERE ft.`idVariante` = v.`idVariante` AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1) LIMIT 1;
+DELETE FROM `detallefichainsumo` WHERE `idFichaTecnica` IN (SELECT ft.`idFichaTecnica` FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante` WHERE v.`idProducto` = 28 AND LOWER(TRIM(v.`nombre`)) = LOWER('Sabor Salsa Buffalo Picante Artesanal') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1);
+INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
+SELECT ft.`idFichaTecnica`, 12, 1.00, 'und'
+FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
+WHERE v.`idProducto` = 28 AND LOWER(TRIM(v.`nombre`)) = LOWER('Sabor Salsa Buffalo Picante Artesanal') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1 AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 12) LIMIT 1;
+INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
+SELECT ft.`idFichaTecnica`, 14, 0.15, 'kg'
+FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
+WHERE v.`idProducto` = 28 AND LOWER(TRIM(v.`nombre`)) = LOWER('Sabor Salsa Buffalo Picante Artesanal') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1 AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 14) LIMIT 1;
+INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
+SELECT ft.`idFichaTecnica`, 40, 0.05, 'kg'
+FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
+WHERE v.`idProducto` = 28 AND LOWER(TRIM(v.`nombre`)) = LOWER('Sabor Salsa Buffalo Picante Artesanal') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1 AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 40) LIMIT 1;
+INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
+SELECT ft.`idFichaTecnica`, 25, 0.02, 'kg'
+FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
+WHERE v.`idProducto` = 28 AND LOWER(TRIM(v.`nombre`)) = LOWER('Sabor Salsa Buffalo Picante Artesanal') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1 AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 25) LIMIT 1;
+INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
+SELECT ft.`idFichaTecnica`, 20, 0.04, 'kg'
+FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
+WHERE v.`idProducto` = 28 AND LOWER(TRIM(v.`nombre`)) = LOWER('Sabor Salsa Buffalo Picante Artesanal') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1 AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 20) LIMIT 1;
+INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
+SELECT ft.`idFichaTecnica`, 56, 0.03, 'kg'
+FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
+WHERE v.`idProducto` = 28 AND LOWER(TRIM(v.`nombre`)) = LOWER('Sabor Salsa Buffalo Picante Artesanal') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1 AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 56) LIMIT 1;
+INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
+SELECT ft.`idFichaTecnica`, 22, 0.02, 'kg'
+FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
+WHERE v.`idProducto` = 28 AND LOWER(TRIM(v.`nombre`)) = LOWER('Sabor Salsa Buffalo Picante Artesanal') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1 AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 22) LIMIT 1;
+
+-- Producto #4
+INSERT INTO `variante` (`idProducto`, `nombre`, `descripcion`, `precio`, `estado`)
+SELECT p.`idProducto`, 'Doble Salchicha Americana (Jumbo)', 'Doble salchicha americana premium manteniendo tocineta y queso mozzarella.', 17500.00, COALESCE(p.`estado`, 1)
+FROM `producto` p
+WHERE p.`idProducto` = 4 AND COALESCE(p.`eliminado`, 0) = 0
+  AND NOT EXISTS (SELECT 1 FROM `variante` v WHERE v.`idProducto` = 4 AND LOWER(TRIM(v.`nombre`)) = LOWER('Doble Salchicha Americana (Jumbo)'));
+UPDATE `variante` SET `precio` = 17500.00, `descripcion` = 'Doble salchicha americana premium manteniendo tocineta y queso mozzarella.', `estado` = 1
+WHERE `idProducto` = 4 AND LOWER(TRIM(`nombre`)) = LOWER('Doble Salchicha Americana (Jumbo)');
+DELETE FROM `variante_insumo` WHERE `idVariante` IN (SELECT `idVariante` FROM `variante` WHERE `idProducto` = 4 AND LOWER(TRIM(`nombre`)) = LOWER('Doble Salchicha Americana (Jumbo)'));
 INSERT INTO `variante_insumo` (`idVariante`, `tipoAccion`, `idInsumo`, `idInsumoReemplazado`, `cantidad`, `unidadMedida`, `observaciones`)
 SELECT v.`idVariante`, 'MODIFICAR_CANTIDAD', 16, NULL, 2.00, 'und', NULL
-FROM `variante` v
-WHERE v.`idProducto` = 30 AND LOWER(TRIM(v.`nombre`)) = LOWER('Mexicano Extra Picante & Doble Salchicha')
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 16)
-  AND NOT EXISTS (SELECT 1 FROM `variante_insumo` vi WHERE vi.`idVariante` = v.`idVariante` AND vi.`idInsumo` = 16)
-LIMIT 1;
-INSERT INTO `variante_insumo` (`idVariante`, `tipoAccion`, `idInsumo`, `idInsumoReemplazado`, `cantidad`, `unidadMedida`, `observaciones`)
-SELECT v.`idVariante`, 'MODIFICAR_CANTIDAD', 40, NULL, 0.06, 'kg', NULL
-FROM `variante` v
-WHERE v.`idProducto` = 30 AND LOWER(TRIM(v.`nombre`)) = LOWER('Mexicano Extra Picante & Doble Salchicha')
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 40)
-  AND NOT EXISTS (SELECT 1 FROM `variante_insumo` vi WHERE vi.`idVariante` = v.`idVariante` AND vi.`idInsumo` = 40)
-LIMIT 1;
-INSERT INTO `variante_insumo` (`idVariante`, `tipoAccion`, `idInsumo`, `idInsumoReemplazado`, `cantidad`, `unidadMedida`, `observaciones`)
-SELECT v.`idVariante`, 'MODIFICAR_CANTIDAD', 43, NULL, 0.04, 'kg', NULL
-FROM `variante` v
-WHERE v.`idProducto` = 30 AND LOWER(TRIM(v.`nombre`)) = LOWER('Mexicano Extra Picante & Doble Salchicha')
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 43)
-  AND NOT EXISTS (SELECT 1 FROM `variante_insumo` vi WHERE vi.`idVariante` = v.`idVariante` AND vi.`idInsumo` = 43)
-LIMIT 1;
-INSERT INTO `variante_insumo` (`idVariante`, `tipoAccion`, `idInsumo`, `idInsumoReemplazado`, `cantidad`, `unidadMedida`, `observaciones`)
-SELECT v.`idVariante`, 'MODIFICAR_CANTIDAD', 18, NULL, 0.03, 'kg', NULL
-FROM `variante` v
-WHERE v.`idProducto` = 30 AND LOWER(TRIM(v.`nombre`)) = LOWER('Mexicano Extra Picante & Doble Salchicha')
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 18)
-  AND NOT EXISTS (SELECT 1 FROM `variante_insumo` vi WHERE vi.`idVariante` = v.`idVariante` AND vi.`idInsumo` = 18)
-LIMIT 1;
-INSERT INTO `variante_insumo` (`idVariante`, `tipoAccion`, `idInsumo`, `idInsumoReemplazado`, `cantidad`, `unidadMedida`, `observaciones`)
-SELECT v.`idVariante`, 'MODIFICAR_CANTIDAD', 25, NULL, 0.04, 'kg', NULL
-FROM `variante` v
-WHERE v.`idProducto` = 30 AND LOWER(TRIM(v.`nombre`)) = LOWER('Mexicano Extra Picante & Doble Salchicha')
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 25)
-  AND NOT EXISTS (SELECT 1 FROM `variante_insumo` vi WHERE vi.`idVariante` = v.`idVariante` AND vi.`idInsumo` = 25)
-LIMIT 1;
+FROM `variante` v WHERE v.`idProducto` = 4 AND LOWER(TRIM(v.`nombre`)) = LOWER('Doble Salchicha Americana (Jumbo)') AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 16) LIMIT 1;
 INSERT INTO `fichatecnica` (`idVariante`, `descripcion`, `fechaCreacion`, `idProducto`, `idInsumo`, `tipo`, `procedimiento`, `tiempoPreparacion`, `rendimiento`, `especificaciones`, `caracteristicas`, `informacionNutricional`, `condicionesAlmacenamiento`, `vidaUtil`, `observaciones`, `versionActual`, `estado`)
-SELECT v.`idVariante`, 'Doble salchicha americana con extra guacamole, doble jalapeño picante, cheddar y tocineta.', NOW(), 30, NULL, 'VARIANTE', CONCAT('Preparación estándar Chazin Food para ', v.`nombre`), 12, '1 porción', '', CONCAT('Variante: ', v.`nombre`), '', '', '', '', 1, 1
-FROM `variante` v
-WHERE v.`idProducto` = 30 AND LOWER(TRIM(v.`nombre`)) = LOWER('Mexicano Extra Picante & Doble Salchicha')
-  AND NOT EXISTS (SELECT 1 FROM `fichatecnica` ft WHERE ft.`idVariante` = v.`idVariante` AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1)
-LIMIT 1;
+SELECT v.`idVariante`, 'Doble salchicha americana premium manteniendo tocineta y queso mozzarella.', NOW(), 4, NULL, 'VARIANTE', CONCAT('Preparación estándar Chazin Food para ', v.`nombre`), 10, '1 porción Jumbo', 'Cocción completa (>70°C en el centro), empaque térmico y control de gramaje estándar.', CONCAT('Presentación ', v.`nombre`, ', aroma fresco, color dorado uniforme y textura equilibrada.'), 'Porción estándar: ~680 kcal | Proteínas: 34g | Carbohidratos: 48g | Grasas: 35g.', 'Consumo inmediato en mesa o en empaque térmico antigrasa antes de 25 minutos.', 'Consumo inmediato', '', 1, 1
+FROM `variante` v WHERE v.`idProducto` = 4 AND LOWER(TRIM(v.`nombre`)) = LOWER('Doble Salchicha Americana (Jumbo)')
+  AND NOT EXISTS (SELECT 1 FROM `fichatecnica` ft WHERE ft.`idVariante` = v.`idVariante` AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1) LIMIT 1;
+DELETE FROM `detallefichainsumo` WHERE `idFichaTecnica` IN (SELECT ft.`idFichaTecnica` FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante` WHERE v.`idProducto` = 4 AND LOWER(TRIM(v.`nombre`)) = LOWER('Doble Salchicha Americana (Jumbo)') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1);
 INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
 SELECT ft.`idFichaTecnica`, 13, 1.00, 'und'
 FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
-WHERE v.`idProducto` = 30 AND LOWER(TRIM(v.`nombre`)) = LOWER('Mexicano Extra Picante & Doble Salchicha') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 13)
-  AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 13)
-LIMIT 1;
+WHERE v.`idProducto` = 4 AND LOWER(TRIM(v.`nombre`)) = LOWER('Doble Salchicha Americana (Jumbo)') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1 AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 13) LIMIT 1;
 INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
 SELECT ft.`idFichaTecnica`, 16, 2.00, 'und'
 FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
-WHERE v.`idProducto` = 30 AND LOWER(TRIM(v.`nombre`)) = LOWER('Mexicano Extra Picante & Doble Salchicha') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 16)
-  AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 16)
-LIMIT 1;
-INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
-SELECT ft.`idFichaTecnica`, 40, 0.06, 'kg'
-FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
-WHERE v.`idProducto` = 30 AND LOWER(TRIM(v.`nombre`)) = LOWER('Mexicano Extra Picante & Doble Salchicha') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 40)
-  AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 40)
-LIMIT 1;
-INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
-SELECT ft.`idFichaTecnica`, 43, 0.04, 'kg'
-FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
-WHERE v.`idProducto` = 30 AND LOWER(TRIM(v.`nombre`)) = LOWER('Mexicano Extra Picante & Doble Salchicha') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 43)
-  AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 43)
-LIMIT 1;
+WHERE v.`idProducto` = 4 AND LOWER(TRIM(v.`nombre`)) = LOWER('Doble Salchicha Americana (Jumbo)') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1 AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 16) LIMIT 1;
 INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
 SELECT ft.`idFichaTecnica`, 18, 0.03, 'kg'
 FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
-WHERE v.`idProducto` = 30 AND LOWER(TRIM(v.`nombre`)) = LOWER('Mexicano Extra Picante & Doble Salchicha') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 18)
-  AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 18)
-LIMIT 1;
+WHERE v.`idProducto` = 4 AND LOWER(TRIM(v.`nombre`)) = LOWER('Doble Salchicha Americana (Jumbo)') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1 AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 18) LIMIT 1;
 INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
-SELECT ft.`idFichaTecnica`, 25, 0.04, 'kg'
+SELECT ft.`idFichaTecnica`, 20, 0.04, 'kg'
 FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
-WHERE v.`idProducto` = 30 AND LOWER(TRIM(v.`nombre`)) = LOWER('Mexicano Extra Picante & Doble Salchicha') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 25)
-  AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 25)
-LIMIT 1;
+WHERE v.`idProducto` = 4 AND LOWER(TRIM(v.`nombre`)) = LOWER('Doble Salchicha Americana (Jumbo)') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1 AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 20) LIMIT 1;
 
--- Producto #6
 INSERT INTO `variante` (`idProducto`, `nombre`, `descripcion`, `precio`, `estado`)
-SELECT p.`idProducto`, 'Salvaje con Carne & Cheddar (Mediana)', 'Salchipapa salvaje enriquecida con chili con carne de res artesanal y salsa cheddar fundido.', 27500.00, COALESCE(p.`estado`, 1)
+SELECT p.`idProducto`, 'En Pan Perro Brioche Dorado', 'Reemplaza el pan de perro americano por pan perro brioche dorado en mantequilla.', 15200.00, COALESCE(p.`estado`, 1)
 FROM `producto` p
-WHERE p.`idProducto` = 6 AND COALESCE(p.`eliminado`, 0) = 0
-  AND NOT EXISTS (SELECT 1 FROM `variante` v WHERE v.`idProducto` = 6 AND LOWER(TRIM(v.`nombre`)) = LOWER('Salvaje con Carne & Cheddar (Mediana)'));
-UPDATE `variante`
-SET `precio` = CASE WHEN COALESCE(`precio`, 0) <= 0 THEN 27500.00 ELSE `precio` END,
-    `descripcion` = CASE WHEN `descripcion` IS NULL OR TRIM(`descripcion`) = '' THEN 'Salchipapa salvaje enriquecida con chili con carne de res artesanal y salsa cheddar fundido.' ELSE `descripcion` END
-WHERE `idProducto` = 6 AND LOWER(TRIM(`nombre`)) = LOWER('Salvaje con Carne & Cheddar (Mediana)');
+WHERE p.`idProducto` = 4 AND COALESCE(p.`eliminado`, 0) = 0
+  AND NOT EXISTS (SELECT 1 FROM `variante` v WHERE v.`idProducto` = 4 AND LOWER(TRIM(v.`nombre`)) = LOWER('En Pan Perro Brioche Dorado'));
+UPDATE `variante` SET `precio` = 15200.00, `descripcion` = 'Reemplaza el pan de perro americano por pan perro brioche dorado en mantequilla.', `estado` = 1
+WHERE `idProducto` = 4 AND LOWER(TRIM(`nombre`)) = LOWER('En Pan Perro Brioche Dorado');
+DELETE FROM `variante_insumo` WHERE `idVariante` IN (SELECT `idVariante` FROM `variante` WHERE `idProducto` = 4 AND LOWER(TRIM(`nombre`)) = LOWER('En Pan Perro Brioche Dorado'));
 INSERT INTO `variante_insumo` (`idVariante`, `tipoAccion`, `idInsumo`, `idInsumoReemplazado`, `cantidad`, `unidadMedida`, `observaciones`)
-SELECT v.`idVariante`, 'AGREGAR', 39, NULL, 0.08, 'kg', NULL
-FROM `variante` v
-WHERE v.`idProducto` = 6 AND LOWER(TRIM(v.`nombre`)) = LOWER('Salvaje con Carne & Cheddar (Mediana)')
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 39)
-  AND NOT EXISTS (SELECT 1 FROM `variante_insumo` vi WHERE vi.`idVariante` = v.`idVariante` AND vi.`idInsumo` = 39)
-LIMIT 1;
-INSERT INTO `variante_insumo` (`idVariante`, `tipoAccion`, `idInsumo`, `idInsumoReemplazado`, `cantidad`, `unidadMedida`, `observaciones`)
-SELECT v.`idVariante`, 'AGREGAR', 43, NULL, 0.04, 'kg', NULL
-FROM `variante` v
-WHERE v.`idProducto` = 6 AND LOWER(TRIM(v.`nombre`)) = LOWER('Salvaje con Carne & Cheddar (Mediana)')
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 43)
-  AND NOT EXISTS (SELECT 1 FROM `variante_insumo` vi WHERE vi.`idVariante` = v.`idVariante` AND vi.`idInsumo` = 43)
-LIMIT 1;
+SELECT v.`idVariante`, 'REEMPLAZAR', 50, 13, 1.00, 'und', NULL
+FROM `variante` v WHERE v.`idProducto` = 4 AND LOWER(TRIM(v.`nombre`)) = LOWER('En Pan Perro Brioche Dorado') AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 50) LIMIT 1;
 INSERT INTO `fichatecnica` (`idVariante`, `descripcion`, `fechaCreacion`, `idProducto`, `idInsumo`, `tipo`, `procedimiento`, `tiempoPreparacion`, `rendimiento`, `especificaciones`, `caracteristicas`, `informacionNutricional`, `condicionesAlmacenamiento`, `vidaUtil`, `observaciones`, `versionActual`, `estado`)
-SELECT v.`idVariante`, 'Salchipapa salvaje enriquecida con chili con carne de res artesanal y salsa cheddar fundido.', NOW(), 6, NULL, 'VARIANTE', CONCAT('Preparación estándar Chazin Food para ', v.`nombre`), 14, '1 porción abundante', '', CONCAT('Variante: ', v.`nombre`), '', '', '', '', 1, 1
-FROM `variante` v
-WHERE v.`idProducto` = 6 AND LOWER(TRIM(v.`nombre`)) = LOWER('Salvaje con Carne & Cheddar (Mediana)')
-  AND NOT EXISTS (SELECT 1 FROM `fichatecnica` ft WHERE ft.`idVariante` = v.`idVariante` AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1)
-LIMIT 1;
+SELECT v.`idVariante`, 'Reemplaza el pan de perro americano por pan perro brioche dorado en mantequilla.', NOW(), 4, NULL, 'VARIANTE', CONCAT('Preparación estándar Chazin Food para ', v.`nombre`), 8, '1 porción', 'Cocción completa (>70°C en el centro), empaque térmico y control de gramaje estándar.', CONCAT('Presentación ', v.`nombre`, ', aroma fresco, color dorado uniforme y textura equilibrada.'), 'Porción estándar: ~680 kcal | Proteínas: 34g | Carbohidratos: 48g | Grasas: 35g.', 'Consumo inmediato en mesa o en empaque térmico antigrasa antes de 25 minutos.', 'Consumo inmediato', '', 1, 1
+FROM `variante` v WHERE v.`idProducto` = 4 AND LOWER(TRIM(v.`nombre`)) = LOWER('En Pan Perro Brioche Dorado')
+  AND NOT EXISTS (SELECT 1 FROM `fichatecnica` ft WHERE ft.`idVariante` = v.`idVariante` AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1) LIMIT 1;
+DELETE FROM `detallefichainsumo` WHERE `idFichaTecnica` IN (SELECT ft.`idFichaTecnica` FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante` WHERE v.`idProducto` = 4 AND LOWER(TRIM(v.`nombre`)) = LOWER('En Pan Perro Brioche Dorado') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1);
 INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
-SELECT ft.`idFichaTecnica`, 21, 0.25, 'kg'
+SELECT ft.`idFichaTecnica`, 50, 1.00, 'und'
 FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
-WHERE v.`idProducto` = 6 AND LOWER(TRIM(v.`nombre`)) = LOWER('Salvaje con Carne & Cheddar (Mediana)') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 21)
-  AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 21)
-LIMIT 1;
+WHERE v.`idProducto` = 4 AND LOWER(TRIM(v.`nombre`)) = LOWER('En Pan Perro Brioche Dorado') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1 AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 50) LIMIT 1;
 INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
 SELECT ft.`idFichaTecnica`, 16, 1.00, 'und'
 FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
-WHERE v.`idProducto` = 6 AND LOWER(TRIM(v.`nombre`)) = LOWER('Salvaje con Carne & Cheddar (Mediana)') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 16)
-  AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 16)
-LIMIT 1;
+WHERE v.`idProducto` = 4 AND LOWER(TRIM(v.`nombre`)) = LOWER('En Pan Perro Brioche Dorado') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1 AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 16) LIMIT 1;
 INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
-SELECT ft.`idFichaTecnica`, 17, 1.00, 'und'
+SELECT ft.`idFichaTecnica`, 18, 0.03, 'kg'
 FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
-WHERE v.`idProducto` = 6 AND LOWER(TRIM(v.`nombre`)) = LOWER('Salvaje con Carne & Cheddar (Mediana)') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 17)
-  AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 17)
-LIMIT 1;
+WHERE v.`idProducto` = 4 AND LOWER(TRIM(v.`nombre`)) = LOWER('En Pan Perro Brioche Dorado') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1 AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 18) LIMIT 1;
 INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
-SELECT ft.`idFichaTecnica`, 18, 0.04, 'kg'
+SELECT ft.`idFichaTecnica`, 20, 0.04, 'kg'
 FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
-WHERE v.`idProducto` = 6 AND LOWER(TRIM(v.`nombre`)) = LOWER('Salvaje con Carne & Cheddar (Mediana)') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 18)
-  AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 18)
-LIMIT 1;
-INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
-SELECT ft.`idFichaTecnica`, 20, 0.06, 'kg'
-FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
-WHERE v.`idProducto` = 6 AND LOWER(TRIM(v.`nombre`)) = LOWER('Salvaje con Carne & Cheddar (Mediana)') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 20)
-  AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 20)
-LIMIT 1;
-INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
-SELECT ft.`idFichaTecnica`, 39, 0.08, 'kg'
-FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
-WHERE v.`idProducto` = 6 AND LOWER(TRIM(v.`nombre`)) = LOWER('Salvaje con Carne & Cheddar (Mediana)') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 39)
-  AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 39)
-LIMIT 1;
-INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
-SELECT ft.`idFichaTecnica`, 43, 0.04, 'kg'
-FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
-WHERE v.`idProducto` = 6 AND LOWER(TRIM(v.`nombre`)) = LOWER('Salvaje con Carne & Cheddar (Mediana)') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 43)
-  AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 43)
-LIMIT 1;
+WHERE v.`idProducto` = 4 AND LOWER(TRIM(v.`nombre`)) = LOWER('En Pan Perro Brioche Dorado') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1 AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 20) LIMIT 1;
 
 INSERT INTO `variante` (`idProducto`, `nombre`, `descripcion`, `precio`, `estado`)
-SELECT p.`idProducto`, 'Familiar Salvaje (2 a 3 Personas)', 'Porción familiar generosa (500g de papas, doble salchicha americana y suiza, tocineta y mozzarella).', 38000.00, COALESCE(p.`estado`, 1)
+SELECT p.`idProducto`, 'Sabor Salsa Miel Mostaza Artesanal', 'Perfil dulce-especiado bañado con salsa miel mostaza artesanal.', 15000.00, COALESCE(p.`estado`, 1)
 FROM `producto` p
-WHERE p.`idProducto` = 6 AND COALESCE(p.`eliminado`, 0) = 0
-  AND NOT EXISTS (SELECT 1 FROM `variante` v WHERE v.`idProducto` = 6 AND LOWER(TRIM(v.`nombre`)) = LOWER('Familiar Salvaje (2 a 3 Personas)'));
-UPDATE `variante`
-SET `precio` = CASE WHEN COALESCE(`precio`, 0) <= 0 THEN 38000.00 ELSE `precio` END,
-    `descripcion` = CASE WHEN `descripcion` IS NULL OR TRIM(`descripcion`) = '' THEN 'Porción familiar generosa (500g de papas, doble salchicha americana y suiza, tocineta y mozzarella).' ELSE `descripcion` END
-WHERE `idProducto` = 6 AND LOWER(TRIM(`nombre`)) = LOWER('Familiar Salvaje (2 a 3 Personas)');
+WHERE p.`idProducto` = 4 AND COALESCE(p.`eliminado`, 0) = 0
+  AND NOT EXISTS (SELECT 1 FROM `variante` v WHERE v.`idProducto` = 4 AND LOWER(TRIM(v.`nombre`)) = LOWER('Sabor Salsa Miel Mostaza Artesanal'));
+UPDATE `variante` SET `precio` = 15000.00, `descripcion` = 'Perfil dulce-especiado bañado con salsa miel mostaza artesanal.', `estado` = 1
+WHERE `idProducto` = 4 AND LOWER(TRIM(`nombre`)) = LOWER('Sabor Salsa Miel Mostaza Artesanal');
+DELETE FROM `variante_insumo` WHERE `idVariante` IN (SELECT `idVariante` FROM `variante` WHERE `idProducto` = 4 AND LOWER(TRIM(`nombre`)) = LOWER('Sabor Salsa Miel Mostaza Artesanal'));
 INSERT INTO `variante_insumo` (`idVariante`, `tipoAccion`, `idInsumo`, `idInsumoReemplazado`, `cantidad`, `unidadMedida`, `observaciones`)
-SELECT v.`idVariante`, 'MODIFICAR_CANTIDAD', 21, NULL, 0.50, 'kg', NULL
-FROM `variante` v
-WHERE v.`idProducto` = 6 AND LOWER(TRIM(v.`nombre`)) = LOWER('Familiar Salvaje (2 a 3 Personas)')
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 21)
-  AND NOT EXISTS (SELECT 1 FROM `variante_insumo` vi WHERE vi.`idVariante` = v.`idVariante` AND vi.`idInsumo` = 21)
-LIMIT 1;
-INSERT INTO `variante_insumo` (`idVariante`, `tipoAccion`, `idInsumo`, `idInsumoReemplazado`, `cantidad`, `unidadMedida`, `observaciones`)
-SELECT v.`idVariante`, 'MODIFICAR_CANTIDAD', 16, NULL, 2.00, 'und', NULL
-FROM `variante` v
-WHERE v.`idProducto` = 6 AND LOWER(TRIM(v.`nombre`)) = LOWER('Familiar Salvaje (2 a 3 Personas)')
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 16)
-  AND NOT EXISTS (SELECT 1 FROM `variante_insumo` vi WHERE vi.`idVariante` = v.`idVariante` AND vi.`idInsumo` = 16)
-LIMIT 1;
+SELECT v.`idVariante`, 'AGREGAR', 55, NULL, 0.03, 'kg', NULL
+FROM `variante` v WHERE v.`idProducto` = 4 AND LOWER(TRIM(v.`nombre`)) = LOWER('Sabor Salsa Miel Mostaza Artesanal') AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 55) LIMIT 1;
+INSERT INTO `fichatecnica` (`idVariante`, `descripcion`, `fechaCreacion`, `idProducto`, `idInsumo`, `tipo`, `procedimiento`, `tiempoPreparacion`, `rendimiento`, `especificaciones`, `caracteristicas`, `informacionNutricional`, `condicionesAlmacenamiento`, `vidaUtil`, `observaciones`, `versionActual`, `estado`)
+SELECT v.`idVariante`, 'Perfil dulce-especiado bañado con salsa miel mostaza artesanal.', NOW(), 4, NULL, 'VARIANTE', CONCAT('Preparación estándar Chazin Food para ', v.`nombre`), 8, '1 porción', 'Cocción completa (>70°C en el centro), empaque térmico y control de gramaje estándar.', CONCAT('Presentación ', v.`nombre`, ', aroma fresco, color dorado uniforme y textura equilibrada.'), 'Porción estándar: ~680 kcal | Proteínas: 34g | Carbohidratos: 48g | Grasas: 35g.', 'Consumo inmediato en mesa o en empaque térmico antigrasa antes de 25 minutos.', 'Consumo inmediato', '', 1, 1
+FROM `variante` v WHERE v.`idProducto` = 4 AND LOWER(TRIM(v.`nombre`)) = LOWER('Sabor Salsa Miel Mostaza Artesanal')
+  AND NOT EXISTS (SELECT 1 FROM `fichatecnica` ft WHERE ft.`idVariante` = v.`idVariante` AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1) LIMIT 1;
+DELETE FROM `detallefichainsumo` WHERE `idFichaTecnica` IN (SELECT ft.`idFichaTecnica` FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante` WHERE v.`idProducto` = 4 AND LOWER(TRIM(v.`nombre`)) = LOWER('Sabor Salsa Miel Mostaza Artesanal') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1);
+INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
+SELECT ft.`idFichaTecnica`, 13, 1.00, 'und'
+FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
+WHERE v.`idProducto` = 4 AND LOWER(TRIM(v.`nombre`)) = LOWER('Sabor Salsa Miel Mostaza Artesanal') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1 AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 13) LIMIT 1;
+INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
+SELECT ft.`idFichaTecnica`, 16, 1.00, 'und'
+FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
+WHERE v.`idProducto` = 4 AND LOWER(TRIM(v.`nombre`)) = LOWER('Sabor Salsa Miel Mostaza Artesanal') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1 AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 16) LIMIT 1;
+INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
+SELECT ft.`idFichaTecnica`, 18, 0.03, 'kg'
+FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
+WHERE v.`idProducto` = 4 AND LOWER(TRIM(v.`nombre`)) = LOWER('Sabor Salsa Miel Mostaza Artesanal') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1 AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 18) LIMIT 1;
+INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
+SELECT ft.`idFichaTecnica`, 20, 0.04, 'kg'
+FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
+WHERE v.`idProducto` = 4 AND LOWER(TRIM(v.`nombre`)) = LOWER('Sabor Salsa Miel Mostaza Artesanal') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1 AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 20) LIMIT 1;
+INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
+SELECT ft.`idFichaTecnica`, 55, 0.03, 'kg'
+FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
+WHERE v.`idProducto` = 4 AND LOWER(TRIM(v.`nombre`)) = LOWER('Sabor Salsa Miel Mostaza Artesanal') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1 AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 55) LIMIT 1;
+
+-- Producto #5
+INSERT INTO `variante` (`idProducto`, `nombre`, `descripcion`, `precio`, `estado`)
+SELECT p.`idProducto`, 'Doble Salchicha Suiza Jumbo', 'Edición jumbo con doble salchicha suiza artesanal ahumada.', 22000.00, COALESCE(p.`estado`, 1)
+FROM `producto` p
+WHERE p.`idProducto` = 5 AND COALESCE(p.`eliminado`, 0) = 0
+  AND NOT EXISTS (SELECT 1 FROM `variante` v WHERE v.`idProducto` = 5 AND LOWER(TRIM(v.`nombre`)) = LOWER('Doble Salchicha Suiza Jumbo'));
+UPDATE `variante` SET `precio` = 22000.00, `descripcion` = 'Edición jumbo con doble salchicha suiza artesanal ahumada.', `estado` = 1
+WHERE `idProducto` = 5 AND LOWER(TRIM(`nombre`)) = LOWER('Doble Salchicha Suiza Jumbo');
+DELETE FROM `variante_insumo` WHERE `idVariante` IN (SELECT `idVariante` FROM `variante` WHERE `idProducto` = 5 AND LOWER(TRIM(`nombre`)) = LOWER('Doble Salchicha Suiza Jumbo'));
 INSERT INTO `variante_insumo` (`idVariante`, `tipoAccion`, `idInsumo`, `idInsumoReemplazado`, `cantidad`, `unidadMedida`, `observaciones`)
 SELECT v.`idVariante`, 'MODIFICAR_CANTIDAD', 17, NULL, 2.00, 'und', NULL
-FROM `variante` v
-WHERE v.`idProducto` = 6 AND LOWER(TRIM(v.`nombre`)) = LOWER('Familiar Salvaje (2 a 3 Personas)')
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 17)
-  AND NOT EXISTS (SELECT 1 FROM `variante_insumo` vi WHERE vi.`idVariante` = v.`idVariante` AND vi.`idInsumo` = 17)
-LIMIT 1;
-INSERT INTO `variante_insumo` (`idVariante`, `tipoAccion`, `idInsumo`, `idInsumoReemplazado`, `cantidad`, `unidadMedida`, `observaciones`)
-SELECT v.`idVariante`, 'MODIFICAR_CANTIDAD', 18, NULL, 0.08, 'kg', NULL
-FROM `variante` v
-WHERE v.`idProducto` = 6 AND LOWER(TRIM(v.`nombre`)) = LOWER('Familiar Salvaje (2 a 3 Personas)')
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 18)
-  AND NOT EXISTS (SELECT 1 FROM `variante_insumo` vi WHERE vi.`idVariante` = v.`idVariante` AND vi.`idInsumo` = 18)
-LIMIT 1;
-INSERT INTO `variante_insumo` (`idVariante`, `tipoAccion`, `idInsumo`, `idInsumoReemplazado`, `cantidad`, `unidadMedida`, `observaciones`)
-SELECT v.`idVariante`, 'MODIFICAR_CANTIDAD', 20, NULL, 0.12, 'kg', NULL
-FROM `variante` v
-WHERE v.`idProducto` = 6 AND LOWER(TRIM(v.`nombre`)) = LOWER('Familiar Salvaje (2 a 3 Personas)')
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 20)
-  AND NOT EXISTS (SELECT 1 FROM `variante_insumo` vi WHERE vi.`idVariante` = v.`idVariante` AND vi.`idInsumo` = 20)
-LIMIT 1;
+FROM `variante` v WHERE v.`idProducto` = 5 AND LOWER(TRIM(v.`nombre`)) = LOWER('Doble Salchicha Suiza Jumbo') AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 17) LIMIT 1;
 INSERT INTO `fichatecnica` (`idVariante`, `descripcion`, `fechaCreacion`, `idProducto`, `idInsumo`, `tipo`, `procedimiento`, `tiempoPreparacion`, `rendimiento`, `especificaciones`, `caracteristicas`, `informacionNutricional`, `condicionesAlmacenamiento`, `vidaUtil`, `observaciones`, `versionActual`, `estado`)
-SELECT v.`idVariante`, 'Porción familiar generosa (500g de papas, doble salchicha americana y suiza, tocineta y mozzarella).', NOW(), 6, NULL, 'VARIANTE', CONCAT('Preparación estándar Chazin Food para ', v.`nombre`), 16, '2 a 3 porciones', '', CONCAT('Variante: ', v.`nombre`), '', '', '', '', 1, 1
-FROM `variante` v
-WHERE v.`idProducto` = 6 AND LOWER(TRIM(v.`nombre`)) = LOWER('Familiar Salvaje (2 a 3 Personas)')
-  AND NOT EXISTS (SELECT 1 FROM `fichatecnica` ft WHERE ft.`idVariante` = v.`idVariante` AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1)
-LIMIT 1;
+SELECT v.`idVariante`, 'Edición jumbo con doble salchicha suiza artesanal ahumada.', NOW(), 5, NULL, 'VARIANTE', CONCAT('Preparación estándar Chazin Food para ', v.`nombre`), 12, '1 porción Jumbo', 'Cocción completa (>70°C en el centro), empaque térmico y control de gramaje estándar.', CONCAT('Presentación ', v.`nombre`, ', aroma fresco, color dorado uniforme y textura equilibrada.'), 'Porción estándar: ~680 kcal | Proteínas: 34g | Carbohidratos: 48g | Grasas: 35g.', 'Consumo inmediato en mesa o en empaque térmico antigrasa antes de 25 minutos.', 'Consumo inmediato', '', 1, 1
+FROM `variante` v WHERE v.`idProducto` = 5 AND LOWER(TRIM(v.`nombre`)) = LOWER('Doble Salchicha Suiza Jumbo')
+  AND NOT EXISTS (SELECT 1 FROM `fichatecnica` ft WHERE ft.`idVariante` = v.`idVariante` AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1) LIMIT 1;
+DELETE FROM `detallefichainsumo` WHERE `idFichaTecnica` IN (SELECT ft.`idFichaTecnica` FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante` WHERE v.`idProducto` = 5 AND LOWER(TRIM(v.`nombre`)) = LOWER('Doble Salchicha Suiza Jumbo') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1);
 INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
-SELECT ft.`idFichaTecnica`, 21, 0.50, 'kg'
+SELECT ft.`idFichaTecnica`, 13, 1.00, 'und'
 FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
-WHERE v.`idProducto` = 6 AND LOWER(TRIM(v.`nombre`)) = LOWER('Familiar Salvaje (2 a 3 Personas)') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 21)
-  AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 21)
-LIMIT 1;
-INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
-SELECT ft.`idFichaTecnica`, 16, 2.00, 'und'
-FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
-WHERE v.`idProducto` = 6 AND LOWER(TRIM(v.`nombre`)) = LOWER('Familiar Salvaje (2 a 3 Personas)') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 16)
-  AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 16)
-LIMIT 1;
+WHERE v.`idProducto` = 5 AND LOWER(TRIM(v.`nombre`)) = LOWER('Doble Salchicha Suiza Jumbo') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1 AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 13) LIMIT 1;
 INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
 SELECT ft.`idFichaTecnica`, 17, 2.00, 'und'
 FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
-WHERE v.`idProducto` = 6 AND LOWER(TRIM(v.`nombre`)) = LOWER('Familiar Salvaje (2 a 3 Personas)') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 17)
-  AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 17)
-LIMIT 1;
+WHERE v.`idProducto` = 5 AND LOWER(TRIM(v.`nombre`)) = LOWER('Doble Salchicha Suiza Jumbo') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1 AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 17) LIMIT 1;
 INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
-SELECT ft.`idFichaTecnica`, 18, 0.08, 'kg'
+SELECT ft.`idFichaTecnica`, 18, 0.03, 'kg'
 FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
-WHERE v.`idProducto` = 6 AND LOWER(TRIM(v.`nombre`)) = LOWER('Familiar Salvaje (2 a 3 Personas)') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 18)
-  AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 18)
-LIMIT 1;
-INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
-SELECT ft.`idFichaTecnica`, 20, 0.12, 'kg'
-FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
-WHERE v.`idProducto` = 6 AND LOWER(TRIM(v.`nombre`)) = LOWER('Familiar Salvaje (2 a 3 Personas)') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 20)
-  AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 20)
-LIMIT 1;
-
--- Producto #32
-INSERT INTO `variante` (`idProducto`, `nombre`, `descripcion`, `precio`, `estado`)
-SELECT p.`idProducto`, 'Criolla Especial con Chili con Carne', 'Salchipapa criolla tradicional enriquecida con chili con carne artesanal y extra salsa cheddar fundido.', 25500.00, COALESCE(p.`estado`, 1)
-FROM `producto` p
-WHERE p.`idProducto` = 32 AND COALESCE(p.`eliminado`, 0) = 0
-  AND NOT EXISTS (SELECT 1 FROM `variante` v WHERE v.`idProducto` = 32 AND LOWER(TRIM(v.`nombre`)) = LOWER('Criolla Especial con Chili con Carne'));
-UPDATE `variante`
-SET `precio` = CASE WHEN COALESCE(`precio`, 0) <= 0 THEN 25500.00 ELSE `precio` END,
-    `descripcion` = CASE WHEN `descripcion` IS NULL OR TRIM(`descripcion`) = '' THEN 'Salchipapa criolla tradicional enriquecida con chili con carne artesanal y extra salsa cheddar fundido.' ELSE `descripcion` END
-WHERE `idProducto` = 32 AND LOWER(TRIM(`nombre`)) = LOWER('Criolla Especial con Chili con Carne');
-INSERT INTO `variante_insumo` (`idVariante`, `tipoAccion`, `idInsumo`, `idInsumoReemplazado`, `cantidad`, `unidadMedida`, `observaciones`)
-SELECT v.`idVariante`, 'MODIFICAR_CANTIDAD', 43, NULL, 0.04, 'kg', NULL
-FROM `variante` v
-WHERE v.`idProducto` = 32 AND LOWER(TRIM(v.`nombre`)) = LOWER('Criolla Especial con Chili con Carne')
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 43)
-  AND NOT EXISTS (SELECT 1 FROM `variante_insumo` vi WHERE vi.`idVariante` = v.`idVariante` AND vi.`idInsumo` = 43)
-LIMIT 1;
-INSERT INTO `variante_insumo` (`idVariante`, `tipoAccion`, `idInsumo`, `idInsumoReemplazado`, `cantidad`, `unidadMedida`, `observaciones`)
-SELECT v.`idVariante`, 'AGREGAR', 39, NULL, 0.08, 'kg', NULL
-FROM `variante` v
-WHERE v.`idProducto` = 32 AND LOWER(TRIM(v.`nombre`)) = LOWER('Criolla Especial con Chili con Carne')
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 39)
-  AND NOT EXISTS (SELECT 1 FROM `variante_insumo` vi WHERE vi.`idVariante` = v.`idVariante` AND vi.`idInsumo` = 39)
-LIMIT 1;
-INSERT INTO `fichatecnica` (`idVariante`, `descripcion`, `fechaCreacion`, `idProducto`, `idInsumo`, `tipo`, `procedimiento`, `tiempoPreparacion`, `rendimiento`, `especificaciones`, `caracteristicas`, `informacionNutricional`, `condicionesAlmacenamiento`, `vidaUtil`, `observaciones`, `versionActual`, `estado`)
-SELECT v.`idVariante`, 'Salchipapa criolla tradicional enriquecida con chili con carne artesanal y extra salsa cheddar fundido.', NOW(), 32, NULL, 'VARIANTE', CONCAT('Preparación estándar Chazin Food para ', v.`nombre`), 14, '1 porción abundante', '', CONCAT('Variante: ', v.`nombre`), '', '', '', '', 1, 1
-FROM `variante` v
-WHERE v.`idProducto` = 32 AND LOWER(TRIM(v.`nombre`)) = LOWER('Criolla Especial con Chili con Carne')
-  AND NOT EXISTS (SELECT 1 FROM `fichatecnica` ft WHERE ft.`idVariante` = v.`idVariante` AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1)
-LIMIT 1;
-INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
-SELECT ft.`idFichaTecnica`, 21, 0.25, 'kg'
-FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
-WHERE v.`idProducto` = 32 AND LOWER(TRIM(v.`nombre`)) = LOWER('Criolla Especial con Chili con Carne') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 21)
-  AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 21)
-LIMIT 1;
-INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
-SELECT ft.`idFichaTecnica`, 16, 1.50, 'und'
-FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
-WHERE v.`idProducto` = 32 AND LOWER(TRIM(v.`nombre`)) = LOWER('Criolla Especial con Chili con Carne') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 16)
-  AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 16)
-LIMIT 1;
-INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
-SELECT ft.`idFichaTecnica`, 18, 0.04, 'kg'
-FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
-WHERE v.`idProducto` = 32 AND LOWER(TRIM(v.`nombre`)) = LOWER('Criolla Especial con Chili con Carne') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 18)
-  AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 18)
-LIMIT 1;
+WHERE v.`idProducto` = 5 AND LOWER(TRIM(v.`nombre`)) = LOWER('Doble Salchicha Suiza Jumbo') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1 AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 18) LIMIT 1;
 INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
 SELECT ft.`idFichaTecnica`, 20, 0.05, 'kg'
 FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
-WHERE v.`idProducto` = 32 AND LOWER(TRIM(v.`nombre`)) = LOWER('Criolla Especial con Chili con Carne') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 20)
-  AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 20)
-LIMIT 1;
+WHERE v.`idProducto` = 5 AND LOWER(TRIM(v.`nombre`)) = LOWER('Doble Salchicha Suiza Jumbo') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1 AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 20) LIMIT 1;
 INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
-SELECT ft.`idFichaTecnica`, 41, 0.03, 'kg'
+SELECT ft.`idFichaTecnica`, 24, 0.03, 'kg'
 FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
-WHERE v.`idProducto` = 32 AND LOWER(TRIM(v.`nombre`)) = LOWER('Criolla Especial con Chili con Carne') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 41)
-  AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 41)
-LIMIT 1;
-INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
-SELECT ft.`idFichaTecnica`, 43, 0.04, 'kg'
-FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
-WHERE v.`idProducto` = 32 AND LOWER(TRIM(v.`nombre`)) = LOWER('Criolla Especial con Chili con Carne') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 43)
-  AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 43)
-LIMIT 1;
-INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
-SELECT ft.`idFichaTecnica`, 39, 0.08, 'kg'
-FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
-WHERE v.`idProducto` = 32 AND LOWER(TRIM(v.`nombre`)) = LOWER('Criolla Especial con Chili con Carne') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 39)
-  AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 39)
-LIMIT 1;
+WHERE v.`idProducto` = 5 AND LOWER(TRIM(v.`nombre`)) = LOWER('Doble Salchicha Suiza Jumbo') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1 AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 24) LIMIT 1;
 
 INSERT INTO `variante` (`idProducto`, `nombre`, `descripcion`, `precio`, `estado`)
-SELECT p.`idProducto`, 'Familiar para Compartir (2 Personas)', 'Versión familiar para 2 personas con doble porción de papa, 3 salchichas americanas, tocineta y salsas.', 34000.00, COALESCE(p.`estado`, 1)
+SELECT p.`idProducto`, 'En Pan Perro Brioche Dorado', 'Reemplaza el pan estándar por pan perro brioche dorado en mantequilla.', 18200.00, COALESCE(p.`estado`, 1)
 FROM `producto` p
-WHERE p.`idProducto` = 32 AND COALESCE(p.`eliminado`, 0) = 0
-  AND NOT EXISTS (SELECT 1 FROM `variante` v WHERE v.`idProducto` = 32 AND LOWER(TRIM(v.`nombre`)) = LOWER('Familiar para Compartir (2 Personas)'));
-UPDATE `variante`
-SET `precio` = CASE WHEN COALESCE(`precio`, 0) <= 0 THEN 34000.00 ELSE `precio` END,
-    `descripcion` = CASE WHEN `descripcion` IS NULL OR TRIM(`descripcion`) = '' THEN 'Versión familiar para 2 personas con doble porción de papa, 3 salchichas americanas, tocineta y salsas.' ELSE `descripcion` END
-WHERE `idProducto` = 32 AND LOWER(TRIM(`nombre`)) = LOWER('Familiar para Compartir (2 Personas)');
+WHERE p.`idProducto` = 5 AND COALESCE(p.`eliminado`, 0) = 0
+  AND NOT EXISTS (SELECT 1 FROM `variante` v WHERE v.`idProducto` = 5 AND LOWER(TRIM(v.`nombre`)) = LOWER('En Pan Perro Brioche Dorado'));
+UPDATE `variante` SET `precio` = 18200.00, `descripcion` = 'Reemplaza el pan estándar por pan perro brioche dorado en mantequilla.', `estado` = 1
+WHERE `idProducto` = 5 AND LOWER(TRIM(`nombre`)) = LOWER('En Pan Perro Brioche Dorado');
+DELETE FROM `variante_insumo` WHERE `idVariante` IN (SELECT `idVariante` FROM `variante` WHERE `idProducto` = 5 AND LOWER(TRIM(`nombre`)) = LOWER('En Pan Perro Brioche Dorado'));
+INSERT INTO `variante_insumo` (`idVariante`, `tipoAccion`, `idInsumo`, `idInsumoReemplazado`, `cantidad`, `unidadMedida`, `observaciones`)
+SELECT v.`idVariante`, 'REEMPLAZAR', 50, 13, 1.00, 'und', NULL
+FROM `variante` v WHERE v.`idProducto` = 5 AND LOWER(TRIM(v.`nombre`)) = LOWER('En Pan Perro Brioche Dorado') AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 50) LIMIT 1;
+INSERT INTO `fichatecnica` (`idVariante`, `descripcion`, `fechaCreacion`, `idProducto`, `idInsumo`, `tipo`, `procedimiento`, `tiempoPreparacion`, `rendimiento`, `especificaciones`, `caracteristicas`, `informacionNutricional`, `condicionesAlmacenamiento`, `vidaUtil`, `observaciones`, `versionActual`, `estado`)
+SELECT v.`idVariante`, 'Reemplaza el pan estándar por pan perro brioche dorado en mantequilla.', NOW(), 5, NULL, 'VARIANTE', CONCAT('Preparación estándar Chazin Food para ', v.`nombre`), 9, '1 porción', 'Cocción completa (>70°C en el centro), empaque térmico y control de gramaje estándar.', CONCAT('Presentación ', v.`nombre`, ', aroma fresco, color dorado uniforme y textura equilibrada.'), 'Porción estándar: ~680 kcal | Proteínas: 34g | Carbohidratos: 48g | Grasas: 35g.', 'Consumo inmediato en mesa o en empaque térmico antigrasa antes de 25 minutos.', 'Consumo inmediato', '', 1, 1
+FROM `variante` v WHERE v.`idProducto` = 5 AND LOWER(TRIM(v.`nombre`)) = LOWER('En Pan Perro Brioche Dorado')
+  AND NOT EXISTS (SELECT 1 FROM `fichatecnica` ft WHERE ft.`idVariante` = v.`idVariante` AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1) LIMIT 1;
+DELETE FROM `detallefichainsumo` WHERE `idFichaTecnica` IN (SELECT ft.`idFichaTecnica` FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante` WHERE v.`idProducto` = 5 AND LOWER(TRIM(v.`nombre`)) = LOWER('En Pan Perro Brioche Dorado') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1);
+INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
+SELECT ft.`idFichaTecnica`, 50, 1.00, 'und'
+FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
+WHERE v.`idProducto` = 5 AND LOWER(TRIM(v.`nombre`)) = LOWER('En Pan Perro Brioche Dorado') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1 AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 50) LIMIT 1;
+INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
+SELECT ft.`idFichaTecnica`, 17, 1.00, 'und'
+FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
+WHERE v.`idProducto` = 5 AND LOWER(TRIM(v.`nombre`)) = LOWER('En Pan Perro Brioche Dorado') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1 AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 17) LIMIT 1;
+INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
+SELECT ft.`idFichaTecnica`, 18, 0.03, 'kg'
+FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
+WHERE v.`idProducto` = 5 AND LOWER(TRIM(v.`nombre`)) = LOWER('En Pan Perro Brioche Dorado') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1 AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 18) LIMIT 1;
+INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
+SELECT ft.`idFichaTecnica`, 20, 0.05, 'kg'
+FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
+WHERE v.`idProducto` = 5 AND LOWER(TRIM(v.`nombre`)) = LOWER('En Pan Perro Brioche Dorado') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1 AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 20) LIMIT 1;
+INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
+SELECT ft.`idFichaTecnica`, 24, 0.03, 'kg'
+FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
+WHERE v.`idProducto` = 5 AND LOWER(TRIM(v.`nombre`)) = LOWER('En Pan Perro Brioche Dorado') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1 AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 24) LIMIT 1;
+
+-- Producto #30
+INSERT INTO `variante` (`idProducto`, `nombre`, `descripcion`, `precio`, `estado`)
+SELECT p.`idProducto`, 'Doble Salchicha Mexicana (Jumbo)', 'Doble salchicha americana premium con guacamole, cheddar, tocineta y jalapeño.', 19500.00, COALESCE(p.`estado`, 1)
+FROM `producto` p
+WHERE p.`idProducto` = 30 AND COALESCE(p.`eliminado`, 0) = 0
+  AND NOT EXISTS (SELECT 1 FROM `variante` v WHERE v.`idProducto` = 30 AND LOWER(TRIM(v.`nombre`)) = LOWER('Doble Salchicha Mexicana (Jumbo)'));
+UPDATE `variante` SET `precio` = 19500.00, `descripcion` = 'Doble salchicha americana premium con guacamole, cheddar, tocineta y jalapeño.', `estado` = 1
+WHERE `idProducto` = 30 AND LOWER(TRIM(`nombre`)) = LOWER('Doble Salchicha Mexicana (Jumbo)');
+DELETE FROM `variante_insumo` WHERE `idVariante` IN (SELECT `idVariante` FROM `variante` WHERE `idProducto` = 30 AND LOWER(TRIM(`nombre`)) = LOWER('Doble Salchicha Mexicana (Jumbo)'));
+INSERT INTO `variante_insumo` (`idVariante`, `tipoAccion`, `idInsumo`, `idInsumoReemplazado`, `cantidad`, `unidadMedida`, `observaciones`)
+SELECT v.`idVariante`, 'MODIFICAR_CANTIDAD', 16, NULL, 2.00, 'und', NULL
+FROM `variante` v WHERE v.`idProducto` = 30 AND LOWER(TRIM(v.`nombre`)) = LOWER('Doble Salchicha Mexicana (Jumbo)') AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 16) LIMIT 1;
+INSERT INTO `fichatecnica` (`idVariante`, `descripcion`, `fechaCreacion`, `idProducto`, `idInsumo`, `tipo`, `procedimiento`, `tiempoPreparacion`, `rendimiento`, `especificaciones`, `caracteristicas`, `informacionNutricional`, `condicionesAlmacenamiento`, `vidaUtil`, `observaciones`, `versionActual`, `estado`)
+SELECT v.`idVariante`, 'Doble salchicha americana premium con guacamole, cheddar, tocineta y jalapeño.', NOW(), 30, NULL, 'VARIANTE', CONCAT('Preparación estándar Chazin Food para ', v.`nombre`), 11, '1 porción Jumbo', 'Cocción completa (>70°C en el centro), empaque térmico y control de gramaje estándar.', CONCAT('Presentación ', v.`nombre`, ', aroma fresco, color dorado uniforme y textura equilibrada.'), 'Porción estándar: ~680 kcal | Proteínas: 34g | Carbohidratos: 48g | Grasas: 35g.', 'Consumo inmediato en mesa o en empaque térmico antigrasa antes de 25 minutos.', 'Consumo inmediato', '', 1, 1
+FROM `variante` v WHERE v.`idProducto` = 30 AND LOWER(TRIM(v.`nombre`)) = LOWER('Doble Salchicha Mexicana (Jumbo)')
+  AND NOT EXISTS (SELECT 1 FROM `fichatecnica` ft WHERE ft.`idVariante` = v.`idVariante` AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1) LIMIT 1;
+DELETE FROM `detallefichainsumo` WHERE `idFichaTecnica` IN (SELECT ft.`idFichaTecnica` FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante` WHERE v.`idProducto` = 30 AND LOWER(TRIM(v.`nombre`)) = LOWER('Doble Salchicha Mexicana (Jumbo)') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1);
+INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
+SELECT ft.`idFichaTecnica`, 13, 1.00, 'und'
+FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
+WHERE v.`idProducto` = 30 AND LOWER(TRIM(v.`nombre`)) = LOWER('Doble Salchicha Mexicana (Jumbo)') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1 AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 13) LIMIT 1;
+INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
+SELECT ft.`idFichaTecnica`, 16, 2.00, 'und'
+FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
+WHERE v.`idProducto` = 30 AND LOWER(TRIM(v.`nombre`)) = LOWER('Doble Salchicha Mexicana (Jumbo)') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1 AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 16) LIMIT 1;
+INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
+SELECT ft.`idFichaTecnica`, 40, 0.04, 'kg'
+FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
+WHERE v.`idProducto` = 30 AND LOWER(TRIM(v.`nombre`)) = LOWER('Doble Salchicha Mexicana (Jumbo)') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1 AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 40) LIMIT 1;
+INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
+SELECT ft.`idFichaTecnica`, 43, 0.03, 'kg'
+FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
+WHERE v.`idProducto` = 30 AND LOWER(TRIM(v.`nombre`)) = LOWER('Doble Salchicha Mexicana (Jumbo)') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1 AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 43) LIMIT 1;
+INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
+SELECT ft.`idFichaTecnica`, 18, 0.02, 'kg'
+FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
+WHERE v.`idProducto` = 30 AND LOWER(TRIM(v.`nombre`)) = LOWER('Doble Salchicha Mexicana (Jumbo)') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1 AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 18) LIMIT 1;
+INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
+SELECT ft.`idFichaTecnica`, 25, 0.02, 'kg'
+FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
+WHERE v.`idProducto` = 30 AND LOWER(TRIM(v.`nombre`)) = LOWER('Doble Salchicha Mexicana (Jumbo)') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1 AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 25) LIMIT 1;
+
+INSERT INTO `variante` (`idProducto`, `nombre`, `descripcion`, `precio`, `estado`)
+SELECT p.`idProducto`, 'Proteína Chorizo Santarrosano Artesanal', 'Cambia la salchicha americana por chorizo santarrosano artesanal ahumado.', 18000.00, COALESCE(p.`estado`, 1)
+FROM `producto` p
+WHERE p.`idProducto` = 30 AND COALESCE(p.`eliminado`, 0) = 0
+  AND NOT EXISTS (SELECT 1 FROM `variante` v WHERE v.`idProducto` = 30 AND LOWER(TRIM(v.`nombre`)) = LOWER('Proteína Chorizo Santarrosano Artesanal'));
+UPDATE `variante` SET `precio` = 18000.00, `descripcion` = 'Cambia la salchicha americana por chorizo santarrosano artesanal ahumado.', `estado` = 1
+WHERE `idProducto` = 30 AND LOWER(TRIM(`nombre`)) = LOWER('Proteína Chorizo Santarrosano Artesanal');
+DELETE FROM `variante_insumo` WHERE `idVariante` IN (SELECT `idVariante` FROM `variante` WHERE `idProducto` = 30 AND LOWER(TRIM(`nombre`)) = LOWER('Proteína Chorizo Santarrosano Artesanal'));
+INSERT INTO `variante_insumo` (`idVariante`, `tipoAccion`, `idInsumo`, `idInsumoReemplazado`, `cantidad`, `unidadMedida`, `observaciones`)
+SELECT v.`idVariante`, 'REEMPLAZAR', 53, 16, 1.00, 'und', NULL
+FROM `variante` v WHERE v.`idProducto` = 30 AND LOWER(TRIM(v.`nombre`)) = LOWER('Proteína Chorizo Santarrosano Artesanal') AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 53) LIMIT 1;
+INSERT INTO `fichatecnica` (`idVariante`, `descripcion`, `fechaCreacion`, `idProducto`, `idInsumo`, `tipo`, `procedimiento`, `tiempoPreparacion`, `rendimiento`, `especificaciones`, `caracteristicas`, `informacionNutricional`, `condicionesAlmacenamiento`, `vidaUtil`, `observaciones`, `versionActual`, `estado`)
+SELECT v.`idVariante`, 'Cambia la salchicha americana por chorizo santarrosano artesanal ahumado.', NOW(), 30, NULL, 'VARIANTE', CONCAT('Preparación estándar Chazin Food para ', v.`nombre`), 10, '1 porción', 'Cocción completa (>70°C en el centro), empaque térmico y control de gramaje estándar.', CONCAT('Presentación ', v.`nombre`, ', aroma fresco, color dorado uniforme y textura equilibrada.'), 'Porción estándar: ~680 kcal | Proteínas: 34g | Carbohidratos: 48g | Grasas: 35g.', 'Consumo inmediato en mesa o en empaque térmico antigrasa antes de 25 minutos.', 'Consumo inmediato', '', 1, 1
+FROM `variante` v WHERE v.`idProducto` = 30 AND LOWER(TRIM(v.`nombre`)) = LOWER('Proteína Chorizo Santarrosano Artesanal')
+  AND NOT EXISTS (SELECT 1 FROM `fichatecnica` ft WHERE ft.`idVariante` = v.`idVariante` AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1) LIMIT 1;
+DELETE FROM `detallefichainsumo` WHERE `idFichaTecnica` IN (SELECT ft.`idFichaTecnica` FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante` WHERE v.`idProducto` = 30 AND LOWER(TRIM(v.`nombre`)) = LOWER('Proteína Chorizo Santarrosano Artesanal') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1);
+INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
+SELECT ft.`idFichaTecnica`, 13, 1.00, 'und'
+FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
+WHERE v.`idProducto` = 30 AND LOWER(TRIM(v.`nombre`)) = LOWER('Proteína Chorizo Santarrosano Artesanal') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1 AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 13) LIMIT 1;
+INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
+SELECT ft.`idFichaTecnica`, 53, 1.00, 'und'
+FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
+WHERE v.`idProducto` = 30 AND LOWER(TRIM(v.`nombre`)) = LOWER('Proteína Chorizo Santarrosano Artesanal') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1 AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 53) LIMIT 1;
+INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
+SELECT ft.`idFichaTecnica`, 40, 0.04, 'kg'
+FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
+WHERE v.`idProducto` = 30 AND LOWER(TRIM(v.`nombre`)) = LOWER('Proteína Chorizo Santarrosano Artesanal') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1 AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 40) LIMIT 1;
+INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
+SELECT ft.`idFichaTecnica`, 43, 0.03, 'kg'
+FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
+WHERE v.`idProducto` = 30 AND LOWER(TRIM(v.`nombre`)) = LOWER('Proteína Chorizo Santarrosano Artesanal') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1 AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 43) LIMIT 1;
+INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
+SELECT ft.`idFichaTecnica`, 18, 0.02, 'kg'
+FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
+WHERE v.`idProducto` = 30 AND LOWER(TRIM(v.`nombre`)) = LOWER('Proteína Chorizo Santarrosano Artesanal') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1 AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 18) LIMIT 1;
+INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
+SELECT ft.`idFichaTecnica`, 25, 0.02, 'kg'
+FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
+WHERE v.`idProducto` = 30 AND LOWER(TRIM(v.`nombre`)) = LOWER('Proteína Chorizo Santarrosano Artesanal') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1 AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 25) LIMIT 1;
+
+INSERT INTO `variante` (`idProducto`, `nombre`, `descripcion`, `precio`, `estado`)
+SELECT p.`idProducto`, 'Sabor Salsa Buffalo Picante Artesanal', 'Sustituye la salsa cheddar por salsa buffalo picante artesanal.', 17000.00, COALESCE(p.`estado`, 1)
+FROM `producto` p
+WHERE p.`idProducto` = 30 AND COALESCE(p.`eliminado`, 0) = 0
+  AND NOT EXISTS (SELECT 1 FROM `variante` v WHERE v.`idProducto` = 30 AND LOWER(TRIM(v.`nombre`)) = LOWER('Sabor Salsa Buffalo Picante Artesanal'));
+UPDATE `variante` SET `precio` = 17000.00, `descripcion` = 'Sustituye la salsa cheddar por salsa buffalo picante artesanal.', `estado` = 1
+WHERE `idProducto` = 30 AND LOWER(TRIM(`nombre`)) = LOWER('Sabor Salsa Buffalo Picante Artesanal');
+DELETE FROM `variante_insumo` WHERE `idVariante` IN (SELECT `idVariante` FROM `variante` WHERE `idProducto` = 30 AND LOWER(TRIM(`nombre`)) = LOWER('Sabor Salsa Buffalo Picante Artesanal'));
+INSERT INTO `variante_insumo` (`idVariante`, `tipoAccion`, `idInsumo`, `idInsumoReemplazado`, `cantidad`, `unidadMedida`, `observaciones`)
+SELECT v.`idVariante`, 'REEMPLAZAR', 56, 43, 0.03, 'kg', NULL
+FROM `variante` v WHERE v.`idProducto` = 30 AND LOWER(TRIM(v.`nombre`)) = LOWER('Sabor Salsa Buffalo Picante Artesanal') AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 56) LIMIT 1;
+INSERT INTO `fichatecnica` (`idVariante`, `descripcion`, `fechaCreacion`, `idProducto`, `idInsumo`, `tipo`, `procedimiento`, `tiempoPreparacion`, `rendimiento`, `especificaciones`, `caracteristicas`, `informacionNutricional`, `condicionesAlmacenamiento`, `vidaUtil`, `observaciones`, `versionActual`, `estado`)
+SELECT v.`idVariante`, 'Sustituye la salsa cheddar por salsa buffalo picante artesanal.', NOW(), 30, NULL, 'VARIANTE', CONCAT('Preparación estándar Chazin Food para ', v.`nombre`), 9, '1 porción', 'Cocción completa (>70°C en el centro), empaque térmico y control de gramaje estándar.', CONCAT('Presentación ', v.`nombre`, ', aroma fresco, color dorado uniforme y textura equilibrada.'), 'Porción estándar: ~680 kcal | Proteínas: 34g | Carbohidratos: 48g | Grasas: 35g.', 'Consumo inmediato en mesa o en empaque térmico antigrasa antes de 25 minutos.', 'Consumo inmediato', '', 1, 1
+FROM `variante` v WHERE v.`idProducto` = 30 AND LOWER(TRIM(v.`nombre`)) = LOWER('Sabor Salsa Buffalo Picante Artesanal')
+  AND NOT EXISTS (SELECT 1 FROM `fichatecnica` ft WHERE ft.`idVariante` = v.`idVariante` AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1) LIMIT 1;
+DELETE FROM `detallefichainsumo` WHERE `idFichaTecnica` IN (SELECT ft.`idFichaTecnica` FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante` WHERE v.`idProducto` = 30 AND LOWER(TRIM(v.`nombre`)) = LOWER('Sabor Salsa Buffalo Picante Artesanal') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1);
+INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
+SELECT ft.`idFichaTecnica`, 13, 1.00, 'und'
+FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
+WHERE v.`idProducto` = 30 AND LOWER(TRIM(v.`nombre`)) = LOWER('Sabor Salsa Buffalo Picante Artesanal') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1 AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 13) LIMIT 1;
+INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
+SELECT ft.`idFichaTecnica`, 16, 1.00, 'und'
+FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
+WHERE v.`idProducto` = 30 AND LOWER(TRIM(v.`nombre`)) = LOWER('Sabor Salsa Buffalo Picante Artesanal') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1 AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 16) LIMIT 1;
+INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
+SELECT ft.`idFichaTecnica`, 40, 0.04, 'kg'
+FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
+WHERE v.`idProducto` = 30 AND LOWER(TRIM(v.`nombre`)) = LOWER('Sabor Salsa Buffalo Picante Artesanal') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1 AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 40) LIMIT 1;
+INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
+SELECT ft.`idFichaTecnica`, 56, 0.03, 'kg'
+FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
+WHERE v.`idProducto` = 30 AND LOWER(TRIM(v.`nombre`)) = LOWER('Sabor Salsa Buffalo Picante Artesanal') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1 AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 56) LIMIT 1;
+INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
+SELECT ft.`idFichaTecnica`, 18, 0.02, 'kg'
+FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
+WHERE v.`idProducto` = 30 AND LOWER(TRIM(v.`nombre`)) = LOWER('Sabor Salsa Buffalo Picante Artesanal') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1 AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 18) LIMIT 1;
+INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
+SELECT ft.`idFichaTecnica`, 25, 0.02, 'kg'
+FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
+WHERE v.`idProducto` = 30 AND LOWER(TRIM(v.`nombre`)) = LOWER('Sabor Salsa Buffalo Picante Artesanal') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1 AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 25) LIMIT 1;
+
+-- Producto #6
+INSERT INTO `variante` (`idProducto`, `nombre`, `descripcion`, `precio`, `estado`)
+SELECT p.`idProducto`, 'Familiar Salvaje (2 a 3 Personas)', 'Porción familiar generosa con doble cantidad en todos los insumos base.', 38000.00, COALESCE(p.`estado`, 1)
+FROM `producto` p
+WHERE p.`idProducto` = 6 AND COALESCE(p.`eliminado`, 0) = 0
+  AND NOT EXISTS (SELECT 1 FROM `variante` v WHERE v.`idProducto` = 6 AND LOWER(TRIM(v.`nombre`)) = LOWER('Familiar Salvaje (2 a 3 Personas)'));
+UPDATE `variante` SET `precio` = 38000.00, `descripcion` = 'Porción familiar generosa con doble cantidad en todos los insumos base.', `estado` = 1
+WHERE `idProducto` = 6 AND LOWER(TRIM(`nombre`)) = LOWER('Familiar Salvaje (2 a 3 Personas)');
+DELETE FROM `variante_insumo` WHERE `idVariante` IN (SELECT `idVariante` FROM `variante` WHERE `idProducto` = 6 AND LOWER(TRIM(`nombre`)) = LOWER('Familiar Salvaje (2 a 3 Personas)'));
 INSERT INTO `variante_insumo` (`idVariante`, `tipoAccion`, `idInsumo`, `idInsumoReemplazado`, `cantidad`, `unidadMedida`, `observaciones`)
 SELECT v.`idVariante`, 'MODIFICAR_CANTIDAD', 21, NULL, 0.50, 'kg', NULL
-FROM `variante` v
-WHERE v.`idProducto` = 32 AND LOWER(TRIM(v.`nombre`)) = LOWER('Familiar para Compartir (2 Personas)')
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 21)
-  AND NOT EXISTS (SELECT 1 FROM `variante_insumo` vi WHERE vi.`idVariante` = v.`idVariante` AND vi.`idInsumo` = 21)
-LIMIT 1;
+FROM `variante` v WHERE v.`idProducto` = 6 AND LOWER(TRIM(v.`nombre`)) = LOWER('Familiar Salvaje (2 a 3 Personas)') AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 21) LIMIT 1;
 INSERT INTO `variante_insumo` (`idVariante`, `tipoAccion`, `idInsumo`, `idInsumoReemplazado`, `cantidad`, `unidadMedida`, `observaciones`)
-SELECT v.`idVariante`, 'MODIFICAR_CANTIDAD', 16, NULL, 3.00, 'und', NULL
-FROM `variante` v
-WHERE v.`idProducto` = 32 AND LOWER(TRIM(v.`nombre`)) = LOWER('Familiar para Compartir (2 Personas)')
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 16)
-  AND NOT EXISTS (SELECT 1 FROM `variante_insumo` vi WHERE vi.`idVariante` = v.`idVariante` AND vi.`idInsumo` = 16)
-LIMIT 1;
+SELECT v.`idVariante`, 'MODIFICAR_CANTIDAD', 16, NULL, 2.00, 'und', NULL
+FROM `variante` v WHERE v.`idProducto` = 6 AND LOWER(TRIM(v.`nombre`)) = LOWER('Familiar Salvaje (2 a 3 Personas)') AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 16) LIMIT 1;
+INSERT INTO `variante_insumo` (`idVariante`, `tipoAccion`, `idInsumo`, `idInsumoReemplazado`, `cantidad`, `unidadMedida`, `observaciones`)
+SELECT v.`idVariante`, 'MODIFICAR_CANTIDAD', 17, NULL, 2.00, 'und', NULL
+FROM `variante` v WHERE v.`idProducto` = 6 AND LOWER(TRIM(v.`nombre`)) = LOWER('Familiar Salvaje (2 a 3 Personas)') AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 17) LIMIT 1;
 INSERT INTO `variante_insumo` (`idVariante`, `tipoAccion`, `idInsumo`, `idInsumoReemplazado`, `cantidad`, `unidadMedida`, `observaciones`)
 SELECT v.`idVariante`, 'MODIFICAR_CANTIDAD', 18, NULL, 0.08, 'kg', NULL
-FROM `variante` v
-WHERE v.`idProducto` = 32 AND LOWER(TRIM(v.`nombre`)) = LOWER('Familiar para Compartir (2 Personas)')
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 18)
-  AND NOT EXISTS (SELECT 1 FROM `variante_insumo` vi WHERE vi.`idVariante` = v.`idVariante` AND vi.`idInsumo` = 18)
-LIMIT 1;
+FROM `variante` v WHERE v.`idProducto` = 6 AND LOWER(TRIM(v.`nombre`)) = LOWER('Familiar Salvaje (2 a 3 Personas)') AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 18) LIMIT 1;
 INSERT INTO `variante_insumo` (`idVariante`, `tipoAccion`, `idInsumo`, `idInsumoReemplazado`, `cantidad`, `unidadMedida`, `observaciones`)
-SELECT v.`idVariante`, 'MODIFICAR_CANTIDAD', 20, NULL, 0.10, 'kg', NULL
-FROM `variante` v
-WHERE v.`idProducto` = 32 AND LOWER(TRIM(v.`nombre`)) = LOWER('Familiar para Compartir (2 Personas)')
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 20)
-  AND NOT EXISTS (SELECT 1 FROM `variante_insumo` vi WHERE vi.`idVariante` = v.`idVariante` AND vi.`idInsumo` = 20)
-LIMIT 1;
-INSERT INTO `variante_insumo` (`idVariante`, `tipoAccion`, `idInsumo`, `idInsumoReemplazado`, `cantidad`, `unidadMedida`, `observaciones`)
-SELECT v.`idVariante`, 'MODIFICAR_CANTIDAD', 41, NULL, 0.06, 'kg', NULL
-FROM `variante` v
-WHERE v.`idProducto` = 32 AND LOWER(TRIM(v.`nombre`)) = LOWER('Familiar para Compartir (2 Personas)')
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 41)
-  AND NOT EXISTS (SELECT 1 FROM `variante_insumo` vi WHERE vi.`idVariante` = v.`idVariante` AND vi.`idInsumo` = 41)
-LIMIT 1;
-INSERT INTO `variante_insumo` (`idVariante`, `tipoAccion`, `idInsumo`, `idInsumoReemplazado`, `cantidad`, `unidadMedida`, `observaciones`)
-SELECT v.`idVariante`, 'MODIFICAR_CANTIDAD', 43, NULL, 0.06, 'kg', NULL
-FROM `variante` v
-WHERE v.`idProducto` = 32 AND LOWER(TRIM(v.`nombre`)) = LOWER('Familiar para Compartir (2 Personas)')
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 43)
-  AND NOT EXISTS (SELECT 1 FROM `variante_insumo` vi WHERE vi.`idVariante` = v.`idVariante` AND vi.`idInsumo` = 43)
-LIMIT 1;
+SELECT v.`idVariante`, 'MODIFICAR_CANTIDAD', 20, NULL, 0.12, 'kg', NULL
+FROM `variante` v WHERE v.`idProducto` = 6 AND LOWER(TRIM(v.`nombre`)) = LOWER('Familiar Salvaje (2 a 3 Personas)') AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 20) LIMIT 1;
 INSERT INTO `fichatecnica` (`idVariante`, `descripcion`, `fechaCreacion`, `idProducto`, `idInsumo`, `tipo`, `procedimiento`, `tiempoPreparacion`, `rendimiento`, `especificaciones`, `caracteristicas`, `informacionNutricional`, `condicionesAlmacenamiento`, `vidaUtil`, `observaciones`, `versionActual`, `estado`)
-SELECT v.`idVariante`, 'Versión familiar para 2 personas con doble porción de papa, 3 salchichas americanas, tocineta y salsas.', NOW(), 32, NULL, 'VARIANTE', CONCAT('Preparación estándar Chazin Food para ', v.`nombre`), 16, '2 porciones', '', CONCAT('Variante: ', v.`nombre`), '', '', '', '', 1, 1
-FROM `variante` v
-WHERE v.`idProducto` = 32 AND LOWER(TRIM(v.`nombre`)) = LOWER('Familiar para Compartir (2 Personas)')
-  AND NOT EXISTS (SELECT 1 FROM `fichatecnica` ft WHERE ft.`idVariante` = v.`idVariante` AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1)
-LIMIT 1;
+SELECT v.`idVariante`, 'Porción familiar generosa con doble cantidad en todos los insumos base.', NOW(), 6, NULL, 'VARIANTE', CONCAT('Preparación estándar Chazin Food para ', v.`nombre`), 16, '2 a 3 porciones', 'Cocción completa (>70°C en el centro), empaque térmico y control de gramaje estándar.', CONCAT('Presentación ', v.`nombre`, ', aroma fresco, color dorado uniforme y textura equilibrada.'), 'Porción estándar: ~680 kcal | Proteínas: 34g | Carbohidratos: 48g | Grasas: 35g.', 'Consumo inmediato en mesa o en empaque térmico antigrasa antes de 25 minutos.', 'Consumo inmediato', '', 1, 1
+FROM `variante` v WHERE v.`idProducto` = 6 AND LOWER(TRIM(v.`nombre`)) = LOWER('Familiar Salvaje (2 a 3 Personas)')
+  AND NOT EXISTS (SELECT 1 FROM `fichatecnica` ft WHERE ft.`idVariante` = v.`idVariante` AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1) LIMIT 1;
+DELETE FROM `detallefichainsumo` WHERE `idFichaTecnica` IN (SELECT ft.`idFichaTecnica` FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante` WHERE v.`idProducto` = 6 AND LOWER(TRIM(v.`nombre`)) = LOWER('Familiar Salvaje (2 a 3 Personas)') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1);
 INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
 SELECT ft.`idFichaTecnica`, 21, 0.50, 'kg'
 FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
-WHERE v.`idProducto` = 32 AND LOWER(TRIM(v.`nombre`)) = LOWER('Familiar para Compartir (2 Personas)') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 21)
-  AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 21)
-LIMIT 1;
+WHERE v.`idProducto` = 6 AND LOWER(TRIM(v.`nombre`)) = LOWER('Familiar Salvaje (2 a 3 Personas)') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1 AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 21) LIMIT 1;
 INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
-SELECT ft.`idFichaTecnica`, 16, 3.00, 'und'
+SELECT ft.`idFichaTecnica`, 16, 2.00, 'und'
 FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
-WHERE v.`idProducto` = 32 AND LOWER(TRIM(v.`nombre`)) = LOWER('Familiar para Compartir (2 Personas)') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 16)
-  AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 16)
-LIMIT 1;
+WHERE v.`idProducto` = 6 AND LOWER(TRIM(v.`nombre`)) = LOWER('Familiar Salvaje (2 a 3 Personas)') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1 AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 16) LIMIT 1;
+INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
+SELECT ft.`idFichaTecnica`, 17, 2.00, 'und'
+FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
+WHERE v.`idProducto` = 6 AND LOWER(TRIM(v.`nombre`)) = LOWER('Familiar Salvaje (2 a 3 Personas)') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1 AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 17) LIMIT 1;
 INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
 SELECT ft.`idFichaTecnica`, 18, 0.08, 'kg'
 FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
-WHERE v.`idProducto` = 32 AND LOWER(TRIM(v.`nombre`)) = LOWER('Familiar para Compartir (2 Personas)') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 18)
-  AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 18)
-LIMIT 1;
+WHERE v.`idProducto` = 6 AND LOWER(TRIM(v.`nombre`)) = LOWER('Familiar Salvaje (2 a 3 Personas)') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1 AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 18) LIMIT 1;
+INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
+SELECT ft.`idFichaTecnica`, 20, 0.12, 'kg'
+FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
+WHERE v.`idProducto` = 6 AND LOWER(TRIM(v.`nombre`)) = LOWER('Familiar Salvaje (2 a 3 Personas)') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1 AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 20) LIMIT 1;
+
+INSERT INTO `variante` (`idProducto`, `nombre`, `descripcion`, `precio`, `estado`)
+SELECT p.`idProducto`, 'Base en Papas Criollas Doradas', 'Reemplaza las papas a la francesa por papas criollas doradas seleccionadas.', 24500.00, COALESCE(p.`estado`, 1)
+FROM `producto` p
+WHERE p.`idProducto` = 6 AND COALESCE(p.`eliminado`, 0) = 0
+  AND NOT EXISTS (SELECT 1 FROM `variante` v WHERE v.`idProducto` = 6 AND LOWER(TRIM(v.`nombre`)) = LOWER('Base en Papas Criollas Doradas'));
+UPDATE `variante` SET `precio` = 24500.00, `descripcion` = 'Reemplaza las papas a la francesa por papas criollas doradas seleccionadas.', `estado` = 1
+WHERE `idProducto` = 6 AND LOWER(TRIM(`nombre`)) = LOWER('Base en Papas Criollas Doradas');
+DELETE FROM `variante_insumo` WHERE `idVariante` IN (SELECT `idVariante` FROM `variante` WHERE `idProducto` = 6 AND LOWER(TRIM(`nombre`)) = LOWER('Base en Papas Criollas Doradas'));
+INSERT INTO `variante_insumo` (`idVariante`, `tipoAccion`, `idInsumo`, `idInsumoReemplazado`, `cantidad`, `unidadMedida`, `observaciones`)
+SELECT v.`idVariante`, 'REEMPLAZAR', 51, 21, 0.25, 'kg', NULL
+FROM `variante` v WHERE v.`idProducto` = 6 AND LOWER(TRIM(v.`nombre`)) = LOWER('Base en Papas Criollas Doradas') AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 51) LIMIT 1;
+INSERT INTO `fichatecnica` (`idVariante`, `descripcion`, `fechaCreacion`, `idProducto`, `idInsumo`, `tipo`, `procedimiento`, `tiempoPreparacion`, `rendimiento`, `especificaciones`, `caracteristicas`, `informacionNutricional`, `condicionesAlmacenamiento`, `vidaUtil`, `observaciones`, `versionActual`, `estado`)
+SELECT v.`idVariante`, 'Reemplaza las papas a la francesa por papas criollas doradas seleccionadas.', NOW(), 6, NULL, 'VARIANTE', CONCAT('Preparación estándar Chazin Food para ', v.`nombre`), 13, '1 porción', 'Cocción completa (>70°C en el centro), empaque térmico y control de gramaje estándar.', CONCAT('Presentación ', v.`nombre`, ', aroma fresco, color dorado uniforme y textura equilibrada.'), 'Porción estándar: ~680 kcal | Proteínas: 34g | Carbohidratos: 48g | Grasas: 35g.', 'Consumo inmediato en mesa o en empaque térmico antigrasa antes de 25 minutos.', 'Consumo inmediato', '', 1, 1
+FROM `variante` v WHERE v.`idProducto` = 6 AND LOWER(TRIM(v.`nombre`)) = LOWER('Base en Papas Criollas Doradas')
+  AND NOT EXISTS (SELECT 1 FROM `fichatecnica` ft WHERE ft.`idVariante` = v.`idVariante` AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1) LIMIT 1;
+DELETE FROM `detallefichainsumo` WHERE `idFichaTecnica` IN (SELECT ft.`idFichaTecnica` FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante` WHERE v.`idProducto` = 6 AND LOWER(TRIM(v.`nombre`)) = LOWER('Base en Papas Criollas Doradas') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1);
+INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
+SELECT ft.`idFichaTecnica`, 51, 0.25, 'kg'
+FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
+WHERE v.`idProducto` = 6 AND LOWER(TRIM(v.`nombre`)) = LOWER('Base en Papas Criollas Doradas') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1 AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 51) LIMIT 1;
+INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
+SELECT ft.`idFichaTecnica`, 16, 1.00, 'und'
+FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
+WHERE v.`idProducto` = 6 AND LOWER(TRIM(v.`nombre`)) = LOWER('Base en Papas Criollas Doradas') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1 AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 16) LIMIT 1;
+INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
+SELECT ft.`idFichaTecnica`, 17, 1.00, 'und'
+FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
+WHERE v.`idProducto` = 6 AND LOWER(TRIM(v.`nombre`)) = LOWER('Base en Papas Criollas Doradas') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1 AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 17) LIMIT 1;
+INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
+SELECT ft.`idFichaTecnica`, 18, 0.04, 'kg'
+FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
+WHERE v.`idProducto` = 6 AND LOWER(TRIM(v.`nombre`)) = LOWER('Base en Papas Criollas Doradas') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1 AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 18) LIMIT 1;
+INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
+SELECT ft.`idFichaTecnica`, 20, 0.06, 'kg'
+FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
+WHERE v.`idProducto` = 6 AND LOWER(TRIM(v.`nombre`)) = LOWER('Base en Papas Criollas Doradas') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1 AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 20) LIMIT 1;
+
+-- Producto #32
+INSERT INTO `variante` (`idProducto`, `nombre`, `descripcion`, `precio`, `estado`)
+SELECT p.`idProducto`, 'Familiar para Compartir (2 Personas)', 'Versión familiar para 2 personas con doble porción de todos los insumos base.', 34000.00, COALESCE(p.`estado`, 1)
+FROM `producto` p
+WHERE p.`idProducto` = 32 AND COALESCE(p.`eliminado`, 0) = 0
+  AND NOT EXISTS (SELECT 1 FROM `variante` v WHERE v.`idProducto` = 32 AND LOWER(TRIM(v.`nombre`)) = LOWER('Familiar para Compartir (2 Personas)'));
+UPDATE `variante` SET `precio` = 34000.00, `descripcion` = 'Versión familiar para 2 personas con doble porción de todos los insumos base.', `estado` = 1
+WHERE `idProducto` = 32 AND LOWER(TRIM(`nombre`)) = LOWER('Familiar para Compartir (2 Personas)');
+DELETE FROM `variante_insumo` WHERE `idVariante` IN (SELECT `idVariante` FROM `variante` WHERE `idProducto` = 32 AND LOWER(TRIM(`nombre`)) = LOWER('Familiar para Compartir (2 Personas)'));
+INSERT INTO `variante_insumo` (`idVariante`, `tipoAccion`, `idInsumo`, `idInsumoReemplazado`, `cantidad`, `unidadMedida`, `observaciones`)
+SELECT v.`idVariante`, 'MODIFICAR_CANTIDAD', 21, NULL, 0.50, 'kg', NULL
+FROM `variante` v WHERE v.`idProducto` = 32 AND LOWER(TRIM(v.`nombre`)) = LOWER('Familiar para Compartir (2 Personas)') AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 21) LIMIT 1;
+INSERT INTO `variante_insumo` (`idVariante`, `tipoAccion`, `idInsumo`, `idInsumoReemplazado`, `cantidad`, `unidadMedida`, `observaciones`)
+SELECT v.`idVariante`, 'MODIFICAR_CANTIDAD', 16, NULL, 3.00, 'und', NULL
+FROM `variante` v WHERE v.`idProducto` = 32 AND LOWER(TRIM(v.`nombre`)) = LOWER('Familiar para Compartir (2 Personas)') AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 16) LIMIT 1;
+INSERT INTO `variante_insumo` (`idVariante`, `tipoAccion`, `idInsumo`, `idInsumoReemplazado`, `cantidad`, `unidadMedida`, `observaciones`)
+SELECT v.`idVariante`, 'MODIFICAR_CANTIDAD', 18, NULL, 0.08, 'kg', NULL
+FROM `variante` v WHERE v.`idProducto` = 32 AND LOWER(TRIM(v.`nombre`)) = LOWER('Familiar para Compartir (2 Personas)') AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 18) LIMIT 1;
+INSERT INTO `variante_insumo` (`idVariante`, `tipoAccion`, `idInsumo`, `idInsumoReemplazado`, `cantidad`, `unidadMedida`, `observaciones`)
+SELECT v.`idVariante`, 'MODIFICAR_CANTIDAD', 20, NULL, 0.10, 'kg', NULL
+FROM `variante` v WHERE v.`idProducto` = 32 AND LOWER(TRIM(v.`nombre`)) = LOWER('Familiar para Compartir (2 Personas)') AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 20) LIMIT 1;
+INSERT INTO `variante_insumo` (`idVariante`, `tipoAccion`, `idInsumo`, `idInsumoReemplazado`, `cantidad`, `unidadMedida`, `observaciones`)
+SELECT v.`idVariante`, 'MODIFICAR_CANTIDAD', 41, NULL, 0.06, 'kg', NULL
+FROM `variante` v WHERE v.`idProducto` = 32 AND LOWER(TRIM(v.`nombre`)) = LOWER('Familiar para Compartir (2 Personas)') AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 41) LIMIT 1;
+INSERT INTO `variante_insumo` (`idVariante`, `tipoAccion`, `idInsumo`, `idInsumoReemplazado`, `cantidad`, `unidadMedida`, `observaciones`)
+SELECT v.`idVariante`, 'MODIFICAR_CANTIDAD', 43, NULL, 0.06, 'kg', NULL
+FROM `variante` v WHERE v.`idProducto` = 32 AND LOWER(TRIM(v.`nombre`)) = LOWER('Familiar para Compartir (2 Personas)') AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 43) LIMIT 1;
+INSERT INTO `fichatecnica` (`idVariante`, `descripcion`, `fechaCreacion`, `idProducto`, `idInsumo`, `tipo`, `procedimiento`, `tiempoPreparacion`, `rendimiento`, `especificaciones`, `caracteristicas`, `informacionNutricional`, `condicionesAlmacenamiento`, `vidaUtil`, `observaciones`, `versionActual`, `estado`)
+SELECT v.`idVariante`, 'Versión familiar para 2 personas con doble porción de todos los insumos base.', NOW(), 32, NULL, 'VARIANTE', CONCAT('Preparación estándar Chazin Food para ', v.`nombre`), 16, '2 porciones', 'Cocción completa (>70°C en el centro), empaque térmico y control de gramaje estándar.', CONCAT('Presentación ', v.`nombre`, ', aroma fresco, color dorado uniforme y textura equilibrada.'), 'Porción estándar: ~680 kcal | Proteínas: 34g | Carbohidratos: 48g | Grasas: 35g.', 'Consumo inmediato en mesa o en empaque térmico antigrasa antes de 25 minutos.', 'Consumo inmediato', '', 1, 1
+FROM `variante` v WHERE v.`idProducto` = 32 AND LOWER(TRIM(v.`nombre`)) = LOWER('Familiar para Compartir (2 Personas)')
+  AND NOT EXISTS (SELECT 1 FROM `fichatecnica` ft WHERE ft.`idVariante` = v.`idVariante` AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1) LIMIT 1;
+DELETE FROM `detallefichainsumo` WHERE `idFichaTecnica` IN (SELECT ft.`idFichaTecnica` FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante` WHERE v.`idProducto` = 32 AND LOWER(TRIM(v.`nombre`)) = LOWER('Familiar para Compartir (2 Personas)') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1);
+INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
+SELECT ft.`idFichaTecnica`, 21, 0.50, 'kg'
+FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
+WHERE v.`idProducto` = 32 AND LOWER(TRIM(v.`nombre`)) = LOWER('Familiar para Compartir (2 Personas)') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1 AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 21) LIMIT 1;
+INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
+SELECT ft.`idFichaTecnica`, 16, 3.00, 'und'
+FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
+WHERE v.`idProducto` = 32 AND LOWER(TRIM(v.`nombre`)) = LOWER('Familiar para Compartir (2 Personas)') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1 AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 16) LIMIT 1;
+INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
+SELECT ft.`idFichaTecnica`, 18, 0.08, 'kg'
+FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
+WHERE v.`idProducto` = 32 AND LOWER(TRIM(v.`nombre`)) = LOWER('Familiar para Compartir (2 Personas)') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1 AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 18) LIMIT 1;
 INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
 SELECT ft.`idFichaTecnica`, 20, 0.10, 'kg'
 FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
-WHERE v.`idProducto` = 32 AND LOWER(TRIM(v.`nombre`)) = LOWER('Familiar para Compartir (2 Personas)') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 20)
-  AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 20)
-LIMIT 1;
+WHERE v.`idProducto` = 32 AND LOWER(TRIM(v.`nombre`)) = LOWER('Familiar para Compartir (2 Personas)') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1 AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 20) LIMIT 1;
 INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
 SELECT ft.`idFichaTecnica`, 41, 0.06, 'kg'
 FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
-WHERE v.`idProducto` = 32 AND LOWER(TRIM(v.`nombre`)) = LOWER('Familiar para Compartir (2 Personas)') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 41)
-  AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 41)
-LIMIT 1;
+WHERE v.`idProducto` = 32 AND LOWER(TRIM(v.`nombre`)) = LOWER('Familiar para Compartir (2 Personas)') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1 AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 41) LIMIT 1;
 INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
 SELECT ft.`idFichaTecnica`, 43, 0.06, 'kg'
 FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
-WHERE v.`idProducto` = 32 AND LOWER(TRIM(v.`nombre`)) = LOWER('Familiar para Compartir (2 Personas)') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 43)
-  AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 43)
-LIMIT 1;
+WHERE v.`idProducto` = 32 AND LOWER(TRIM(v.`nombre`)) = LOWER('Familiar para Compartir (2 Personas)') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1 AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 43) LIMIT 1;
+
+INSERT INTO `variante` (`idProducto`, `nombre`, `descripcion`, `precio`, `estado`)
+SELECT p.`idProducto`, 'Proteína Chorizo Santarrosano Artesanal', 'Reemplaza la salchicha americana por 2 unidades de chorizo santarrosano artesanal.', 24500.00, COALESCE(p.`estado`, 1)
+FROM `producto` p
+WHERE p.`idProducto` = 32 AND COALESCE(p.`eliminado`, 0) = 0
+  AND NOT EXISTS (SELECT 1 FROM `variante` v WHERE v.`idProducto` = 32 AND LOWER(TRIM(v.`nombre`)) = LOWER('Proteína Chorizo Santarrosano Artesanal'));
+UPDATE `variante` SET `precio` = 24500.00, `descripcion` = 'Reemplaza la salchicha americana por 2 unidades de chorizo santarrosano artesanal.', `estado` = 1
+WHERE `idProducto` = 32 AND LOWER(TRIM(`nombre`)) = LOWER('Proteína Chorizo Santarrosano Artesanal');
+DELETE FROM `variante_insumo` WHERE `idVariante` IN (SELECT `idVariante` FROM `variante` WHERE `idProducto` = 32 AND LOWER(TRIM(`nombre`)) = LOWER('Proteína Chorizo Santarrosano Artesanal'));
+INSERT INTO `variante_insumo` (`idVariante`, `tipoAccion`, `idInsumo`, `idInsumoReemplazado`, `cantidad`, `unidadMedida`, `observaciones`)
+SELECT v.`idVariante`, 'REEMPLAZAR', 53, 16, 2.00, 'und', NULL
+FROM `variante` v WHERE v.`idProducto` = 32 AND LOWER(TRIM(v.`nombre`)) = LOWER('Proteína Chorizo Santarrosano Artesanal') AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 53) LIMIT 1;
+INSERT INTO `fichatecnica` (`idVariante`, `descripcion`, `fechaCreacion`, `idProducto`, `idInsumo`, `tipo`, `procedimiento`, `tiempoPreparacion`, `rendimiento`, `especificaciones`, `caracteristicas`, `informacionNutricional`, `condicionesAlmacenamiento`, `vidaUtil`, `observaciones`, `versionActual`, `estado`)
+SELECT v.`idVariante`, 'Reemplaza la salchicha americana por 2 unidades de chorizo santarrosano artesanal.', NOW(), 32, NULL, 'VARIANTE', CONCAT('Preparación estándar Chazin Food para ', v.`nombre`), 13, '1 porción', 'Cocción completa (>70°C en el centro), empaque térmico y control de gramaje estándar.', CONCAT('Presentación ', v.`nombre`, ', aroma fresco, color dorado uniforme y textura equilibrada.'), 'Porción estándar: ~680 kcal | Proteínas: 34g | Carbohidratos: 48g | Grasas: 35g.', 'Consumo inmediato en mesa o en empaque térmico antigrasa antes de 25 minutos.', 'Consumo inmediato', '', 1, 1
+FROM `variante` v WHERE v.`idProducto` = 32 AND LOWER(TRIM(v.`nombre`)) = LOWER('Proteína Chorizo Santarrosano Artesanal')
+  AND NOT EXISTS (SELECT 1 FROM `fichatecnica` ft WHERE ft.`idVariante` = v.`idVariante` AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1) LIMIT 1;
+DELETE FROM `detallefichainsumo` WHERE `idFichaTecnica` IN (SELECT ft.`idFichaTecnica` FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante` WHERE v.`idProducto` = 32 AND LOWER(TRIM(v.`nombre`)) = LOWER('Proteína Chorizo Santarrosano Artesanal') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1);
+INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
+SELECT ft.`idFichaTecnica`, 21, 0.25, 'kg'
+FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
+WHERE v.`idProducto` = 32 AND LOWER(TRIM(v.`nombre`)) = LOWER('Proteína Chorizo Santarrosano Artesanal') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1 AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 21) LIMIT 1;
+INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
+SELECT ft.`idFichaTecnica`, 53, 2.00, 'und'
+FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
+WHERE v.`idProducto` = 32 AND LOWER(TRIM(v.`nombre`)) = LOWER('Proteína Chorizo Santarrosano Artesanal') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1 AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 53) LIMIT 1;
+INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
+SELECT ft.`idFichaTecnica`, 18, 0.04, 'kg'
+FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
+WHERE v.`idProducto` = 32 AND LOWER(TRIM(v.`nombre`)) = LOWER('Proteína Chorizo Santarrosano Artesanal') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1 AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 18) LIMIT 1;
+INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
+SELECT ft.`idFichaTecnica`, 20, 0.05, 'kg'
+FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
+WHERE v.`idProducto` = 32 AND LOWER(TRIM(v.`nombre`)) = LOWER('Proteína Chorizo Santarrosano Artesanal') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1 AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 20) LIMIT 1;
+INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
+SELECT ft.`idFichaTecnica`, 41, 0.03, 'kg'
+FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
+WHERE v.`idProducto` = 32 AND LOWER(TRIM(v.`nombre`)) = LOWER('Proteína Chorizo Santarrosano Artesanal') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1 AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 41) LIMIT 1;
+INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
+SELECT ft.`idFichaTecnica`, 43, 0.03, 'kg'
+FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
+WHERE v.`idProducto` = 32 AND LOWER(TRIM(v.`nombre`)) = LOWER('Proteína Chorizo Santarrosano Artesanal') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1 AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 43) LIMIT 1;
 
 -- Producto #33
 INSERT INTO `variante` (`idProducto`, `nombre`, `descripcion`, `precio`, `estado`)
@@ -3864,164 +3258,96 @@ SELECT p.`idProducto`, 'Costeña con Papas en Casco Rústicas', 'Salchipapa cost
 FROM `producto` p
 WHERE p.`idProducto` = 33 AND COALESCE(p.`eliminado`, 0) = 0
   AND NOT EXISTS (SELECT 1 FROM `variante` v WHERE v.`idProducto` = 33 AND LOWER(TRIM(v.`nombre`)) = LOWER('Costeña con Papas en Casco Rústicas'));
-UPDATE `variante`
-SET `precio` = CASE WHEN COALESCE(`precio`, 0) <= 0 THEN 24000.00 ELSE `precio` END,
-    `descripcion` = CASE WHEN `descripcion` IS NULL OR TRIM(`descripcion`) = '' THEN 'Salchipapa costeña preparada con papas rústicas en casco con piel en reemplazo de papa delgada.' ELSE `descripcion` END
+UPDATE `variante` SET `precio` = 24000.00, `descripcion` = 'Salchipapa costeña preparada con papas rústicas en casco con piel en reemplazo de papa delgada.', `estado` = 1
 WHERE `idProducto` = 33 AND LOWER(TRIM(`nombre`)) = LOWER('Costeña con Papas en Casco Rústicas');
+DELETE FROM `variante_insumo` WHERE `idVariante` IN (SELECT `idVariante` FROM `variante` WHERE `idProducto` = 33 AND LOWER(TRIM(`nombre`)) = LOWER('Costeña con Papas en Casco Rústicas'));
 INSERT INTO `variante_insumo` (`idVariante`, `tipoAccion`, `idInsumo`, `idInsumoReemplazado`, `cantidad`, `unidadMedida`, `observaciones`)
 SELECT v.`idVariante`, 'REEMPLAZAR', 38, 21, 0.25, 'kg', NULL
-FROM `variante` v
-WHERE v.`idProducto` = 33 AND LOWER(TRIM(v.`nombre`)) = LOWER('Costeña con Papas en Casco Rústicas')
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 38)
-  AND NOT EXISTS (SELECT 1 FROM `variante_insumo` vi WHERE vi.`idVariante` = v.`idVariante` AND vi.`idInsumo` = 38)
-LIMIT 1;
+FROM `variante` v WHERE v.`idProducto` = 33 AND LOWER(TRIM(v.`nombre`)) = LOWER('Costeña con Papas en Casco Rústicas') AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 38) LIMIT 1;
 INSERT INTO `fichatecnica` (`idVariante`, `descripcion`, `fechaCreacion`, `idProducto`, `idInsumo`, `tipo`, `procedimiento`, `tiempoPreparacion`, `rendimiento`, `especificaciones`, `caracteristicas`, `informacionNutricional`, `condicionesAlmacenamiento`, `vidaUtil`, `observaciones`, `versionActual`, `estado`)
-SELECT v.`idVariante`, 'Salchipapa costeña preparada con papas rústicas en casco con piel en reemplazo de papa delgada.', NOW(), 33, NULL, 'VARIANTE', CONCAT('Preparación estándar Chazin Food para ', v.`nombre`), 14, '1 porción', '', CONCAT('Variante: ', v.`nombre`), '', '', '', '', 1, 1
-FROM `variante` v
-WHERE v.`idProducto` = 33 AND LOWER(TRIM(v.`nombre`)) = LOWER('Costeña con Papas en Casco Rústicas')
-  AND NOT EXISTS (SELECT 1 FROM `fichatecnica` ft WHERE ft.`idVariante` = v.`idVariante` AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1)
-LIMIT 1;
+SELECT v.`idVariante`, 'Salchipapa costeña preparada con papas rústicas en casco con piel en reemplazo de papa delgada.', NOW(), 33, NULL, 'VARIANTE', CONCAT('Preparación estándar Chazin Food para ', v.`nombre`), 14, '1 porción', 'Cocción completa (>70°C en el centro), empaque térmico y control de gramaje estándar.', CONCAT('Presentación ', v.`nombre`, ', aroma fresco, color dorado uniforme y textura equilibrada.'), 'Porción estándar: ~680 kcal | Proteínas: 34g | Carbohidratos: 48g | Grasas: 35g.', 'Consumo inmediato en mesa o en empaque térmico antigrasa antes de 25 minutos.', 'Consumo inmediato', '', 1, 1
+FROM `variante` v WHERE v.`idProducto` = 33 AND LOWER(TRIM(v.`nombre`)) = LOWER('Costeña con Papas en Casco Rústicas')
+  AND NOT EXISTS (SELECT 1 FROM `fichatecnica` ft WHERE ft.`idVariante` = v.`idVariante` AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1) LIMIT 1;
+DELETE FROM `detallefichainsumo` WHERE `idFichaTecnica` IN (SELECT ft.`idFichaTecnica` FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante` WHERE v.`idProducto` = 33 AND LOWER(TRIM(v.`nombre`)) = LOWER('Costeña con Papas en Casco Rústicas') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1);
 INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
 SELECT ft.`idFichaTecnica`, 38, 0.25, 'kg'
 FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
-WHERE v.`idProducto` = 33 AND LOWER(TRIM(v.`nombre`)) = LOWER('Costeña con Papas en Casco Rústicas') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 38)
-  AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 38)
-LIMIT 1;
+WHERE v.`idProducto` = 33 AND LOWER(TRIM(v.`nombre`)) = LOWER('Costeña con Papas en Casco Rústicas') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1 AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 38) LIMIT 1;
 INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
 SELECT ft.`idFichaTecnica`, 17, 1.50, 'und'
 FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
-WHERE v.`idProducto` = 33 AND LOWER(TRIM(v.`nombre`)) = LOWER('Costeña con Papas en Casco Rústicas') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 17)
-  AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 17)
-LIMIT 1;
+WHERE v.`idProducto` = 33 AND LOWER(TRIM(v.`nombre`)) = LOWER('Costeña con Papas en Casco Rústicas') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1 AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 17) LIMIT 1;
 INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
 SELECT ft.`idFichaTecnica`, 18, 0.04, 'kg'
 FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
-WHERE v.`idProducto` = 33 AND LOWER(TRIM(v.`nombre`)) = LOWER('Costeña con Papas en Casco Rústicas') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 18)
-  AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 18)
-LIMIT 1;
+WHERE v.`idProducto` = 33 AND LOWER(TRIM(v.`nombre`)) = LOWER('Costeña con Papas en Casco Rústicas') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1 AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 18) LIMIT 1;
 INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
 SELECT ft.`idFichaTecnica`, 20, 0.05, 'kg'
 FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
-WHERE v.`idProducto` = 33 AND LOWER(TRIM(v.`nombre`)) = LOWER('Costeña con Papas en Casco Rústicas') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 20)
-  AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 20)
-LIMIT 1;
+WHERE v.`idProducto` = 33 AND LOWER(TRIM(v.`nombre`)) = LOWER('Costeña con Papas en Casco Rústicas') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1 AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 20) LIMIT 1;
 INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
 SELECT ft.`idFichaTecnica`, 41, 0.04, 'kg'
 FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
-WHERE v.`idProducto` = 33 AND LOWER(TRIM(v.`nombre`)) = LOWER('Costeña con Papas en Casco Rústicas') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 41)
-  AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 41)
-LIMIT 1;
+WHERE v.`idProducto` = 33 AND LOWER(TRIM(v.`nombre`)) = LOWER('Costeña con Papas en Casco Rústicas') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1 AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 41) LIMIT 1;
 INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
 SELECT ft.`idFichaTecnica`, 45, 0.03, 'kg'
 FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
-WHERE v.`idProducto` = 33 AND LOWER(TRIM(v.`nombre`)) = LOWER('Costeña con Papas en Casco Rústicas') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 45)
-  AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 45)
-LIMIT 1;
+WHERE v.`idProducto` = 33 AND LOWER(TRIM(v.`nombre`)) = LOWER('Costeña con Papas en Casco Rústicas') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1 AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 45) LIMIT 1;
 
 INSERT INTO `variante` (`idProducto`, `nombre`, `descripcion`, `precio`, `estado`)
-SELECT p.`idProducto`, 'Familiar Costeña (2 Personas)', 'Presentación familiar costeña para 2 personas con 3 salchichas suizas, suero costeño y salsa tártara.', 36000.00, COALESCE(p.`estado`, 1)
+SELECT p.`idProducto`, 'Familiar Costeña (2 Personas)', 'Presentación familiar costeña para 2 personas con doble porción de todos los insumos base.', 36000.00, COALESCE(p.`estado`, 1)
 FROM `producto` p
 WHERE p.`idProducto` = 33 AND COALESCE(p.`eliminado`, 0) = 0
   AND NOT EXISTS (SELECT 1 FROM `variante` v WHERE v.`idProducto` = 33 AND LOWER(TRIM(v.`nombre`)) = LOWER('Familiar Costeña (2 Personas)'));
-UPDATE `variante`
-SET `precio` = CASE WHEN COALESCE(`precio`, 0) <= 0 THEN 36000.00 ELSE `precio` END,
-    `descripcion` = CASE WHEN `descripcion` IS NULL OR TRIM(`descripcion`) = '' THEN 'Presentación familiar costeña para 2 personas con 3 salchichas suizas, suero costeño y salsa tártara.' ELSE `descripcion` END
+UPDATE `variante` SET `precio` = 36000.00, `descripcion` = 'Presentación familiar costeña para 2 personas con doble porción de todos los insumos base.', `estado` = 1
 WHERE `idProducto` = 33 AND LOWER(TRIM(`nombre`)) = LOWER('Familiar Costeña (2 Personas)');
+DELETE FROM `variante_insumo` WHERE `idVariante` IN (SELECT `idVariante` FROM `variante` WHERE `idProducto` = 33 AND LOWER(TRIM(`nombre`)) = LOWER('Familiar Costeña (2 Personas)'));
 INSERT INTO `variante_insumo` (`idVariante`, `tipoAccion`, `idInsumo`, `idInsumoReemplazado`, `cantidad`, `unidadMedida`, `observaciones`)
 SELECT v.`idVariante`, 'MODIFICAR_CANTIDAD', 21, NULL, 0.50, 'kg', NULL
-FROM `variante` v
-WHERE v.`idProducto` = 33 AND LOWER(TRIM(v.`nombre`)) = LOWER('Familiar Costeña (2 Personas)')
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 21)
-  AND NOT EXISTS (SELECT 1 FROM `variante_insumo` vi WHERE vi.`idVariante` = v.`idVariante` AND vi.`idInsumo` = 21)
-LIMIT 1;
+FROM `variante` v WHERE v.`idProducto` = 33 AND LOWER(TRIM(v.`nombre`)) = LOWER('Familiar Costeña (2 Personas)') AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 21) LIMIT 1;
 INSERT INTO `variante_insumo` (`idVariante`, `tipoAccion`, `idInsumo`, `idInsumoReemplazado`, `cantidad`, `unidadMedida`, `observaciones`)
 SELECT v.`idVariante`, 'MODIFICAR_CANTIDAD', 17, NULL, 3.00, 'und', NULL
-FROM `variante` v
-WHERE v.`idProducto` = 33 AND LOWER(TRIM(v.`nombre`)) = LOWER('Familiar Costeña (2 Personas)')
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 17)
-  AND NOT EXISTS (SELECT 1 FROM `variante_insumo` vi WHERE vi.`idVariante` = v.`idVariante` AND vi.`idInsumo` = 17)
-LIMIT 1;
+FROM `variante` v WHERE v.`idProducto` = 33 AND LOWER(TRIM(v.`nombre`)) = LOWER('Familiar Costeña (2 Personas)') AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 17) LIMIT 1;
 INSERT INTO `variante_insumo` (`idVariante`, `tipoAccion`, `idInsumo`, `idInsumoReemplazado`, `cantidad`, `unidadMedida`, `observaciones`)
 SELECT v.`idVariante`, 'MODIFICAR_CANTIDAD', 18, NULL, 0.08, 'kg', NULL
-FROM `variante` v
-WHERE v.`idProducto` = 33 AND LOWER(TRIM(v.`nombre`)) = LOWER('Familiar Costeña (2 Personas)')
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 18)
-  AND NOT EXISTS (SELECT 1 FROM `variante_insumo` vi WHERE vi.`idVariante` = v.`idVariante` AND vi.`idInsumo` = 18)
-LIMIT 1;
+FROM `variante` v WHERE v.`idProducto` = 33 AND LOWER(TRIM(v.`nombre`)) = LOWER('Familiar Costeña (2 Personas)') AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 18) LIMIT 1;
 INSERT INTO `variante_insumo` (`idVariante`, `tipoAccion`, `idInsumo`, `idInsumoReemplazado`, `cantidad`, `unidadMedida`, `observaciones`)
 SELECT v.`idVariante`, 'MODIFICAR_CANTIDAD', 20, NULL, 0.10, 'kg', NULL
-FROM `variante` v
-WHERE v.`idProducto` = 33 AND LOWER(TRIM(v.`nombre`)) = LOWER('Familiar Costeña (2 Personas)')
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 20)
-  AND NOT EXISTS (SELECT 1 FROM `variante_insumo` vi WHERE vi.`idVariante` = v.`idVariante` AND vi.`idInsumo` = 20)
-LIMIT 1;
+FROM `variante` v WHERE v.`idProducto` = 33 AND LOWER(TRIM(v.`nombre`)) = LOWER('Familiar Costeña (2 Personas)') AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 20) LIMIT 1;
 INSERT INTO `variante_insumo` (`idVariante`, `tipoAccion`, `idInsumo`, `idInsumoReemplazado`, `cantidad`, `unidadMedida`, `observaciones`)
 SELECT v.`idVariante`, 'MODIFICAR_CANTIDAD', 41, NULL, 0.08, 'kg', NULL
-FROM `variante` v
-WHERE v.`idProducto` = 33 AND LOWER(TRIM(v.`nombre`)) = LOWER('Familiar Costeña (2 Personas)')
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 41)
-  AND NOT EXISTS (SELECT 1 FROM `variante_insumo` vi WHERE vi.`idVariante` = v.`idVariante` AND vi.`idInsumo` = 41)
-LIMIT 1;
+FROM `variante` v WHERE v.`idProducto` = 33 AND LOWER(TRIM(v.`nombre`)) = LOWER('Familiar Costeña (2 Personas)') AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 41) LIMIT 1;
 INSERT INTO `variante_insumo` (`idVariante`, `tipoAccion`, `idInsumo`, `idInsumoReemplazado`, `cantidad`, `unidadMedida`, `observaciones`)
 SELECT v.`idVariante`, 'MODIFICAR_CANTIDAD', 45, NULL, 0.06, 'kg', NULL
-FROM `variante` v
-WHERE v.`idProducto` = 33 AND LOWER(TRIM(v.`nombre`)) = LOWER('Familiar Costeña (2 Personas)')
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 45)
-  AND NOT EXISTS (SELECT 1 FROM `variante_insumo` vi WHERE vi.`idVariante` = v.`idVariante` AND vi.`idInsumo` = 45)
-LIMIT 1;
+FROM `variante` v WHERE v.`idProducto` = 33 AND LOWER(TRIM(v.`nombre`)) = LOWER('Familiar Costeña (2 Personas)') AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 45) LIMIT 1;
 INSERT INTO `fichatecnica` (`idVariante`, `descripcion`, `fechaCreacion`, `idProducto`, `idInsumo`, `tipo`, `procedimiento`, `tiempoPreparacion`, `rendimiento`, `especificaciones`, `caracteristicas`, `informacionNutricional`, `condicionesAlmacenamiento`, `vidaUtil`, `observaciones`, `versionActual`, `estado`)
-SELECT v.`idVariante`, 'Presentación familiar costeña para 2 personas con 3 salchichas suizas, suero costeño y salsa tártara.', NOW(), 33, NULL, 'VARIANTE', CONCAT('Preparación estándar Chazin Food para ', v.`nombre`), 16, '2 porciones', '', CONCAT('Variante: ', v.`nombre`), '', '', '', '', 1, 1
-FROM `variante` v
-WHERE v.`idProducto` = 33 AND LOWER(TRIM(v.`nombre`)) = LOWER('Familiar Costeña (2 Personas)')
-  AND NOT EXISTS (SELECT 1 FROM `fichatecnica` ft WHERE ft.`idVariante` = v.`idVariante` AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1)
-LIMIT 1;
+SELECT v.`idVariante`, 'Presentación familiar costeña para 2 personas con doble porción de todos los insumos base.', NOW(), 33, NULL, 'VARIANTE', CONCAT('Preparación estándar Chazin Food para ', v.`nombre`), 16, '2 porciones', 'Cocción completa (>70°C en el centro), empaque térmico y control de gramaje estándar.', CONCAT('Presentación ', v.`nombre`, ', aroma fresco, color dorado uniforme y textura equilibrada.'), 'Porción estándar: ~680 kcal | Proteínas: 34g | Carbohidratos: 48g | Grasas: 35g.', 'Consumo inmediato en mesa o en empaque térmico antigrasa antes de 25 minutos.', 'Consumo inmediato', '', 1, 1
+FROM `variante` v WHERE v.`idProducto` = 33 AND LOWER(TRIM(v.`nombre`)) = LOWER('Familiar Costeña (2 Personas)')
+  AND NOT EXISTS (SELECT 1 FROM `fichatecnica` ft WHERE ft.`idVariante` = v.`idVariante` AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1) LIMIT 1;
+DELETE FROM `detallefichainsumo` WHERE `idFichaTecnica` IN (SELECT ft.`idFichaTecnica` FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante` WHERE v.`idProducto` = 33 AND LOWER(TRIM(v.`nombre`)) = LOWER('Familiar Costeña (2 Personas)') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1);
 INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
 SELECT ft.`idFichaTecnica`, 21, 0.50, 'kg'
 FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
-WHERE v.`idProducto` = 33 AND LOWER(TRIM(v.`nombre`)) = LOWER('Familiar Costeña (2 Personas)') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 21)
-  AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 21)
-LIMIT 1;
+WHERE v.`idProducto` = 33 AND LOWER(TRIM(v.`nombre`)) = LOWER('Familiar Costeña (2 Personas)') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1 AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 21) LIMIT 1;
 INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
 SELECT ft.`idFichaTecnica`, 17, 3.00, 'und'
 FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
-WHERE v.`idProducto` = 33 AND LOWER(TRIM(v.`nombre`)) = LOWER('Familiar Costeña (2 Personas)') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 17)
-  AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 17)
-LIMIT 1;
+WHERE v.`idProducto` = 33 AND LOWER(TRIM(v.`nombre`)) = LOWER('Familiar Costeña (2 Personas)') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1 AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 17) LIMIT 1;
 INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
 SELECT ft.`idFichaTecnica`, 18, 0.08, 'kg'
 FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
-WHERE v.`idProducto` = 33 AND LOWER(TRIM(v.`nombre`)) = LOWER('Familiar Costeña (2 Personas)') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 18)
-  AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 18)
-LIMIT 1;
+WHERE v.`idProducto` = 33 AND LOWER(TRIM(v.`nombre`)) = LOWER('Familiar Costeña (2 Personas)') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1 AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 18) LIMIT 1;
 INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
 SELECT ft.`idFichaTecnica`, 20, 0.10, 'kg'
 FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
-WHERE v.`idProducto` = 33 AND LOWER(TRIM(v.`nombre`)) = LOWER('Familiar Costeña (2 Personas)') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 20)
-  AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 20)
-LIMIT 1;
+WHERE v.`idProducto` = 33 AND LOWER(TRIM(v.`nombre`)) = LOWER('Familiar Costeña (2 Personas)') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1 AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 20) LIMIT 1;
 INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
 SELECT ft.`idFichaTecnica`, 41, 0.08, 'kg'
 FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
-WHERE v.`idProducto` = 33 AND LOWER(TRIM(v.`nombre`)) = LOWER('Familiar Costeña (2 Personas)') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 41)
-  AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 41)
-LIMIT 1;
+WHERE v.`idProducto` = 33 AND LOWER(TRIM(v.`nombre`)) = LOWER('Familiar Costeña (2 Personas)') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1 AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 41) LIMIT 1;
 INSERT INTO `detallefichainsumo` (`idFichaTecnica`, `idInsumo`, `cantidad`, `unidadMedida`)
 SELECT ft.`idFichaTecnica`, 45, 0.06, 'kg'
 FROM `fichatecnica` ft INNER JOIN `variante` v ON v.`idVariante` = ft.`idVariante`
-WHERE v.`idProducto` = 33 AND LOWER(TRIM(v.`nombre`)) = LOWER('Familiar Costeña (2 Personas)') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1
-  AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 45)
-  AND NOT EXISTS (SELECT 1 FROM `detallefichainsumo` dfi WHERE dfi.`idFichaTecnica` = ft.`idFichaTecnica` AND dfi.`idInsumo` = 45)
-LIMIT 1;
+WHERE v.`idProducto` = 33 AND LOWER(TRIM(v.`nombre`)) = LOWER('Familiar Costeña (2 Personas)') AND ft.`tipo` = 'VARIANTE' AND ft.`estado` = 1 AND EXISTS (SELECT 1 FROM `insumo` i WHERE i.`idInsumo` = 45) LIMIT 1;
 
--- Dump completed on 2026-11-13  4:48:45
+-- Dump completed on 2026-11-16 16:50:00

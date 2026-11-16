@@ -1177,7 +1177,15 @@ async function ensurePreciosRealesInsumosYStock() {
       { id: 44, precio: 11000, unidad: 'kg' },
       { id: 45, precio: 12000, unidad: 'kg' },
       { id: 47, precio: 2100, unidad: 'Unidad' },
-      { id: 48, precio: 2100, unidad: 'und' }
+      { id: 48, precio: 2100, unidad: 'und' },
+      { id: 49, precio: 2400, unidad: 'und' },
+      { id: 50, precio: 1800, unidad: 'und' },
+      { id: 51, precio: 8800, unidad: 'kg' },
+      { id: 52, precio: 36000, unidad: 'kg' },
+      { id: 53, precio: 3200, unidad: 'und' },
+      { id: 54, precio: 22000, unidad: 'kg' },
+      { id: 55, precio: 13500, unidad: 'kg' },
+      { id: 56, precio: 14500, unidad: 'kg' }
     ];
 
     for (const item of preciosReales) {
@@ -1212,13 +1220,21 @@ async function ensurePreciosRealesInsumosYStock() {
       );
     }
 
-    // Insumos complementarios de cocina y salsas
+    // Insumos complementarios de cocina, salsas y variantes (#49-#56)
     const extras = [
       { id: 44, minStock: 20 },
       { id: 45, minStock: 15 },
       { id: 43, minStock: 30 },
       { id: 40, minStock: 20 },
-      { id: 38, minStock: 30 }
+      { id: 38, minStock: 30 },
+      { id: 49, minStock: 90 },
+      { id: 50, minStock: 90 },
+      { id: 51, minStock: 45 },
+      { id: 52, minStock: 40 },
+      { id: 53, minStock: 70 },
+      { id: 54, minStock: 30 },
+      { id: 55, minStock: 20 },
+      { id: 56, minStock: 20 }
     ];
     for (const s of extras) {
       await sequelize.query('UPDATE insumo SET stock = ' + s.minStock + ', estado = 1 WHERE idInsumo = ' + s.id + ' AND (stock <= 0 OR stock IS NULL)');

@@ -668,13 +668,10 @@ class ProductService {
       ProductService._catalogVariantsSyncTriggered = true;
       const { ensureCatalogVariantsAndDrinkFichas } = require('../../infrastructure/utils/catalogVariantsSync');
       const { invalidateNamespaces } = require('../../infrastructure/utils/apiCache');
-      ensureCatalogVariantsAndDrinkFichas()
-        .then((changed) => {
-          if (changed) {
-            invalidateNamespaces(['productos', 'fichas']);
-          }
-        })
-        .catch(() => {});
+      const changed = await ensureCatalogVariantsAndDrinkFichas().catch(() => false);
+      if (changed) {
+        invalidateNamespaces(['productos', 'fichas']);
+      }
     }
     return this._queryFormattedProducts({ eliminado: 0, order: [['idProducto', 'ASC']] });
   }
