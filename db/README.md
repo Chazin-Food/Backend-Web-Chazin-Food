@@ -6,11 +6,9 @@ Esta carpeta contiene los scripts SQL actualizados y respaldos de la base de dat
 
 ## 📁 Estructura de Archivos
 
-| Archivo / Carpeta | Descripción |
+| Archivo | Descripción |
 | :--- | :--- |
-| **`chazinfood_tidb_ready.sql`** | **Script activo y desplegado.** 100% compatible con TiDB Cloud Serverless y MySQL 8.0 / MariaDB (XAMPP). Contiene el esquema completo, tablas maestras, datos de producción y vistas. |
-| **`chazinfood.sql`** | Archivo SQL principal del proyecto (sincronizado con la versión `chazinfood_tidb_ready.sql`). |
-| **`init.sql`** | Archivo de inicialización para Docker (`db/init.sql`). |
+| **`chazinfood.sql`** | **Archivo SQL único y oficial del proyecto.** 100% compatible con TiDB Cloud Serverless, Docker y MySQL 8.0 / MariaDB (XAMPP). Contiene el esquema completo (incluidas las columnas vigentes de `producto` y `devolucion`), datos de producción, vistas y la sección idempotente de variantes, fichas técnicas e insumos. |
 
 ---
 
@@ -21,17 +19,18 @@ Esta carpeta contiene los scripts SQL actualizados y respaldos de la base de dat
 2. Abre tu terminal o PowerShell en la carpeta `backend` y ejecuta:
    ```bash
    C:\xampp\mysql\bin\mysql.exe -u root -e "CREATE DATABASE IF NOT EXISTS chazinfood DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
-   C:\xampp\mysql\bin\mysql.exe -u root chazinfood < "db\chazinfood_tidb_ready.sql"
+   C:\xampp\mysql\bin\mysql.exe -u root chazinfood < "db\chazinfood.sql"
    ```
 3. O si prefieres desde **phpMyAdmin** (`http://localhost/phpmyadmin`):
    - Crea la base de datos `chazinfood`.
-   - Ve a la pestaña **Importar** y selecciona `db/chazinfood_tidb_ready.sql` o `db/chazinfood.sql`.
+   - Ve a la pestaña **Importar** y selecciona `db/chazinfood.sql`.
 
 ### Opción 2: En TiDB Cloud Serverless (Nube)
 1. Conéctate a tu clúster de TiDB Cloud usando el CLI de MySQL o la consola web de TiDB:
    ```bash
-   mysql -u '<tu_usuario>' -h '<gateway.tidbcloud.com>' -P 4000 -D chazinfood --ssl-mode=VERIFY_IDENTITY -p < "db\chazinfood_tidb_ready.sql"
+   mysql -u '<tu_usuario>' -h '<gateway.tidbcloud.com>' -P 4000 -D chazinfood --ssl-mode=VERIFY_IDENTITY -p < "db\chazinfood.sql"
    ```
+   *(Si tu base de datos en producción ya existe con pedidos/usuarios y solo quieres sincronizar variantes e insumos sin reiniciar tablas, copia únicamente el bloque final `SINCRONIZACIÓN DE VARIANTES, FICHAS TÉCNICAS E INSUMOS (IDEMPOTENTE)` de `db/chazinfood.sql`.)*
 2. En tu archivo `.env`, configura las variables de conexión:
    ```env
    DB_HOST=gateway01.us-east-1.prod.aws.tidbcloud.com
