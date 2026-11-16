@@ -216,7 +216,7 @@ class FichaTecnicaService {
       const isSpecialDrink = /batido|smoothie|malteada|jugo natural|frapp|limonada|shake|artesanal|preparad|coctel|cóctel|capuchino|café|cafe/i.test(prodName);
       const isCommonDrink = !isSpecialDrink && /gaseosa|agua\b|pepsi|coca|sprite|quatro|colombiana|postob|hit\b|cerveza/i.test(prodName);
 
-      return insumoActivo && insumoPrepActivo && productoActivo && !isCombo && !isCommonDrink;
+      return insumoActivo && insumoPrepActivo && productoActivo && !isCombo && (!isCommonDrink || f.tipo === 'VARIANTE');
     });
 
     return filtered.map((f) => this.formatFicha(f));

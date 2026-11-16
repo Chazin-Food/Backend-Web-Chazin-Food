@@ -56,6 +56,121 @@ function isDummyOrBaseVariant(vName, pName) {
   return false;
 }
 
+function resolveDrinkInsumoId(variantName = '', prodName = '', prodId = 0) {
+  const vn = String(variantName || '').toLowerCase();
+  const pn = String(prodName || '').toLowerCase();
+  const combined = `${vn} ${pn}`;
+  const pid = Number(prodId || 0);
+
+  if (vn.includes('coca') || pid === 8 || pid === 16 || pn.includes('coca')) {
+    if (/con az[uú]car|\boriginal\b|\bcl[aá]sic/.test(vn)) return 29;
+    if (/sin az[uú]car|\blight\b|\bzero\b/.test(vn)) return 32;
+    if (pid === 16 || /sin az[uú]car|\blight\b|\bzero\b/.test(pn)) return 32;
+    return 29;
+  }
+
+  if (vn.includes('pepsi') || pid === 11 || pn.includes('pepsi')) {
+    if (/sin az[uú]car|\blight\b|\bzero\b|\bblack\b/.test(vn)) return 34;
+    if (/regular|\boriginal\b/.test(vn)) return 33;
+    return /sin az[uú]car|\blight\b|\bzero\b|\bblack\b/.test(pn) ? 34 : 33;
+  }
+
+  if (vn.includes('uva')) return 47;
+  if (vn.includes('naranja')) return 48;
+  if (vn.includes('manzana')) return 30;
+  if (vn.includes('colombiana')) return 35;
+  if (vn.includes('sprite')) return 36;
+  if (vn.includes('quatro') || vn.includes('cuatro') || vn.includes('toronja')) return 37;
+  if (vn.includes('agua')) return 31;
+
+  if (pid === 38 || pn.includes('uva')) return 47;
+  if (pid === 39 || pn.includes('naranja')) return 48;
+  if (pid === 9 || pn.includes('manzana')) return 30;
+  if (pid === 12 || pn.includes('colombiana')) return 35;
+  if (pid === 13 || pn.includes('sprite')) return 36;
+  if (pid === 14 || pn.includes('quatro') || pn.includes('cuatro') || pn.includes('toronja')) return 37;
+  if (pid === 10 || pn.includes('agua') || combined.includes('cristal')) return 31;
+
+  return null;
+}
+
+function buildEffectiveDetallesFromDeltas(baseDetalles = [], deltas = [], insumoByIdMap = new Map()) {
+  let effective = (baseDetalles || []).map(d => ({
+    idDetalleFicha: d.idDetalleFicha || null,
+    idInsumo: Number(d.idInsumo),
+    cantidad: Number(d.cantidad || 0),
+    unidadMedida: d.unidadMedida || d.insumo?.unidadMedida || 'und',
+    precioUnitario: Number(d.insumo?.precioUnitario || insumoByIdMap.get(Number(d.idInsumo))?.precioUnitario || 0),
+    insumo: d.insumo ? {
+      idInsumo: d.insumo.idInsumo,
+      nombre: d.insumo.nombre,
+      unidadMedida: d.insumo.unidadMedida,
+      stock: d.insumo.stock,
+      precioUnitario: Number(d.insumo.precioUnitario || 0)
+    } : null
+  }));
+
+  for (const im of (deltas || [])) {
+    const accion = String(im.tipoAccion || 'AGREGAR').toUpperCase();
+    const idIns = Number(im.idInsumo);
+    const insCat = im.insumo || insumoByIdMap.get(idIns) || null;
+    const precioUnit = Number(insCat?.precioUnitario || 0);
+    const entryInsumo = insCat ? {
+      idInsumo: insCat.idInsumo,
+      nombre: insCat.nombre,
+      unidadMedida: insCat.unidadMedida,
+      stock: insCat.stock,
+      precioUnitario: precioUnit
+    } : null;
+
+    if (accion === 'QUITAR') {
+      effective = effective.filter(d => Number(d.idInsumo) !== idIns);
+    } else if (accion === 'REEMPLAZAR') {
+      if (im.idInsumoReemplazado) {
+        effective = effective.filter(d => Number(d.idInsumo) !== Number(im.idInsumoReemplazado));
+      }
+      effective.push({
+        idDetalleFicha: null,
+        idInsumo: idIns,
+        cantidad: Number(im.cantidad || 1),
+        unidadMedida: im.unidadMedida || insCat?.unidadMedida || 'und',
+        precioUnitario: precioUnit,
+        insumo: entryInsumo
+      });
+    } else if (accion === 'MODIFICAR_CANTIDAD') {
+      const idx = effective.findIndex(d => Number(d.idInsumo) === idIns);
+      if (idx >= 0) {
+        effective[idx].cantidad = Number(im.cantidad || 0);
+        if (im.unidadMedida) effective[idx].unidadMedida = im.unidadMedida;
+      } else {
+        effective.push({
+          idDetalleFicha: null,
+          idInsumo: idIns,
+          cantidad: Number(im.cantidad || 1),
+          unidadMedida: im.unidadMedida || insCat?.unidadMedida || 'und',
+          precioUnitario: precioUnit,
+          insumo: entryInsumo
+        });
+      }
+    } else if (accion === 'AGREGAR') {
+      const idx = effective.findIndex(d => Number(d.idInsumo) === idIns);
+      if (idx >= 0) {
+        effective[idx].cantidad = Number(im.cantidad || effective[idx].cantidad);
+      } else {
+        effective.push({
+          idDetalleFicha: null,
+          idInsumo: idIns,
+          cantidad: Number(im.cantidad || 1),
+          unidadMedida: im.unidadMedida || insCat?.unidadMedida || 'und',
+          precioUnitario: precioUnit,
+          insumo: entryInsumo
+        });
+      }
+    }
+  }
+  return effective;
+}
+
 class ProductService {
   /**
    * Sincroniza la tabla relacional detallecombo a partir de itemsCombo
@@ -164,7 +279,7 @@ class ProductService {
 
       // Cargar todos los insumos para bebidas o productos directos sin ficha técnica
       Insumo.findAll({
-        attributes: ['idInsumo', 'nombre', 'stock', 'unidadMedida', 'estado']
+        attributes: ['idInsumo', 'nombre', 'stock', 'unidadMedida', 'precioUnitario', 'estado']
       }).catch(() => []),
 
       // Cargar historial de ventas por variante para contar ventas reales
@@ -288,13 +403,103 @@ class ProductService {
           : (p.variantes?.[0] ? parseFloat(p.variantes[0].precio || 0) : 0);
 
         const isCombo = Boolean(cfgCombo?.esCombo || (p.categoria && String(p.categoria).toLowerCase().includes('combo')));
+        const catNombre = p.categoriaProducto ? p.categoriaProducto.nombre : (p.categoria || '');
+        const isDrinkProd =
+          Number(p.idCategoriaProducto) === 4 ||
+          /bebida|gaseos|refresco/i.test(catNombre) ||
+          /gaseosa|coca|pepsi|sprite|quatro|cuatro|postob[oó]n|agua\b/i.test(p.nombre || '');
         const rawVars = Array.isArray(p.variantes) ? p.variantes : [];
-        const hasOnlyDummy = rawVars.length === 1 && isDummyOrBaseVariant(rawVars[0]?.nombre, p.nombre);
+        const realRawVars = rawVars.filter(v => !isDummyOrBaseVariant(v?.nombre, p.nombre));
+        const baseFichaProd = fichaMap.get(Number(p.idProducto)) || null;
 
-        const variantes = (isCombo || hasOnlyDummy || rawVars.length === 0)
+        const variantes = (isCombo || realRawVars.length === 0)
           ? []
-          : rawVars.map(v => {
+          : realRawVars.map(v => {
               const vf = varFichaMap.get(Number(v.idVariante));
+              const hasRealVf = Boolean(vf && Array.isArray(vf.detalles) && vf.detalles.length > 0);
+              const rawDeltas = Array.isArray(v.insumosModificados) ? v.insumosModificados : [];
+
+              let mappedDetalles = [];
+              if (hasRealVf) {
+                mappedDetalles = vf.detalles.map(d => ({
+                  idDetalleFicha: d.idDetalleFicha,
+                  idInsumo: d.idInsumo,
+                  cantidad: Number(d.cantidad || 0),
+                  unidadMedida: d.unidadMedida || d.insumo?.unidadMedida || 'und',
+                  precioUnitario: Number(d.insumo?.precioUnitario || insumoByIdMap.get(Number(d.idInsumo))?.precioUnitario || 0),
+                  insumo: d.insumo ? {
+                    idInsumo: d.insumo.idInsumo,
+                    nombre: d.insumo.nombre,
+                    unidadMedida: d.insumo.unidadMedida,
+                    stock: d.insumo.stock,
+                    precioUnitario: Number(d.insumo.precioUnitario || 0)
+                  } : null
+                }));
+              } else if (baseFichaProd && Array.isArray(baseFichaProd.detalles) && baseFichaProd.detalles.length > 0 && rawDeltas.length > 0) {
+                mappedDetalles = buildEffectiveDetallesFromDeltas(baseFichaProd.detalles, rawDeltas, insumoByIdMap);
+              } else if (isDrinkProd) {
+                const resolvedDrinkInsId = resolveDrinkInsumoId(v.nombre, p.nombre, p.idProducto);
+                const drinkIns = resolvedDrinkInsId ? insumoByIdMap.get(Number(resolvedDrinkInsId)) : null;
+                if (drinkIns) {
+                  mappedDetalles = [{
+                    idDetalleFicha: null,
+                    idInsumo: drinkIns.idInsumo,
+                    cantidad: 1,
+                    unidadMedida: 'und',
+                    precioUnitario: Number(drinkIns.precioUnitario || 0),
+                    insumo: {
+                      idInsumo: drinkIns.idInsumo,
+                      nombre: drinkIns.nombre,
+                      unidadMedida: drinkIns.unidadMedida || 'und',
+                      stock: drinkIns.stock,
+                      precioUnitario: Number(drinkIns.precioUnitario || 0)
+                    }
+                  }];
+                }
+              }
+
+              const formattedVarFicha = (hasRealVf || mappedDetalles.length > 0) ? {
+                idFichaTecnica: vf?.idFichaTecnica || null,
+                idProducto: vf?.idProducto || p.idProducto,
+                idVariante: v.idVariante,
+                tipo: vf?.tipo || 'VARIANTE',
+                descripcion: vf?.descripcion || v.descripcion || `${p.nombre} — ${v.nombre}`,
+                procedimiento: vf?.procedimiento || baseFichaProd?.procedimiento || '',
+                tiempoPreparacion: vf?.tiempoPreparacion ?? baseFichaProd?.tiempoPreparacion ?? 0,
+                rendimiento: vf?.rendimiento || '1 porción',
+                condicionesAlmacenamiento: vf?.condicionesAlmacenamiento || baseFichaProd?.condicionesAlmacenamiento || '',
+                vidaUtil: vf?.vidaUtil || baseFichaProd?.vidaUtil || '',
+                observaciones: vf?.observaciones || '',
+                versionActual: vf?.versionActual || 1,
+                detalles: mappedDetalles
+              } : null;
+
+              let mappedDeltas = rawDeltas.map(im => ({
+                idVarianteInsumo: im.idVarianteInsumo,
+                tipoAccion: im.tipoAccion,
+                idInsumo: im.idInsumo,
+                idInsumoReemplazado: im.idInsumoReemplazado,
+                cantidad: Number(im.cantidad || 0),
+                unidadMedida: im.unidadMedida,
+                observaciones: im.observaciones,
+                insumo: im.insumo ? { idInsumo: im.insumo.idInsumo, nombre: im.insumo.nombre, unidadMedida: im.insumo.unidadMedida, stock: im.insumo.stock } : null,
+                insumoReemplazado: im.insumoReemplazado ? { idInsumo: im.insumoReemplazado.idInsumo, nombre: im.insumoReemplazado.nombre, unidadMedida: im.insumoReemplazado.unidadMedida } : null
+              }));
+
+              if (mappedDeltas.length === 0 && isDrinkProd && mappedDetalles.length > 0) {
+                mappedDeltas = mappedDetalles.map(md => ({
+                  idVarianteInsumo: null,
+                  tipoAccion: 'AGREGAR',
+                  idInsumo: md.idInsumo,
+                  idInsumoReemplazado: null,
+                  cantidad: 1,
+                  unidadMedida: 'und',
+                  observaciones: null,
+                  insumo: md.insumo ? { idInsumo: md.insumo.idInsumo, nombre: md.insumo.nombre, unidadMedida: md.insumo.unidadMedida, stock: md.insumo.stock } : null,
+                  insumoReemplazado: null
+                }));
+              }
+
               return {
                 id: v.idVariante,
                 idVariante: v.idVariante,
@@ -303,49 +508,41 @@ class ProductService {
                 precio: ProductService.resolveVariantPrice(v.precio, realPrecio),
                 imagen: v.imagen || '',
                 estado: v.estado !== undefined ? v.estado : 1,
-                fichaTecnica: vf ? {
-                  idFichaTecnica: vf.idFichaTecnica,
-                  idProducto: vf.idProducto,
-                  idVariante: vf.idVariante,
-                  tipo: vf.tipo || 'VARIANTE',
-                  descripcion: vf.descripcion || '',
-                  procedimiento: vf.procedimiento || '',
-                  tiempoPreparacion: vf.tiempoPreparacion || 0,
-                  rendimiento: vf.rendimiento || '',
-                  condicionesAlmacenamiento: vf.condicionesAlmacenamiento || '',
-                  vidaUtil: vf.vidaUtil || '',
-                  observaciones: vf.observaciones || '',
-                  versionActual: vf.versionActual || 1,
-                  detalles: Array.isArray(vf.detalles) ? vf.detalles.map(d => ({
-                    idDetalleFicha: d.idDetalleFicha,
-                    idInsumo: d.idInsumo,
-                    cantidad: Number(d.cantidad || 0),
-                    unidadMedida: d.unidadMedida || d.insumo?.unidadMedida || 'und',
-                    precioUnitario: Number(d.insumo?.precioUnitario || 0),
-                    insumo: d.insumo ? {
-                      idInsumo: d.insumo.idInsumo,
-                      nombre: d.insumo.nombre,
-                      unidadMedida: d.insumo.unidadMedida,
-                      stock: d.insumo.stock,
-                      precioUnitario: Number(d.insumo.precioUnitario || 0)
-                    } : null
-                  })) : []
-                } : null,
-                insumosModificados: Array.isArray(v.insumosModificados) ? v.insumosModificados.map(im => ({
-                  idVarianteInsumo: im.idVarianteInsumo,
-                  tipoAccion: im.tipoAccion,
-                  idInsumo: im.idInsumo,
-                  idInsumoReemplazado: im.idInsumoReemplazado,
-                  cantidad: Number(im.cantidad || 0),
-                  unidadMedida: im.unidadMedida,
-                  observaciones: im.observaciones,
-                  insumo: im.insumo ? { idInsumo: im.insumo.idInsumo, nombre: im.insumo.nombre, unidadMedida: im.insumo.unidadMedida, stock: im.insumo.stock } : null,
-                  insumoReemplazado: im.insumoReemplazado ? { idInsumo: im.insumoReemplazado.idInsumo, nombre: im.insumoReemplazado.nombre, unidadMedida: im.insumoReemplazado.unidadMedida } : null
-                })) : []
+                fichaTecnica: formattedVarFicha,
+                insumosModificados: mappedDeltas
               };
             });
 
-        const idVariantePrincipal = rawVars[0]?.idVariante || p.idProducto;
+        const formattedBaseFicha = baseFichaProd ? {
+          idFichaTecnica: baseFichaProd.idFichaTecnica,
+          idProducto: baseFichaProd.idProducto,
+          idVariante: baseFichaProd.idVariante,
+          tipo: baseFichaProd.tipo || 'PRODUCTO',
+          descripcion: baseFichaProd.descripcion || '',
+          procedimiento: baseFichaProd.procedimiento || '',
+          tiempoPreparacion: baseFichaProd.tiempoPreparacion || 0,
+          rendimiento: baseFichaProd.rendimiento || '',
+          condicionesAlmacenamiento: baseFichaProd.condicionesAlmacenamiento || '',
+          vidaUtil: baseFichaProd.vidaUtil || '',
+          observaciones: baseFichaProd.observaciones || '',
+          versionActual: baseFichaProd.versionActual || 1,
+          detalles: Array.isArray(baseFichaProd.detalles) ? baseFichaProd.detalles.map(d => ({
+            idDetalleFicha: d.idDetalleFicha,
+            idInsumo: d.idInsumo,
+            cantidad: Number(d.cantidad || 0),
+            unidadMedida: d.unidadMedida || d.insumo?.unidadMedida || 'und',
+            precioUnitario: Number(d.insumo?.precioUnitario || insumoByIdMap.get(Number(d.idInsumo))?.precioUnitario || 0),
+            insumo: d.insumo ? {
+              idInsumo: d.insumo.idInsumo,
+              nombre: d.insumo.nombre,
+              unidadMedida: d.insumo.unidadMedida,
+              stock: d.insumo.stock,
+              precioUnitario: Number(d.insumo.precioUnitario || 0)
+            } : null
+          })) : []
+        } : null;
+
+        const idVariantePrincipal = realRawVars[0]?.idVariante || rawVars[0]?.idVariante || p.idProducto;
 
         // Calcular número total de ventas históricas del producto (Ítem #104)
         let totalVentas = 0;
@@ -420,6 +617,7 @@ class ProductService {
           variantes,
           idVariantePrincipal,
           tieneVariantes: variantes.length > 0,
+          fichaTecnica: formattedBaseFicha,
           adiciones,
           eventos: Array.isArray(p.eventos) ? p.eventos.map(ev => EventoService.serializeEventoRelation(ev)) : []
         };
@@ -427,6 +625,18 @@ class ProductService {
   }
 
   static async getProducts() {
+    if (!ProductService._catalogVariantsSyncTriggered) {
+      ProductService._catalogVariantsSyncTriggered = true;
+      const { ensureCatalogVariantsAndDrinkFichas } = require('../../infrastructure/utils/catalogVariantsSync');
+      const { invalidateNamespaces } = require('../../infrastructure/utils/apiCache');
+      ensureCatalogVariantsAndDrinkFichas()
+        .then((changed) => {
+          if (changed) {
+            invalidateNamespaces(['productos', 'fichas']);
+          }
+        })
+        .catch(() => {});
+    }
     return this._queryFormattedProducts({ eliminado: 0, order: [['idProducto', 'ASC']] });
   }
 

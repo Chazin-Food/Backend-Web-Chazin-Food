@@ -1834,6 +1834,64 @@ class VentaService {
     const { FichaTecnica, DetalleFichaInsumo, Variante, VarianteInsumo, Insumo, Product } = require('../../persistence/models');
     const { Op } = require('sequelize');
 
+    // Revisar primero si la variante explícita tiene ficha dedicada o reglas VarianteInsumo
+    const explicitVarId = chosenVarianteId || d.idVariante;
+    if (explicitVarId) {
+      try {
+        const varRow = await Variante.findByPk(explicitVarId);
+        const fichaVar = await FichaTecnica.findOne({
+          where: { idVariante: explicitVarId, tipo: 'VARIANTE', estado: 1 },
+          include: [{ model: DetalleFichaInsumo, as: 'detalles' }]
+        });
+        if (fichaVar && Array.isArray(fichaVar.detalles) && fichaVar.detalles.length > 0) {
+          return {
+            ficha: fichaVar,
+            targetProductId: fichaVar.idProducto || targetProductId || varRow?.idProducto,
+            resolvedName: varRow?.nombre
+          };
+        }
+
+        const varDeltasPre = await VarianteInsumo.findAll({
+          where: { idVariante: explicitVarId },
+          include: [
+            { model: Insumo, as: 'insumo' },
+            { model: Insumo, as: 'insumoReemplazado' }
+          ]
+        });
+        if (varDeltasPre && varDeltasPre.length > 0) {
+          const prodIdLookup = d.idProducto || targetProductId || varRow?.idProducto;
+          const fichaBasePre = prodIdLookup
+            ? await FichaTecnica.findOne({
+                where: {
+                  idProducto: prodIdLookup,
+                  estado: 1,
+                  [Op.or]: [{ tipo: 'PRODUCTO' }, { tipo: null }]
+                },
+                include: [{ model: DetalleFichaInsumo, as: 'detalles' }],
+                order: [['idFichaTecnica', 'ASC']]
+              })
+            : null;
+          if (!fichaBasePre || !Array.isArray(fichaBasePre.detalles) || fichaBasePre.detalles.length === 0) {
+            const directDeltas = varDeltasPre
+              .filter(dl => String(dl.tipoAccion || 'AGREGAR').toUpperCase() !== 'QUITAR' && Number(dl.cantidad) > 0 && dl.idInsumo)
+              .map(dl => ({
+                idInsumo: dl.idInsumo,
+                cantidad: Number(dl.cantidad || 1),
+                unidadMedida: dl.unidadMedida || dl.insumo?.unidadMedida || 'und',
+                insumo: dl.insumo
+              }));
+            if (directDeltas.length > 0) {
+              return {
+                ficha: { idProducto: prodIdLookup, idVariante: explicitVarId, tipo: 'VARIANTE', detalles: directDeltas },
+                targetProductId: prodIdLookup,
+                resolvedName: varRow?.nombre
+              };
+            }
+          }
+        }
+      } catch (e) {}
+    }
+
     // Revisar todo el texto descriptivo del ítem
     const rawText = [
       d.observaciones,

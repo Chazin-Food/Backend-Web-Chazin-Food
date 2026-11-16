@@ -30,6 +30,7 @@ const {
   ensurePreciosRealesInsumosYStock,
   ensureVarianteInsumoSchema
 } = require('../src/infrastructure/utils/dbUtils');
+const { ensureCatalogVariantsAndDrinkFichas } = require('../src/infrastructure/utils/catalogVariantsSync');
 
 async function initializeDatabaseSchema() {
   try {
@@ -59,6 +60,7 @@ async function initializeDatabaseSchema() {
     await ensureDevolucionSchema();
     await ensureInsumoIvaManualSchema();
     await ensurePreciosRealesInsumosYStock();
+    await ensureCatalogVariantsAndDrinkFichas();
     try {
       const [results] = await sequelize.query(
         "SELECT COUNT(*) as cnt FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'venta' AND COLUMN_NAME = 'tipoVenta'"
