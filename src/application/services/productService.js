@@ -47,8 +47,11 @@ function isDummyOrBaseVariant(vName, pName) {
   if (vn === 'edición especial burger fest' || vn === 'edicion especial burger fest') return true;
   if (vn === 'porción costeña grande' || vn === 'porcion costeña grande') return true;
   if (vn === 'salchipapa personal grande') return true;
+  if (vn === 'porción personal grande' || vn === 'porcion personal grande') return true;
   if (['perro especial', 'perro suizo gourmet', 'perro mexicano clásico', 'perro mexicano clasico', 'perro criollo gourmet'].includes(vn)) return true;
   if (vn === 'clásica 150g' || vn === 'clasica 150g') return true;
+  if ((vn === 'individual bbq bacon 150g' || vn === 'individual bbq bacon') && (!pn || pn.includes('bbq'))) return true;
+  if ((vn === 'mexicana clásica' || vn === 'mexicana clasica') && (!pn || pn.includes('mexicana'))) return true;
   if (vn === 'doble carne 300g' && pn.includes('doble carne')) return true;
   if (vn === 'pollo crispy 180g' && pn.includes('pollo crispy')) return true;
   if (vn === 'individual campesina' && pn.includes('campesina')) return true;
@@ -409,7 +412,10 @@ class ProductService {
           /bebida|gaseos|refresco/i.test(catNombre) ||
           /gaseosa|coca|pepsi|sprite|quatro|cuatro|postob[oó]n|agua\b/i.test(p.nombre || '');
         const rawVars = Array.isArray(p.variantes) ? p.variantes : [];
-        const realRawVars = rawVars.filter(v => !isDummyOrBaseVariant(v?.nombre, p.nombre));
+        const realRawVars = rawVars.filter(v =>
+          (v?.estado === undefined || v?.estado === null || Number(v.estado) !== 0) &&
+          !isDummyOrBaseVariant(v?.nombre, p.nombre)
+        );
         const baseFichaProd = fichaMap.get(Number(p.idProducto)) || null;
 
         const variantes = (isCombo || realRawVars.length === 0)

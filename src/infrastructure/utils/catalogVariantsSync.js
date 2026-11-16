@@ -192,18 +192,20 @@ const FOOD_PRODUCT_VARIANTS = [
     idProducto: 27,
     variants: [
       {
-        nombre: 'Individual BBQ Bacon 150g',
-        precio: 22000,
-        descripcion: 'Presentación individual 150g con tocineta ahumada, doble cheddar y salsa BBQ.',
+        nombre: 'BBQ Bacon Cheddar & Jalapeño',
+        precio: 25000,
+        descripcion: 'BBQ Bacon 150g enriquecida con cremosa salsa de queso cheddar fundido y rodajas de jalapeños picantes.',
         rendimiento: '1 porción (150g)',
-        tiempoPreparacion: 12,
+        tiempoPreparacion: 13,
         detalles: [
           { idInsumo: 12, cantidad: 1, unidadMedida: 'und' },
           { idInsumo: 14, cantidad: 0.15, unidadMedida: 'kg' },
           { idInsumo: 18, cantidad: 0.04, unidadMedida: 'kg' },
           { idInsumo: 19, cantidad: 2, unidadMedida: 'und' },
           { idInsumo: 24, cantidad: 0.04, unidadMedida: 'kg' },
-          { idInsumo: 44, cantidad: 0.03, unidadMedida: 'kg' }
+          { idInsumo: 44, cantidad: 0.03, unidadMedida: 'kg' },
+          { idInsumo: 43, cantidad: 0.03, unidadMedida: 'kg' },
+          { idInsumo: 25, cantidad: 0.02, unidadMedida: 'kg' }
         ]
       },
       {
@@ -227,21 +229,6 @@ const FOOD_PRODUCT_VARIANTS = [
     idProducto: 28,
     variants: [
       {
-        nombre: 'Mexicana Clásica',
-        precio: 23500,
-        descripcion: 'Receta mexicana tradicional con guacamole artesanal fresco, jalapeños y queso mozzarella.',
-        rendimiento: '1 porción',
-        tiempoPreparacion: 12,
-        detalles: [
-          { idInsumo: 12, cantidad: 1, unidadMedida: 'und' },
-          { idInsumo: 14, cantidad: 0.15, unidadMedida: 'kg' },
-          { idInsumo: 40, cantidad: 0.05, unidadMedida: 'kg' },
-          { idInsumo: 25, cantidad: 0.02, unidadMedida: 'kg' },
-          { idInsumo: 20, cantidad: 0.04, unidadMedida: 'kg' },
-          { idInsumo: 22, cantidad: 0.02, unidadMedida: 'kg' }
-        ]
-      },
-      {
         nombre: 'Extra Picante con Doble Jalapeño',
         precio: 25000,
         descripcion: 'Versión intensa con doble porción de jalapeños, guacamole extra y salsa de cheddar fundido.',
@@ -254,6 +241,21 @@ const FOOD_PRODUCT_VARIANTS = [
           { idInsumo: 25, cantidad: 0.04, unidadMedida: 'kg' },
           { idInsumo: 20, cantidad: 0.04, unidadMedida: 'kg' },
           { idInsumo: 43, cantidad: 0.03, unidadMedida: 'kg' },
+          { idInsumo: 22, cantidad: 0.02, unidadMedida: 'kg' }
+        ]
+      },
+      {
+        nombre: 'Doble Carne Mexicana (300g)',
+        precio: 29500,
+        descripcion: 'Doble carne de res 300g con doble mozzarella gratinado, extra guacamole artesanal y jalapeños.',
+        rendimiento: '1 porción (300g)',
+        tiempoPreparacion: 15,
+        detalles: [
+          { idInsumo: 12, cantidad: 1, unidadMedida: 'und' },
+          { idInsumo: 14, cantidad: 0.30, unidadMedida: 'kg' },
+          { idInsumo: 40, cantidad: 0.06, unidadMedida: 'kg' },
+          { idInsumo: 25, cantidad: 0.02, unidadMedida: 'kg' },
+          { idInsumo: 20, cantidad: 0.08, unidadMedida: 'kg' },
           { idInsumo: 22, cantidad: 0.02, unidadMedida: 'kg' }
         ]
       }
@@ -401,18 +403,19 @@ const FOOD_PRODUCT_VARIANTS = [
     idProducto: 32,
     variants: [
       {
-        nombre: 'Porción Personal Grande',
-        precio: 21000,
-        descripcion: 'Salchipapa criolla personal con tocineta, mozzarella, suero costeño y salsa cheddar.',
-        rendimiento: '1 porción grande',
-        tiempoPreparacion: 13,
+        nombre: 'Criolla Especial con Chili con Carne',
+        precio: 25500,
+        descripcion: 'Salchipapa criolla tradicional enriquecida con chili con carne artesanal y extra salsa cheddar fundido.',
+        rendimiento: '1 porción abundante',
+        tiempoPreparacion: 14,
         detalles: [
           { idInsumo: 21, cantidad: 0.25, unidadMedida: 'kg' },
           { idInsumo: 16, cantidad: 1.5, unidadMedida: 'und' },
           { idInsumo: 18, cantidad: 0.04, unidadMedida: 'kg' },
           { idInsumo: 20, cantidad: 0.05, unidadMedida: 'kg' },
           { idInsumo: 41, cantidad: 0.03, unidadMedida: 'kg' },
-          { idInsumo: 43, cantidad: 0.03, unidadMedida: 'kg' }
+          { idInsumo: 43, cantidad: 0.04, unidadMedida: 'kg' },
+          { idInsumo: 39, cantidad: 0.08, unidadMedida: 'kg' }
         ]
       },
       {
@@ -811,6 +814,27 @@ async function ensureCatalogVariantsAndDrinkFichas() {
             transaction: t
           });
           if (foodChanged) changed = true;
+        }
+
+        const REDUNDANT_FOOD_BASE_NAMES = new Set([
+          'individual bbq bacon 150g',
+          'individual bbq bacon',
+          'mexicana clásica',
+          'mexicana clasica',
+          'porción personal grande',
+          'porcion personal grande'
+        ]);
+        const hasRealFoodVariant = foodSpec.variants.some((vs) =>
+          byLowerName.has(vs.nombre.trim().toLowerCase())
+        );
+        if (hasRealFoodVariant) {
+          for (const ev of existingVars) {
+            const evName = String(ev.nombre || '').trim().toLowerCase();
+            if (REDUNDANT_FOOD_BASE_NAMES.has(evName) && Number(ev.estado ?? 1) !== 0) {
+              await ev.update({ estado: 0 }, { transaction: t });
+              changed = true;
+            }
+          }
         }
       }
 

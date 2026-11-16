@@ -31,9 +31,16 @@ test('FOOD_PRODUCT_VARIANTS define variantes coherentes con recetas válidas par
   const foodIds = FOOD_PRODUCT_VARIANTS.map((f) => f.idProducto).sort((a, b) => a - b);
   assert.deepEqual(foodIds, [1, 3, 4, 5, 6, 27, 28, 30, 32, 33]);
 
+  const redundantBaseNames = new Set([
+    'individual bbq bacon 150g',
+    'mexicana clásica',
+    'porción personal grande'
+  ]);
+
   for (const spec of FOOD_PRODUCT_VARIANTS) {
     assert.ok(spec.variants.length >= 1);
     for (const v of spec.variants) {
+      assert.equal(redundantBaseNames.has(v.nombre.toLowerCase()), false);
       assert.ok(v.precio >= 14000);
       assert.ok(Array.isArray(v.detalles) && v.detalles.length >= 4);
       for (const det of v.detalles) {
