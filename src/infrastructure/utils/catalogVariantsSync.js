@@ -577,9 +577,35 @@ async function ensureVariantFichaAndDeltas({
   rendimiento = '1 porción',
   tiempoPreparacion = 0,
   procedimiento = '',
+  baseFicha = null,
+  isDrink = false,
   transaction
 }) {
   let mutated = false;
+
+  const defaultQuality = isDrink
+    ? {
+        especificaciones: 'Bebida servida entre 2°C y 4°C, envase sellado y fecha vigente.',
+        caracteristicas: `Presentación ${variant.nombre}, sabor refrescante y gasificación óptima.`,
+        informacionNutricional: /sin az|light|zero|agua/i.test(`${product.nombre} ${variant.nombre}`)
+          ? 'Porción: 0 kcal | 0g carbohidratos | 0g grasas | 10 mg sodio.'
+          : 'Porción 400ml: ~165 kcal | 40g carbohidratos (azúcares) | 0g grasa | 35 mg sodio.',
+        condicionesAlmacenamiento: 'Mantener en vitrina refrigerada entre 2°C y 6°C.',
+        vidaUtil: 'Según fecha impresa en envase; consumo inmediato al abrir.'
+      }
+    : {
+        especificaciones: 'Cocción completa (>70°C en el centro), empaque térmico y control de gramaje estándar.',
+        caracteristicas: `Presentación ${variant.nombre}, aroma fresco, color dorado uniforme y textura equilibrada.`,
+        informacionNutricional: 'Porción estándar: ~680 kcal | Proteínas: 34g | Carbohidratos: 48g | Grasas: 35g.',
+        condicionesAlmacenamiento: 'Consumo inmediato en mesa o en empaque térmico antigrasa antes de 25 minutos.',
+        vidaUtil: 'Consumo inmediato'
+      };
+
+  const resolvedEspec = (baseFicha?.especificaciones || '').trim() || defaultQuality.especificaciones;
+  const resolvedCaract = (baseFicha?.caracteristicas || '').trim() || defaultQuality.caracteristicas;
+  const resolvedNutri = (baseFicha?.informacionNutricional || '').trim() || defaultQuality.informacionNutricional;
+  const resolvedAlm = (baseFicha?.condicionesAlmacenamiento || '').trim() || defaultQuality.condicionesAlmacenamiento;
+  const resolvedVida = (baseFicha?.vidaUtil || '').trim() || defaultQuality.vidaUtil;
 
   const existingDeltasCount = await VarianteInsumo.count({
     where: { idVariante: variant.idVariante },
@@ -618,11 +644,11 @@ async function ensureVariantFichaAndDeltas({
         procedimiento: procedimiento || '',
         tiempoPreparacion: Number(tiempoPreparacion) || 0,
         rendimiento,
-        especificaciones: '',
-        caracteristicas: `Variante: ${variant.nombre}`,
-        informacionNutricional: '',
-        condicionesAlmacenamiento: '',
-        vidaUtil: '',
+        especificaciones: resolvedEspec,
+        caracteristicas: resolvedCaract,
+        informacionNutricional: resolvedNutri,
+        condicionesAlmacenamiento: resolvedAlm,
+        vidaUtil: resolvedVida,
         observaciones: '',
         versionActual: 1,
         estado: 1
@@ -630,6 +656,19 @@ async function ensureVariantFichaAndDeltas({
       { transaction }
     );
     mutated = true;
+  } else {
+    const qualityUpdates = {};
+    if (!String(varFicha.especificaciones || '').trim()) qualityUpdates.especificaciones = resolvedEspec;
+    if (!String(varFicha.caracteristicas || '').trim() || /^Variante:\s*/i.test(String(varFicha.caracteristicas).trim())) {
+      qualityUpdates.caracteristicas = resolvedCaract;
+    }
+    if (!String(varFicha.informacionNutricional || '').trim()) qualityUpdates.informacionNutricional = resolvedNutri;
+    if (!String(varFicha.condicionesAlmacenamiento || '').trim()) qualityUpdates.condicionesAlmacenamiento = resolvedAlm;
+    if (!String(varFicha.vidaUtil || '').trim()) qualityUpdates.vidaUtil = resolvedVida;
+    if (Object.keys(qualityUpdates).length > 0) {
+      await varFicha.update(qualityUpdates, { transaction });
+      mutated = true;
+    }
   }
 
   const currentDetallesCount = Array.isArray(varFicha.detalles)
@@ -717,6 +756,7 @@ async function ensureCatalogVariantsAndDrinkFichas() {
             rendimiento: '1 porción',
             tiempoPreparacion: 1,
             procedimiento: 'Servir bebida refrigerada entre 2°C y 4°C según presentación.',
+            isDrink: true,
             transaction: t
           });
           if (varChanged) changed = true;
@@ -739,6 +779,7 @@ async function ensureCatalogVariantsAndDrinkFichas() {
             rendimiento: '1 porción',
             tiempoPreparacion: 1,
             procedimiento: 'Servir bebida refrigerada entre 2°C y 4°C según presentación.',
+            isDrink: true,
             transaction: t
           });
           if (extraChanged) changed = true;
@@ -811,6 +852,8 @@ async function ensureCatalogVariantsAndDrinkFichas() {
             rendimiento: vSpec.rendimiento || '1 porción',
             tiempoPreparacion: vSpec.tiempoPreparacion || baseFicha?.tiempoPreparacion || 12,
             procedimiento: baseFicha?.procedimiento || `Preparación estándar Chazin Food para ${varRow.nombre}.`,
+            baseFicha,
+            isDrink: false,
             transaction: t
           });
           if (foodChanged) changed = true;

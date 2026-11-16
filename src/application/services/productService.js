@@ -97,6 +97,61 @@ function resolveDrinkInsumoId(variantName = '', prodName = '', prodId = 0) {
   return null;
 }
 
+const buildDefaultFichaQualityFields = (prodName = '', isDrink = false) => {
+  const lower = String(prodName || '').toLowerCase();
+  if (isDrink || /gaseosa|coca|pepsi|sprite|quatro|cuatro|postob|agua\b|jugo|bebida/i.test(lower)) {
+    return {
+      especificaciones: 'Servir fría entre 2°C y 4°C, envase sellado y limpio, verificación de lote vigente.',
+      caracteristicas: 'Sabor refrescante característico, gasificación óptima y temperatura fría al servicio.',
+      informacionNutricional: /agua|sin az|light|zero/i.test(lower)
+        ? 'Porción 400ml: 0 kcal | 0g carbohidratos | 0g grasas | 10 mg sodio.'
+        : 'Porción 400ml: ~165 kcal | 40g carbohidratos (azúcares) | 0g grasa | 35 mg sodio.',
+      condicionesAlmacenamiento: 'Mantener en vitrina refrigerada entre 2°C y 6°C, protegida de luz solar directa.',
+      vidaUtil: 'Según fecha impresa en envase; consumo inmediato tras abrir.'
+    };
+  }
+  return {
+    especificaciones: 'Cocción completa (>70°C en el centro), armado limpio en empaque térmico y control de gramaje estándar.',
+    caracteristicas: 'Aroma fresco recién preparado, color dorado uniforme, textura equilibrada y excelente presentación.',
+    informacionNutricional: 'Porción estándar: ~650 kcal | Proteínas: 32g | Carbohidratos: 48g | Grasas: 34g.',
+    condicionesAlmacenamiento: 'Consumo inmediato en mesa o despacho en empaque térmico antigrasa antes de 25 minutos.',
+    vidaUtil: 'Consumo inmediato'
+  };
+};
+
+const formatFichaForProductResponse = (rawFicha, prod, variant, mappedDetalles, fallbackBaseFicha = null, isDrink = false) => {
+  const plainRaw = rawFicha ? (typeof rawFicha.get === 'function' ? rawFicha.get({ plain: true }) : rawFicha) : null;
+  const formatted = plainRaw
+    ? FichaTecnicaService.formatFicha({ ...plainRaw, producto: prod, variante: variant || null })
+    : null;
+  const defaults = buildDefaultFichaQualityFields(prod?.nombre, isDrink);
+  const plainBase = fallbackBaseFicha
+    ? (typeof fallbackBaseFicha.get === 'function' ? fallbackBaseFicha.get({ plain: true }) : fallbackBaseFicha)
+    : null;
+  const baseFmt = plainBase ? FichaTecnicaService.formatFicha({ ...plainBase, producto: prod }) : null;
+
+  return {
+    idFichaTecnica: formatted?.idFichaTecnica || null,
+    idProducto: formatted?.idProducto || prod?.idProducto,
+    idVariante: variant ? variant.idVariante : (formatted?.idVariante ?? 0),
+    tipo: formatted?.tipo || (variant ? 'VARIANTE' : 'PRODUCTO'),
+    descripcion: formatted?.descripcion || variant?.descripcion || (variant ? `${prod?.nombre} — ${variant.nombre}` : (prod?.descripcion || '')),
+    procedimiento: formatted?.procedimiento || baseFmt?.procedimiento || '',
+    tiempoPreparacion: formatted?.tiempoPreparacion ?? baseFmt?.tiempoPreparacion ?? 0,
+    rendimiento: formatted?.rendimiento || baseFmt?.rendimiento || '1 porción',
+    especificaciones: (formatted?.especificaciones || '').trim() || (baseFmt?.especificaciones || '').trim() || defaults.especificaciones,
+    caracteristicas: (formatted?.caracteristicas || '').trim() || (baseFmt?.caracteristicas || '').trim() || defaults.caracteristicas,
+    informacionNutricional: (formatted?.informacionNutricional || '').trim() || (baseFmt?.informacionNutricional || '').trim() || defaults.informacionNutricional,
+    condicionesAlmacenamiento: (formatted?.condicionesAlmacenamiento || '').trim() || (baseFmt?.condicionesAlmacenamiento || '').trim() || defaults.condicionesAlmacenamiento,
+    vidaUtil: (formatted?.vidaUtil || '').trim() || (baseFmt?.vidaUtil || '').trim() || defaults.vidaUtil,
+    observaciones: formatted?.observaciones || '',
+    versionActual: formatted?.versionActual || 1,
+    fechaInicioVigencia: formatted?.fechaInicioVigencia || plainRaw?.fechaCreacion || null,
+    versionesAnteriores: Array.isArray(formatted?.versionesAnteriores) ? formatted.versionesAnteriores : [],
+    detalles: mappedDetalles
+  };
+};
+
 function buildEffectiveDetallesFromDeltas(baseDetalles = [], deltas = [], insumoByIdMap = new Map()) {
   let effective = (baseDetalles || []).map(d => ({
     idDetalleFicha: d.idDetalleFicha || null,
@@ -464,21 +519,9 @@ class ProductService {
                 }
               }
 
-              const formattedVarFicha = (hasRealVf || mappedDetalles.length > 0) ? {
-                idFichaTecnica: vf?.idFichaTecnica || null,
-                idProducto: vf?.idProducto || p.idProducto,
-                idVariante: v.idVariante,
-                tipo: vf?.tipo || 'VARIANTE',
-                descripcion: vf?.descripcion || v.descripcion || `${p.nombre} — ${v.nombre}`,
-                procedimiento: vf?.procedimiento || baseFichaProd?.procedimiento || '',
-                tiempoPreparacion: vf?.tiempoPreparacion ?? baseFichaProd?.tiempoPreparacion ?? 0,
-                rendimiento: vf?.rendimiento || '1 porción',
-                condicionesAlmacenamiento: vf?.condicionesAlmacenamiento || baseFichaProd?.condicionesAlmacenamiento || '',
-                vidaUtil: vf?.vidaUtil || baseFichaProd?.vidaUtil || '',
-                observaciones: vf?.observaciones || '',
-                versionActual: vf?.versionActual || 1,
-                detalles: mappedDetalles
-              } : null;
+              const formattedVarFicha = (hasRealVf || mappedDetalles.length > 0)
+                ? formatFichaForProductResponse(vf, p, v, mappedDetalles, baseFichaProd, isDrinkProd)
+                : null;
 
               let mappedDeltas = rawDeltas.map(im => ({
                 idVarianteInsumo: im.idVarianteInsumo,
@@ -519,34 +562,24 @@ class ProductService {
               };
             });
 
-        const formattedBaseFicha = baseFichaProd ? {
-          idFichaTecnica: baseFichaProd.idFichaTecnica,
-          idProducto: baseFichaProd.idProducto,
-          idVariante: baseFichaProd.idVariante,
-          tipo: baseFichaProd.tipo || 'PRODUCTO',
-          descripcion: baseFichaProd.descripcion || '',
-          procedimiento: baseFichaProd.procedimiento || '',
-          tiempoPreparacion: baseFichaProd.tiempoPreparacion || 0,
-          rendimiento: baseFichaProd.rendimiento || '',
-          condicionesAlmacenamiento: baseFichaProd.condicionesAlmacenamiento || '',
-          vidaUtil: baseFichaProd.vidaUtil || '',
-          observaciones: baseFichaProd.observaciones || '',
-          versionActual: baseFichaProd.versionActual || 1,
-          detalles: Array.isArray(baseFichaProd.detalles) ? baseFichaProd.detalles.map(d => ({
-            idDetalleFicha: d.idDetalleFicha,
-            idInsumo: d.idInsumo,
-            cantidad: Number(d.cantidad || 0),
-            unidadMedida: d.unidadMedida || d.insumo?.unidadMedida || 'und',
-            precioUnitario: Number(d.insumo?.precioUnitario || insumoByIdMap.get(Number(d.idInsumo))?.precioUnitario || 0),
-            insumo: d.insumo ? {
-              idInsumo: d.insumo.idInsumo,
-              nombre: d.insumo.nombre,
-              unidadMedida: d.insumo.unidadMedida,
-              stock: d.insumo.stock,
-              precioUnitario: Number(d.insumo.precioUnitario || 0)
-            } : null
-          })) : []
-        } : null;
+        const baseMappedDetalles = Array.isArray(baseFichaProd?.detalles) ? baseFichaProd.detalles.map(d => ({
+          idDetalleFicha: d.idDetalleFicha,
+          idInsumo: d.idInsumo,
+          cantidad: Number(d.cantidad || 0),
+          unidadMedida: d.unidadMedida || d.insumo?.unidadMedida || 'und',
+          precioUnitario: Number(d.insumo?.precioUnitario || insumoByIdMap.get(Number(d.idInsumo))?.precioUnitario || 0),
+          insumo: d.insumo ? {
+            idInsumo: d.insumo.idInsumo,
+            nombre: d.insumo.nombre,
+            unidadMedida: d.insumo.unidadMedida,
+            stock: d.insumo.stock,
+            precioUnitario: Number(d.insumo.precioUnitario || 0)
+          } : null
+        })) : [];
+
+        const formattedBaseFicha = baseFichaProd
+          ? formatFichaForProductResponse(baseFichaProd, p, null, baseMappedDetalles, null, isDrinkProd)
+          : null;
 
         const idVariantePrincipal = realRawVars[0]?.idVariante || rawVars[0]?.idVariante || p.idProducto;
 
