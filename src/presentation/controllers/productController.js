@@ -2,7 +2,8 @@ const ProductService = require('../../application/services/productService');
 
 const getProducts = async (req, res, next) => {
   try {
-    const products = await ProductService.getProducts();
+    const onlyActiveVariants = req.query?.soloActivas === 'true' || req.query?.soloActivas === '1';
+    const products = await ProductService.getProducts({ onlyActiveVariants });
     res.json(products);
   } catch (error) {
     if (error.statusCode) res.status(error.statusCode);
@@ -80,6 +81,17 @@ const hardDeleteProduct = async (req, res, next) => {
   }
 };
 
+const toggleVarianteEstado = async (req, res, next) => {
+  try {
+    const rawEstado = req.body?.estado !== undefined ? req.body.estado : req.body?.activo;
+    const result = await ProductService.toggleVarianteEstado(req.params.id, req.params.idVariante, rawEstado);
+    res.json(result);
+  } catch (error) {
+    if (error.statusCode) res.status(error.statusCode);
+    next(error);
+  }
+};
+
 module.exports = {
   getProducts,
   getProductsPapelera,
@@ -89,4 +101,5 @@ module.exports = {
   deleteProduct,
   restoreProduct,
   hardDeleteProduct,
+  toggleVarianteEstado,
 };

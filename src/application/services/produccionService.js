@@ -1,4 +1,5 @@
-const { Venta, DetalleVentaProducto, DetalleVentaAdicion, Adicion, Variante, VarianteInsumo, Product, FichaTecnica, DetalleFichaInsumo, Insumo, Cliente, User } = require('../../persistence/models');
+const { Venta, DetalleVentaProducto, DetalleVentaAdicion, Adicion, Variante, VarianteInsumo, Product, FichaTecnica, DetalleFichaInsumo, Insumo, Cliente, User, Evento } = require('../../persistence/models');
+const { ensureVarianteEventoSchemaOnce } = require('../../infrastructure/utils/dbUtils');
 
 const getProductEmoji = (nombre = "") => {
   const n = (nombre || "").toLowerCase();
@@ -134,6 +135,7 @@ function calculateOrderPrepTime(productosList = []) {
 class ProduccionService {
   static async getAll() {
     try {
+      await ensureVarianteEventoSchemaOnce();
       const ventas = await Venta.findAll({
         where: {
           [Op.and]: [
@@ -166,6 +168,12 @@ class ProduccionService {
                 model: Variante,
                 as: 'variante',
                 include: [
+                  {
+                    model: Evento,
+                    as: 'evento',
+                    required: false,
+                    attributes: ['idEvento', 'nombreEvento', 'tipoEvento']
+                  },
                   {
                     model: VarianteInsumo,
                     as: 'insumosModificados',
@@ -303,10 +311,26 @@ class ProduccionService {
               }));
             }
 
-            // Match with obsObj.productos if available to retrieve full observations and additions
+            // Match with obsObj.productos if available to retrieve full observations, exclusions, and variant metadata
+            const isBaseDummyVar = Boolean(
+              !d.variante ||
+              !d.variante.nombre ||
+              String(d.variante.nombre).toLowerCase().includes('- base') ||
+              String(d.variante.nombre).toLowerCase() === String(prod?.nombre || '').toLowerCase()
+            );
+
             const matchedObsProd = Array.isArray(obsObj.productos)
-              ? obsObj.productos.find(op => op.idVariante === d.idVariante || op.id === d.idVariante || (op.nombre && op.nombre.toLowerCase().trim() === itemNombre.toLowerCase().trim())) || obsObj.productos[productosList.length]
+              ? obsObj.productos.find(op =>
+                  (!op.esVarianteBase && Number(op.idVariante || op.id) === Number(d.idVariante)) ||
+                  (op.esVarianteBase && isBaseDummyVar && Number(op.idProducto) === Number(prod?.idProducto)) ||
+                  (op.nombre && op.nombre.toLowerCase().trim() === itemNombre.toLowerCase().trim())
+                ) || obsObj.productos[productosList.length]
               : null;
+
+            const esVarianteBaseFinal = Boolean(matchedObsProd?.esVarianteBase ?? isBaseDummyVar);
+            const rawVarNombreClean = (!esVarianteBaseFinal && d.variante?.nombre && !String(d.variante.nombre).toLowerCase().includes('- base'))
+              ? d.variante.nombre
+              : (!esVarianteBaseFinal ? (matchedObsProd?.varianteNombre || null) : null);
 
             if (matchedObsProd) {
               const opObs = matchedObsProd.observaciones || matchedObsProd.observacion || matchedObsProd.especificaciones || matchedObsProd.nota;
@@ -341,57 +365,146 @@ class ProduccionService {
               }
             }
 
-            // Clean itemObs: do not repeat product name or dump raw addition list or summary parenthesis
+            // Clean itemObs: preserve customer notes even if prefixed by product/variant name; only strip exact product name or (+additions) wrapper
             if (itemObs) {
-              const normObs = itemObs.toLowerCase().trim();
+              let cleaned = String(itemObs).trim();
+              const parenAddMatch = cleaned.match(/\(\s*\+([^)]+)\)/);
+              if (parenAddMatch && parenAddMatch[1] && itemAdiciones.length === 0) {
+                const extracted = parenAddMatch[1].split(',').map(s => s.trim()).filter(Boolean);
+                if (extracted.length > 0) itemAdiciones = extracted;
+              }
+              cleaned = cleaned.replace(/\(\s*\+[^)]+\)/g, '').trim();
+
+              const normObs = cleaned.toLowerCase();
               const normName = itemNombre.toLowerCase().trim();
               const normProdName = (prod?.nombre || "").toLowerCase().trim();
               const normVarName = (d.variante?.nombre || "").toLowerCase().trim();
 
-              if (normObs === normName || normObs === normProdName || normObs === normVarName) {
+              if (!cleaned || normObs === normName || normObs === normProdName || normObs === normVarName) {
                 itemObs = "";
-              } else if (normObs.startsWith(normName) || normObs.startsWith(normProdName) || normObs.startsWith(normVarName)) {
-                if (itemObs.includes("(+") || itemObs.includes("( +")) {
-                  const match = itemObs.match(/\(\s*\+([^)]+)\)/);
-                  if (match && match[1]) {
-                    const extracted = match[1].split(',').map(s => s.trim()).filter(Boolean);
-                    if (extracted.length > 0 && itemAdiciones.length === 0) {
-                      itemAdiciones = extracted;
-                    }
+              } else {
+                for (const prefix of [normName, normProdName, normVarName].filter(Boolean)) {
+                  if (normObs.startsWith(prefix)) {
+                    const rest = cleaned.slice(prefix.length).replace(/^[\s\-–•:]+/, '').trim();
+                    cleaned = rest;
+                    break;
                   }
                 }
-                itemObs = "";
-              } else if (itemObs.includes("(+") || itemObs.includes("( +")) {
-                // If the entire note is just a product title with additions in parentheses
-                itemObs = "";
+                itemObs = cleaned;
               }
             }
 
-            // Build recipe / ficha técnica if exists (prioritizing dedicated variant ficha when configured)
+            // Build recipe / ficha técnica if exists (prioritizing dedicated variant ficha when configured unless Base)
             let receta = null;
-            const variantFicha = Array.isArray(d.variante?.fichasTecnicas)
+            const variantFicha = (!esVarianteBaseFinal && Array.isArray(d.variante?.fichasTecnicas))
               ? d.variante.fichasTecnicas.find(vf => vf.tipo === 'VARIANTE' && vf.estado === 1)
               : null;
             const activeFt = (variantFicha && Array.isArray(variantFicha.detalles) && variantFicha.detalles.length > 0)
               ? variantFicha
               : ft;
             const inferredPrepMin = inferProductPrepMinutes(itemNombre, activeFt?.tiempoPreparacion);
+
+            const rawVarDeltas = !esVarianteBaseFinal ? (d.variante?.insumosModificados || []) : [];
+            const fmtNum = (n) => {
+              const num = Number(n || 0);
+              return Number.isFinite(num) ? Number(num.toFixed(4)) : 1;
+            };
+
+            const varianteCambios = [];
+            if (!esVarianteBaseFinal && rawVarDeltas.length > 0) {
+              for (const delta of rawVarDeltas) {
+                const acc = String(delta.tipoAccion || 'AGREGAR').toUpperCase();
+                const insName = delta.insumo?.nombre || `Insumo #${delta.idInsumo}`;
+                const repName = delta.insumoReemplazado?.nombre || (delta.idInsumoReemplazado ? `Insumo #${delta.idInsumoReemplazado}` : '');
+                const unit = delta.unidadMedida || delta.insumo?.unidadMedida || 'und';
+                const qtyVal = fmtNum(delta.cantidad || 1);
+                if (acc === 'AGREGAR') {
+                  varianteCambios.push({ tipoAccion: acc, idInsumo: delta.idInsumo, insumoNombre: insName, cantidad: qtyVal, unidadMedida: unit, texto: `+ ${insName} (${qtyVal} ${unit})` });
+                } else if (acc === 'REEMPLAZAR') {
+                  varianteCambios.push({ tipoAccion: acc, idInsumo: delta.idInsumo, idInsumoReemplazado: delta.idInsumoReemplazado, insumoNombre: insName, insumoReemplazadoNombre: repName, cantidad: qtyVal, unidadMedida: unit, texto: repName ? `⇄ ${repName} por ${insName} (${qtyVal} ${unit})` : `⇄ ${insName} (${qtyVal} ${unit})` });
+                } else if (acc === 'MODIFICAR_CANTIDAD') {
+                  varianteCambios.push({ tipoAccion: acc, idInsumo: delta.idInsumo, insumoNombre: insName, cantidad: qtyVal, unidadMedida: unit, texto: `▲ ${insName}: ${qtyVal} ${unit}` });
+                } else if (acc === 'QUITAR') {
+                  varianteCambios.push({ tipoAccion: acc, idInsumo: delta.idInsumo, insumoNombre: insName, texto: `− Sin ${insName}` });
+                }
+              }
+            }
+
             if (activeFt) {
               const rawDetalles = [...(activeFt.detalles || [])];
-              const varDeltas = (activeFt === variantFicha) ? [] : (d.variante?.insumosModificados || []);
+              const baseDetByInsumo = new Map((ft?.detalles || []).map(bd => [Number(bd.idInsumo), bd]));
+              const deltaByInsumo = new Map(rawVarDeltas.map(vd => [Number(vd.idInsumo), vd]));
               let ingredientes = [];
 
-              if (varDeltas && varDeltas.length > 0) {
+              if (activeFt === variantFicha) {
+                const varInsumoIds = new Set();
+                ingredientes = rawDetalles.map(det => {
+                  const idIns = Number(det.idInsumo);
+                  varInsumoIds.add(idIns);
+                  const unit = det.unidadMedida || det.insumo?.unidadMedida || 'und';
+                  const qtyVal = fmtNum(det.cantidad || 1);
+                  const insName = det.insumo?.nombre || `Insumo #${det.idInsumo}`;
+                  const delta = deltaByInsumo.get(idIns);
+                  const baseDet = baseDetByInsumo.get(idIns);
+                  const deltaAcc = delta ? String(delta.tipoAccion || '').toUpperCase() : '';
+
+                  if (deltaAcc === 'REEMPLAZAR') {
+                    return {
+                      idInsumo: det.idInsumo,
+                      nombre: `🔄 ${insName} (Reemplazo Variante)`,
+                      cantidad: `${qtyVal} ${unit}`,
+                      tipo: 'REEMPLAZO_VARIANTE'
+                    };
+                  }
+                  if (deltaAcc === 'AGREGAR' || (ft && !baseDet)) {
+                    if (!delta && ft && !baseDet) {
+                      varianteCambios.push({ tipoAccion: 'AGREGAR', idInsumo: det.idInsumo, insumoNombre: insName, cantidad: qtyVal, unidadMedida: unit, texto: `+ ${insName} (${qtyVal} ${unit})` });
+                    }
+                    return {
+                      idInsumo: det.idInsumo,
+                      nombre: `+ ${insName} (Variante)`,
+                      cantidad: `${qtyVal} ${unit}`,
+                      tipo: 'AGREGADO_VARIANTE'
+                    };
+                  }
+                  if (deltaAcc === 'MODIFICAR_CANTIDAD' || (baseDet && Math.abs(Number(baseDet.cantidad || 0) - Number(det.cantidad || 0)) > 0.0001)) {
+                    if (!delta && baseDet) {
+                      varianteCambios.push({ tipoAccion: 'MODIFICAR_CANTIDAD', idInsumo: det.idInsumo, insumoNombre: insName, cantidad: qtyVal, unidadMedida: unit, texto: `▲ ${insName}: ${qtyVal} ${unit}` });
+                    }
+                    return {
+                      idInsumo: det.idInsumo,
+                      nombre: insName,
+                      cantidad: `${qtyVal} ${unit} (Ajuste Variante)`,
+                      tipo: 'MODIFICADO_VARIANTE'
+                    };
+                  }
+                  return {
+                    idInsumo: det.idInsumo,
+                    nombre: insName,
+                    cantidad: `${qtyVal} ${unit}`,
+                    tipo: 'BASE'
+                  };
+                });
+
+                if (ft?.detalles) {
+                  for (const bd of ft.detalles) {
+                    if (!varInsumoIds.has(Number(bd.idInsumo)) && !varianteCambios.some(vc => Number(vc.idInsumo) === Number(bd.idInsumo) || Number(vc.idInsumoReemplazado) === Number(bd.idInsumo))) {
+                      const bName = bd.insumo?.nombre || `Insumo #${bd.idInsumo}`;
+                      varianteCambios.push({ tipoAccion: 'QUITAR', idInsumo: bd.idInsumo, insumoNombre: bName, texto: `− Sin ${bName}` });
+                    }
+                  }
+                }
+              } else if (rawVarDeltas.length > 0) {
                 let mappedIngs = rawDetalles.map(det => ({
                   idInsumo: det.idInsumo,
                   nombre: det.insumo?.nombre || `Insumo #${det.idInsumo}`,
-                  cantidad: `${det.cantidad || 1} ${det.unidadMedida || det.insumo?.unidadMedida || 'und'}`,
+                  cantidad: `${fmtNum(det.cantidad || 1)} ${det.unidadMedida || det.insumo?.unidadMedida || 'und'}`,
                   tipo: 'BASE'
                 }));
 
-                for (const delta of varDeltas) {
+                for (const delta of rawVarDeltas) {
                   const deltaAccion = String(delta.tipoAccion || 'AGREGAR').toUpperCase();
-                  const deltaQty = `${delta.cantidad || 1} ${delta.unidadMedida || delta.insumo?.unidadMedida || 'und'}`;
+                  const deltaQty = `${fmtNum(delta.cantidad || 1)} ${delta.unidadMedida || delta.insumo?.unidadMedida || 'und'}`;
                   const insName = delta.insumo?.nombre || `Insumo #${delta.idInsumo}`;
 
                   if (deltaAccion === 'AGREGAR') {
@@ -433,38 +546,78 @@ class ProduccionService {
                 ingredientes = rawDetalles.map(det => ({
                   idInsumo: det.idInsumo,
                   nombre: det.insumo?.nombre || `Insumo #${det.idInsumo}`,
-                  cantidad: `${det.cantidad || 1} ${det.unidadMedida || det.insumo?.unidadMedida || 'und'}`,
+                  cantidad: `${fmtNum(det.cantidad || 1)} ${det.unidadMedida || det.insumo?.unidadMedida || 'und'}`,
                   tipo: 'BASE'
                 }));
               }
 
-              const rawPasos = activeFt.procedimiento || activeFt.descripcion || "";
+              if (!esVarianteBaseFinal && varianteCambios.length === 0 && Array.isArray(matchedObsProd?.varianteCambios) && matchedObsProd.varianteCambios.length > 0) {
+                varianteCambios.push(...matchedObsProd.varianteCambios);
+              }
+
+              const clientRemoved = Array.isArray(matchedObsProd?.ingredientesRemovidos)
+                ? matchedObsProd.ingredientesRemovidos.map(r => String(r).trim()).filter(Boolean)
+                : [];
+              if (clientRemoved.length > 0) {
+                const lowerRemoved = clientRemoved.map(r => r.toLowerCase());
+                ingredientes = ingredientes.map(ing => {
+                  const rawName = String(ing.nombre || '').replace(/^[+🔄]\s*/, '').replace(/\s*\(.*\)\s*$/, '').toLowerCase();
+                  if (lowerRemoved.some(rem => rawName.includes(rem) || rem.includes(rawName))) {
+                    return {
+                      ...ing,
+                      nombre: `${ing.nombre} (OMITIR - pedido cliente)`,
+                      omitido: true,
+                      tipo: 'REMOVIDO_CLIENTE'
+                    };
+                  }
+                  return ing;
+                });
+              }
+
+              const rawPasos = activeFt.procedimiento || activeFt.descripcion || ft?.procedimiento || ft?.descripcion || "";
               const pasos = rawPasos
                 ? rawPasos.split("\n").map(p => p.trim()).filter(Boolean)
                 : ["Preparar los ingredientes según porciones", "Cocinar y montar según estándares de la casa"];
 
+              const combinedSpecsParts = [];
+              if (!esVarianteBaseFinal) {
+                for (const sp of [matchedObsProd?.varianteEspecificaciones, variantFicha?.especificaciones, d.variante?.descripcion, matchedObsProd?.varianteDescripcion]) {
+                  if (sp && String(sp).trim() && !combinedSpecsParts.includes(String(sp).trim())) {
+                    combinedSpecsParts.push(String(sp).trim());
+                  }
+                }
+              }
+              if (ft?.especificaciones && String(ft.especificaciones).trim() && !combinedSpecsParts.includes(String(ft.especificaciones).trim())) {
+                combinedSpecsParts.push(String(ft.especificaciones).trim());
+              }
+
               receta = {
                 idFichaTecnica: activeFt.idFichaTecnica,
-                idProducto: activeFt.idProducto,
+                idProducto: activeFt.idProducto || prod?.idProducto || null,
+                idVariante: !esVarianteBaseFinal ? (d.idVariante || null) : null,
                 tiempoPreparacion: `${inferredPrepMin} min`,
                 tiempoPreparacionMin: inferredPrepMin,
                 rendimiento: activeFt.rendimiento || "1 porción",
-                especificaciones: activeFt.especificaciones || "",
-                caracteristicas: activeFt.caracteristicas || "",
-                informacionNutricional: activeFt.informacionNutricional || "",
-                condicionesAlmacenamiento: activeFt.condicionesAlmacenamiento || "",
-                vidaUtil: activeFt.vidaUtil || "",
+                especificaciones: combinedSpecsParts.join(' • '),
+                caracteristicas: activeFt.caracteristicas || ft?.caracteristicas || "",
+                informacionNutricional: activeFt.informacionNutricional || ft?.informacionNutricional || "",
+                condicionesAlmacenamiento: activeFt.condicionesAlmacenamiento || ft?.condicionesAlmacenamiento || "",
+                vidaUtil: activeFt.vidaUtil || ft?.vidaUtil || "",
                 ingredientes,
                 pasos
               };
             } else {
+              if (!esVarianteBaseFinal && varianteCambios.length === 0 && Array.isArray(matchedObsProd?.varianteCambios) && matchedObsProd.varianteCambios.length > 0) {
+                varianteCambios.push(...matchedObsProd.varianteCambios);
+              }
               receta = {
                 idFichaTecnica: null,
                 idProducto: prod?.idProducto || null,
+                idVariante: !esVarianteBaseFinal ? (d.idVariante || null) : null,
                 tiempoPreparacion: `${inferredPrepMin} min`,
                 tiempoPreparacionMin: inferredPrepMin,
                 rendimiento: "1 porción",
-                especificaciones: "",
+                especificaciones: (!esVarianteBaseFinal ? (matchedObsProd?.varianteEspecificaciones || d.variante?.descripcion || "") : "") || "",
                 caracteristicas: "",
                 informacionNutricional: "",
                 condicionesAlmacenamiento: "",
@@ -499,29 +652,48 @@ class ProduccionService {
               displayObs = `🔥 ¡PROMO 2x1!: Preparar ${kitchenQty} unidades (${qty} pagada + ${kitchenQty - qty} gratis)${displayObs ? ' • ' + displayObs : ''}`;
             }
 
-            // Si es promo 2x1, escalar los insumos de la receta a la cantidad exacta de cocina
+            // Si es promo 2x1 o cantidad > 1, escalar los insumos de la receta a la cantidad exacta de cocina
             if (receta && kitchenQty > 1 && Array.isArray(receta.ingredientes)) {
               receta.ingredientes = receta.ingredientes.map(ing => {
+                if (ing.omitido) return ing;
                 const parts = String(ing.cantidad).split(' ');
                 const num = parseFloat(parts[0]);
                 const unit = parts.slice(1).join(' ');
                 if (!isNaN(num)) {
+                  const scaled = Number((num * kitchenQty).toFixed(4));
                   return {
                     ...ing,
-                    cantidad: `${num * kitchenQty} ${unit}`
+                    cantidad: `${scaled} ${unit}`
                   };
                 }
                 return ing;
               });
-              receta.rendimiento = `${kitchenQty} porciones (Promo 2x1)`;
+              if (isPromo2x1) {
+                receta.rendimiento = `${kitchenQty} porciones (Promo 2x1)`;
+              }
             }
+
+            const especProducto = [ft?.especificaciones, prod?.descripcion].find(s => s && String(s).trim()) || null;
+            const especVariante = !esVarianteBaseFinal
+              ? ([matchedObsProd?.varianteEspecificaciones, variantFicha?.especificaciones, d.variante?.descripcion, matchedObsProd?.varianteDescripcion]
+                  .filter(s => s && String(s).trim())
+                  .filter((v, i, a) => a.indexOf(v) === i)
+                  .join(' • ') || null)
+              : null;
 
             productosList.push({
               id: d.idDetalleVenta,
               idProducto: prod?.idProducto || null,
               idVariante: d.idVariante,
-              varianteNombre: d.variante && !d.variante.nombre?.includes('- base') ? d.variante.nombre : null,
-              varianteDescripcion: d.variante?.descripcion || null,
+              esVarianteBase: esVarianteBaseFinal,
+              varianteNombre: rawVarNombreClean,
+              varianteDescripcion: !esVarianteBaseFinal ? (d.variante?.descripcion || matchedObsProd?.varianteDescripcion || null) : null,
+              varianteEspecificaciones: especVariante,
+              especificacionesProducto: especProducto,
+              varianteCambios: !esVarianteBaseFinal ? varianteCambios : [],
+              esVarianteDeEvento: Boolean(!esVarianteBaseFinal && (d.variante?.creadaPorEvento || d.variante?.idEvento || matchedObsProd?.esVarianteDeEvento)),
+              eventoOrigenNombre: !esVarianteBaseFinal ? (d.variante?.evento?.nombreEvento || d.variante?.evento?.nombre || null) : null,
+              ingredientesRemovidos: Array.isArray(matchedObsProd?.ingredientesRemovidos) ? matchedObsProd.ingredientesRemovidos : [],
               nombre: itemNombre,
               cantidad: kitchenQty,
               cantidadFacturada: qty,
@@ -564,9 +736,11 @@ class ProduccionService {
             } : {
               idFichaTecnica: null,
               idProducto: p.idProducto || null,
+              idVariante: !p.esVarianteBase ? (p.idVariante || null) : null,
               tiempoPreparacion: `${fallbackPrepMin} min`,
               tiempoPreparacionMin: fallbackPrepMin,
               rendimiento: "1 porción",
+              especificaciones: (!p.esVarianteBase ? (p.varianteEspecificaciones || p.varianteDescripcion || "") : "") || "",
               ingredientes: [],
               pasos: ["Preparar los ingredientes según porciones", "Cocinar y montar según estándares de la casa"]
             };
@@ -575,6 +749,14 @@ class ProduccionService {
               id: p.id || p.idVariante || Math.random(),
               idProducto: p.idProducto || null,
               idVariante: p.idVariante || null,
+              esVarianteBase: Boolean(p.esVarianteBase),
+              varianteNombre: !p.esVarianteBase ? (p.varianteNombre || p.nombreVariante || null) : null,
+              varianteDescripcion: !p.esVarianteBase ? (p.varianteDescripcion || null) : null,
+              varianteEspecificaciones: !p.esVarianteBase ? (p.varianteEspecificaciones || null) : null,
+              especificacionesProducto: null,
+              varianteCambios: (!p.esVarianteBase && Array.isArray(p.varianteCambios)) ? p.varianteCambios : [],
+              esVarianteDeEvento: Boolean(!p.esVarianteBase && p.esVarianteDeEvento),
+              ingredientesRemovidos: Array.isArray(p.ingredientesRemovidos) ? p.ingredientesRemovidos : [],
               nombre: p.nombre || "Producto",
               cantidad: kitchenQtyFallback,
               cantidadFacturada: qty,

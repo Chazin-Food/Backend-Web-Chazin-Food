@@ -1058,6 +1058,16 @@ const Variante = sequelize.define('variante', {
   estado: {
     type: DataTypes.TINYINT,
     defaultValue: 1
+  },
+  idEvento: {
+    type: DataTypes.INTEGER,
+    allowNull: true,
+    defaultValue: null
+  },
+  creadaPorEvento: {
+    type: DataTypes.TINYINT,
+    allowNull: false,
+    defaultValue: 0
   }
 }, { tableName: 'variante', timestamps: false });
 
@@ -1368,6 +1378,9 @@ Insumo.hasMany(DetalleVentaAdicion, { foreignKey: 'idAdicion', as: 'ventasAdicio
 
 Variante.belongsTo(Product, { foreignKey: 'idProducto', as: 'producto' });
 Product.hasMany(Variante, { foreignKey: 'idProducto', as: 'variantes' });
+
+Variante.belongsTo(Evento, { foreignKey: 'idEvento', as: 'evento', onDelete: 'SET NULL' });
+Evento.hasMany(Variante, { foreignKey: 'idEvento', as: 'variantesCreadas' });
 
 FichaTecnica.belongsTo(Variante, { foreignKey: 'idVariante', as: 'variante' });
 Variante.hasMany(FichaTecnica, { foreignKey: 'idVariante', as: 'fichasTecnicas' });

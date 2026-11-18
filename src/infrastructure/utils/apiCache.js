@@ -139,7 +139,7 @@ const MUTATION_INVALIDATION_MAP = [
   { prefix: '/api/autenticacion', namespaces: ['roles', 'dashboard'] },
   { prefix: '/api/auth', namespaces: ['roles', 'dashboard'] },
   { prefix: '/api/adiciones', namespaces: ['adiciones', 'productos', 'insumos'] },
-  { prefix: '/api/eventos', namespaces: ['eventos', 'productos'] },
+  { prefix: '/api/eventos', namespaces: ['eventos', 'productos', 'fichas'] },
   { prefix: '/api/fichas-tecnicas', namespaces: ['fichas', 'productos'] },
   { prefix: '/api/insumos-preparados', namespaces: ['fichas', 'productos', 'insumos'] },
   { prefix: '/api/insumos', namespaces: ['insumos', 'adiciones', 'productos', 'fichas', 'categorias-insumo', 'categories', 'dashboard'] },

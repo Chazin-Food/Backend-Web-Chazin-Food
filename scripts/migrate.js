@@ -28,7 +28,8 @@ const {
   ensureDevolucionSchema,
   ensureInsumoIvaManualSchema,
   ensurePreciosRealesInsumosYStock,
-  ensureVarianteInsumoSchema
+  ensureVarianteInsumoSchema,
+  ensureVarianteEventoSchema
 } = require('../src/infrastructure/utils/dbUtils');
 const { ensureCatalogVariantsAndDrinkFichas } = require('../src/infrastructure/utils/catalogVariantsSync');
 
@@ -42,6 +43,7 @@ async function initializeDatabaseSchema() {
     await ensureInsumoAdicionSchema();
     await ensureVarianteImagenSchema();
     await ensureVarianteInsumoSchema();
+    await ensureVarianteEventoSchema();
     await ensureUsuarioDocumentoSchema();
     await ensureFichaTecnicaTrashSchema();
     await ensureFichaTecnicaInsumoVariantZero();

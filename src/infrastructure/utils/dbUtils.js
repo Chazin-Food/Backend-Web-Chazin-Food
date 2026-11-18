@@ -1248,6 +1248,45 @@ async function ensurePreciosRealesInsumosYStock() {
   }
 }
 
+let _varianteEventoSchemaPromise = null;
+
+/**
+ * Ensures table `variante` includes `idEvento` and `creadaPorEvento` columns
+ * to identify variants automatically created from marketing/special events.
+ */
+async function ensureVarianteEventoSchema() {
+  try {
+    const sequelize = connectDB.sequelize;
+    const [idEvCols] = await sequelize.query("SHOW COLUMNS FROM `variante` LIKE 'idEvento'");
+    if (!idEvCols || idEvCols.length === 0) {
+      await sequelize.query("ALTER TABLE `variante` ADD COLUMN `idEvento` INT NULL DEFAULT NULL AFTER `estado`");
+      console.log('[DB Migration] Columna idEvento agregada a tabla variante');
+    }
+
+    const [flagCols] = await sequelize.query("SHOW COLUMNS FROM `variante` LIKE 'creadaPorEvento'");
+    if (!flagCols || flagCols.length === 0) {
+      await sequelize.query("ALTER TABLE `variante` ADD COLUMN `creadaPorEvento` TINYINT(1) NOT NULL DEFAULT 0 AFTER `idEvento`");
+      console.log('[DB Migration] Columna creadaPorEvento agregada a tabla variante');
+    }
+  } catch (err) {
+    console.warn('[DB Migration] ⚠️ Error asegurando esquema evento en variante:', err.message);
+    throw err;
+  }
+}
+
+/**
+ * Runs ensureVarianteEventoSchema once per server process (safe lazy guard for queries).
+ */
+async function ensureVarianteEventoSchemaOnce() {
+  if (!_varianteEventoSchemaPromise) {
+    _varianteEventoSchemaPromise = ensureVarianteEventoSchema().catch((err) => {
+      _varianteEventoSchemaPromise = null;
+      throw err;
+    });
+  }
+  return _varianteEventoSchemaPromise;
+}
+
 module.exports = {
   resetAutoIncrement,
   resequenceTableIds,
@@ -1276,5 +1315,7 @@ module.exports = {
   ensureDevolucionSchema,
   ensureInsumoIvaManualSchema,
   ensurePreciosRealesInsumosYStock,
-  ensureVarianteInsumoSchema
+  ensureVarianteInsumoSchema,
+  ensureVarianteEventoSchema,
+  ensureVarianteEventoSchemaOnce
 };

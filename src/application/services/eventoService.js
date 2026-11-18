@@ -1,5 +1,7 @@
 const { Op } = require('sequelize');
-const { Evento, Product, Variante, FichaTecnica, DetalleFichaInsumo } = require('../../persistence/models');
+const { Evento, Product, Variante, VarianteInsumo, FichaTecnica, DetalleFichaInsumo, Insumo } = require('../../persistence/models');
+const FichaTecnicaService = require('./fichaTecnicaService');
+const { ensureVarianteEventoSchemaOnce } = require('../../infrastructure/utils/dbUtils');
 
 const stripEmojis = (str) => {
   if (!str || typeof str !== 'string') return '';
@@ -9,6 +11,34 @@ const stripEmojis = (str) => {
     .replace(/^\s*[-–—:]\s*/, '')
     .replace(/\s{2,}/g, ' ')
     .trim();
+};
+
+const isVariantCreatingEventType = (tipoEvento = '', data = {}) => {
+  if (data && (data.crearVarianteEvento === true || data.varianteEvento || (Array.isArray(data.variantesEventoPorProducto) && data.variantesEventoPorProducto.length > 0))) {
+    return true;
+  }
+  const low = String(tipoEvento || '').toLowerCase().trim();
+  if (!low) return false;
+  if (low.includes('2x1')) return false;
+  return (
+    low === 'añadir insumos' ||
+    low.includes('topping') ||
+    low.includes('insumo') ||
+    low.includes('edición especial') ||
+    low.includes('edicion especial') ||
+    low === 'edicion_especial' ||
+    low === 'edicion_limitada' ||
+    low.includes('edición limitada') ||
+    low.includes('edicion limitada')
+  );
+};
+
+const isDummyVariantCollisionName = (vName = '', pName = '') => {
+  const vn = String(vName || '').trim().toLowerCase();
+  const pn = String(pName || '').trim().toLowerCase();
+  if (!vn) return true;
+  if (pn && vn === pn) return true;
+  return ['base', 'estándar', 'estandar', 'completo', 'combo', 'única', 'unica', 'edición especial', 'edicion especial'].includes(vn);
 };
 
 function evaluarVigenciaEvento(e, now = new Date()) {
@@ -112,7 +142,98 @@ let lastAutoExpireAt = 0;
 const AUTO_EXPIRE_TTL_MS = 5 * 60 * 1000;
 
 class EventoService {
+  static async _attachVariantesCreadasMap(eventoIds = []) {
+    await ensureVarianteEventoSchemaOnce();
+    const map = new Map();
+    if (!Array.isArray(eventoIds) || eventoIds.length === 0) return map;
+    try {
+      const vars = await Variante.findAll({
+        where: { idEvento: eventoIds },
+        include: [
+          {
+            model: VarianteInsumo,
+            as: 'insumosModificados',
+            include: [
+              { model: Insumo, as: 'insumo', attributes: ['idInsumo', 'nombre', 'unidadMedida', 'precioUnitario', 'stock'] },
+              { model: Insumo, as: 'insumoReemplazado', attributes: ['idInsumo', 'nombre', 'unidadMedida'] }
+            ]
+          },
+          {
+            model: FichaTecnica,
+            as: 'fichasTecnicas',
+            required: false,
+            where: { tipo: 'VARIANTE', estado: 1 },
+            include: [
+              {
+                model: DetalleFichaInsumo,
+                as: 'detalles',
+                include: [{ model: Insumo, as: 'insumo', attributes: ['idInsumo', 'nombre', 'unidadMedida', 'precioUnitario', 'stock'] }]
+              }
+            ]
+          }
+        ],
+        order: [['idVariante', 'ASC']]
+      });
+
+      for (const v of vars) {
+        const eid = Number(v.idEvento);
+        if (!map.has(eid)) map.set(eid, []);
+        const vf = Array.isArray(v.fichasTecnicas) && v.fichasTecnicas.length > 0 ? v.fichasTecnicas[0] : null;
+        map.get(eid).push({
+          id: v.idVariante,
+          idVariante: v.idVariante,
+          idProducto: v.idProducto,
+          idEvento: eid,
+          creadaPorEvento: Boolean(v.creadaPorEvento || v.idEvento),
+          nombre: v.nombre,
+          descripcion: v.descripcion || '',
+          precio: Number(v.precio || 0),
+          imagen: v.imagen || '',
+          estado: v.estado !== undefined && v.estado !== null ? Number(v.estado) : 1,
+          activo: Number(v.estado ?? 1) !== 0,
+          fichaTecnica: vf ? {
+            idFichaTecnica: vf.idFichaTecnica,
+            descripcion: vf.descripcion || '',
+            procedimiento: vf.procedimiento || '',
+            tiempoPreparacion: Number(vf.tiempoPreparacion || 0),
+            rendimiento: vf.rendimiento || '1 porción',
+            especificaciones: vf.especificaciones || '',
+            observaciones: vf.observaciones || '',
+            detalles: (vf.detalles || []).map(d => ({
+              idDetalleFicha: d.idDetalleFicha,
+              idInsumo: d.idInsumo,
+              cantidad: Number(d.cantidad || 0),
+              unidadMedida: d.unidadMedida || d.insumo?.unidadMedida || 'und',
+              insumo: d.insumo ? {
+                idInsumo: d.insumo.idInsumo,
+                nombre: d.insumo.nombre,
+                unidadMedida: d.insumo.unidadMedida,
+                precioUnitario: Number(d.insumo.precioUnitario || 0),
+                stock: d.insumo.stock
+              } : null
+            }))
+          } : null,
+          insumosModificados: (v.insumosModificados || []).map(im => ({
+            idVarianteInsumo: im.idVarianteInsumo,
+            tipoAccion: im.tipoAccion,
+            idInsumo: im.idInsumo,
+            idInsumoReemplazado: im.idInsumoReemplazado,
+            cantidad: Number(im.cantidad || 0),
+            unidadMedida: im.unidadMedida,
+            observaciones: im.observaciones || null,
+            insumo: im.insumo ? { idInsumo: im.insumo.idInsumo, nombre: im.insumo.nombre, unidadMedida: im.insumo.unidadMedida, precioUnitario: Number(im.insumo.precioUnitario || 0), stock: im.insumo.stock } : null,
+            insumoReemplazado: im.insumoReemplazado ? { idInsumo: im.insumoReemplazado.idInsumo, nombre: im.insumoReemplazado.nombre, unidadMedida: im.insumoReemplazado.unidadMedida } : null
+          }))
+        });
+      }
+    } catch (err) {
+      console.warn('Error cargando variantes asociadas a eventos:', err.message);
+    }
+    return map;
+  }
+
   static async getAll() {
+    await ensureVarianteEventoSchemaOnce();
     const now = new Date();
     const todayStr = now.toISOString().split('T')[0];
 
@@ -146,10 +267,12 @@ class EventoService {
       ]
     });
 
-    return eventos
-      .filter((e) => !e.producto || Number(e.producto.eliminado || 0) !== 1)
-      .map((e) => {
+    const visibleEventos = eventos.filter((e) => !e.producto || Number(e.producto.eliminado || 0) !== 1);
+    const varMap = await this._attachVariantesCreadasMap(visibleEventos.map(e => e.idEvento));
+
+    return visibleEventos.map((e) => {
       const vigencia = evaluarVigenciaEvento(e, now);
+      const variantesCreadas = varMap.get(Number(e.idEvento)) || [];
       return {
         id: e.idEvento,
         idEvento: e.idEvento,
@@ -168,6 +291,7 @@ class EventoService {
         accionInsumo: e.accionInsumo,
         insumosAsociados: this.normalizeInsumos(e.insumosAsociados),
         productosAsociados: e.productosAsociados ? (typeof e.productosAsociados === 'string' ? JSON.parse(e.productosAsociados) : e.productosAsociados) : [],
+        variantesCreadas,
         producto: e.producto ? {
           id: e.producto.idProducto,
           idProducto: e.producto.idProducto,
@@ -181,6 +305,7 @@ class EventoService {
   }
 
   static async getById(id) {
+    await ensureVarianteEventoSchemaOnce();
     const e = await Evento.findByPk(id, {
       include: [
         {
@@ -197,6 +322,8 @@ class EventoService {
       throw error;
     }
     const vigencia = evaluarVigenciaEvento(e);
+    const varMap = await this._attachVariantesCreadasMap([e.idEvento]);
+    const variantesCreadas = varMap.get(Number(e.idEvento)) || [];
     return {
       id: e.idEvento,
       idEvento: e.idEvento,
@@ -215,6 +342,7 @@ class EventoService {
       accionInsumo: e.accionInsumo,
       insumosAsociados: this.normalizeInsumos(e.insumosAsociados),
       productosAsociados: e.productosAsociados ? (typeof e.productosAsociados === 'string' ? JSON.parse(e.productosAsociados) : e.productosAsociados) : [],
+      variantesCreadas,
       producto: e.producto ? {
         id: e.producto.idProducto,
         idProducto: e.producto.idProducto,
@@ -270,8 +398,328 @@ class EventoService {
     };
   }
 
+  static async _syncVariantesParaEventoExistente(eventoRow, data = {}, { isUpdate = false } = {}) {
+    await ensureVarianteEventoSchemaOnce();
+
+    const tipoEv = eventoRow?.tipoEvento || data?.tipoEvento || '';
+    if (!isVariantCreatingEventType(tipoEv, data)) {
+      return [];
+    }
+
+    const rawInsumosInput = data.insumos !== undefined ? data.insumos : data.insumosAsociados;
+    const hasRecipeInput = Boolean(
+      data.varianteEvento !== undefined ||
+      (Array.isArray(data.variantesEventoPorProducto) && data.variantesEventoPorProducto.length > 0) ||
+      rawInsumosInput !== undefined
+    );
+
+    const parsedProds = this.parseJsonArray(data.productos !== undefined ? data.productos : eventoRow.productosAsociados);
+    const targetProductsMap = new Map();
+    for (const p of parsedProds) {
+      const pid = Number(p?.idProducto || p?.id || 0);
+      if (pid > 0 && !targetProductsMap.has(pid)) {
+        targetProductsMap.set(pid, p);
+      }
+    }
+    if (targetProductsMap.size === 0 && eventoRow.idProducto) {
+      targetProductsMap.set(Number(eventoRow.idProducto), { idProducto: Number(eventoRow.idProducto) });
+    }
+    if (targetProductsMap.size === 0) return [];
+
+    const perProductConfigs = Array.isArray(data.variantesEventoPorProducto) ? data.variantesEventoPorProducto : [];
+    const sharedCfg = (data.varianteEvento && typeof data.varianteEvento === 'object') ? data.varianteEvento : {};
+    const eventExtraToppings = this.normalizeInsumos(
+      rawInsumosInput !== undefined ? rawInsumosInput : eventoRow.insumosAsociados
+    );
+
+    const syncedIds = [];
+
+    for (const [prodId, prodEntry] of targetProductsMap.entries()) {
+      const prodRow = await Product.findByPk(prodId);
+      if (!prodRow || Number(prodRow.eliminado || 0) === 1) continue;
+
+      const existingVar = await Variante.findOne({
+        where: { idEvento: eventoRow.idEvento, idProducto: prodId }
+      });
+
+      // Avoid clobbering existing variant recipe when EventoService.update only toggled estado/dates
+      if (isUpdate && existingVar && !hasRecipeInput && data.nuevoPrecio === undefined && data.descuento === undefined && data.nombreEvento === undefined && data.nombre === undefined) {
+        syncedIds.push(existingVar.idVariante);
+        continue;
+      }
+
+      const baseFicha = await FichaTecnica.findOne({
+        where: {
+          idProducto: prodId,
+          estado: 1,
+          [Op.or]: [{ tipo: 'PRODUCTO' }, { tipo: null }]
+        },
+        include: [
+          {
+            model: DetalleFichaInsumo,
+            as: 'detalles',
+            include: [{ model: Insumo, as: 'insumo', attributes: ['idInsumo', 'nombre', 'unidadMedida'] }]
+          }
+        ],
+        order: [['idFichaTecnica', 'ASC']]
+      });
+
+      const prodCfg = perProductConfigs.find(c => Number(c?.idProducto) === prodId) || (targetProductsMap.size === 1 ? sharedCfg : {});
+      const baseNameCandidate = stripEmojis(prodCfg.nombre || sharedCfg.nombre || eventoRow.nombreEvento || '').trim();
+      let varNombre = baseNameCandidate;
+      if (!varNombre || isDummyVariantCollisionName(varNombre, prodRow.nombre)) {
+        const suffix = stripEmojis(eventoRow.nombreEvento || 'Edición Especial');
+        varNombre = `${prodRow.nombre} (${suffix && suffix.toLowerCase() !== prodRow.nombre.toLowerCase() ? suffix : 'Edición Evento'})`;
+      }
+      varNombre = varNombre.slice(0, 80);
+
+      const prodBasePrecio = Number(prodRow.precio || 0);
+      const explicitVarPrecio = prodCfg.precio !== undefined && prodCfg.precio !== '' ? Number(prodCfg.precio) : NaN;
+      const entryNuevoPrecio = Number(prodEntry?.nuevoPrecio || eventoRow.nuevoPrecio || 0);
+      const entryDescuento = Number(prodEntry?.descuento || eventoRow.descuento || 0);
+      let varPrecio = prodBasePrecio;
+      if (Number.isFinite(explicitVarPrecio) && explicitVarPrecio > 0) {
+        varPrecio = explicitVarPrecio;
+      } else if (entryNuevoPrecio > 0) {
+        varPrecio = entryNuevoPrecio;
+      } else if (entryDescuento > 0 && entryDescuento < 100 && prodBasePrecio > 0) {
+        varPrecio = Math.round(prodBasePrecio * (1 - entryDescuento / 100));
+      }
+
+      const rawExtraToppings = Array.isArray(prodCfg.toppingsExtra)
+        ? this.normalizeInsumos(prodCfg.toppingsExtra)
+        : eventExtraToppings;
+      const extraIds = new Set(rawExtraToppings.map(t => Number(t.idInsumo || t.id)).filter(Boolean));
+      const extraText = rawExtraToppings.map(t => `${t.nombre} (${t.cantidad} ${t.unidadMedida})`).filter(Boolean).join(' + ');
+
+      const varDesc = stripEmojis(
+        prodCfg.descripcion ||
+        sharedCfg.descripcion ||
+        eventoRow.descripcion ||
+        (extraText ? `Incluye extra: ${extraText}` : `Variante creada desde evento: ${eventoRow.nombreEvento}`)
+      ).trim();
+
+      const varSpecs = (
+        prodCfg.especificaciones ||
+        sharedCfg.especificaciones ||
+        varDesc ||
+        baseFicha?.especificaciones ||
+        ''
+      ).trim();
+
+      const varEstado = prodCfg.estado !== undefined
+        ? (prodCfg.estado === 0 || prodCfg.estado === '0' || prodCfg.estado === false ? 0 : 1)
+        : (existingVar ? Number(existingVar.estado ?? 1) : 1);
+
+      let varRow = existingVar;
+      if (varRow) {
+        await varRow.update({
+          nombre: varNombre,
+          descripcion: varDesc || null,
+          precio: varPrecio,
+          imagen: prodCfg.imagen || sharedCfg.imagen || eventoRow.imagen || prodRow.imagen || varRow.imagen || null,
+          estado: varEstado,
+          idEvento: eventoRow.idEvento,
+          creadaPorEvento: 1
+        });
+      } else {
+        varRow = await Variante.create({
+          idProducto: prodId,
+          nombre: varNombre,
+          descripcion: varDesc || null,
+          precio: varPrecio,
+          imagen: prodCfg.imagen || sharedCfg.imagen || eventoRow.imagen || prodRow.imagen || null,
+          estado: varEstado,
+          idEvento: eventoRow.idEvento,
+          creadaPorEvento: 1
+        });
+      }
+      syncedIds.push(varRow.idVariante);
+
+      // Si es actualización sin cambios de receta y ya existía ficha, mantener la ficha/deltas existentes
+      if (isUpdate && existingVar && !hasRecipeInput) {
+        continue;
+      }
+
+      const baseDetalles = (baseFicha?.detalles || []).map(d => ({
+        idInsumo: Number(d.idInsumo),
+        nombre: d.insumo?.nombre || `Insumo #${d.idInsumo}`,
+        cantidad: Number(d.cantidad || 1),
+        unidadMedida: String(d.unidadMedida || d.insumo?.unidadMedida || 'und').trim() || 'und'
+      }));
+      const baseMap = new Map(baseDetalles.map(b => [b.idInsumo, b]));
+
+      const finalMap = new Map();
+      const replacedBaseIds = new Set();
+      const replacementByVarId = new Map();
+
+      const incomingDetalles = Array.isArray(prodCfg.detalles) && prodCfg.detalles.length > 0
+        ? prodCfg.detalles
+        : (Array.isArray(prodCfg.insumos) && prodCfg.insumos.length > 0 ? prodCfg.insumos : null);
+
+      if (incomingDetalles) {
+        for (const item of incomingDetalles) {
+          const insId = Number(item?.idInsumo || item?.id || 0);
+          const qty = Number(item?.cantidad || 0);
+          if (!insId || !(qty > 0)) continue;
+          const unit = String(item.unidadMedida || item.unidad || 'und').trim() || 'und';
+          const repId = Number(item?.reemplazaA?.idInsumo || item?.idInsumoReemplazado || 0);
+          if (repId > 0 && repId !== insId && baseMap.has(repId)) {
+            replacedBaseIds.add(repId);
+            replacementByVarId.set(insId, repId);
+          }
+          if (finalMap.has(insId)) {
+            const prev = finalMap.get(insId);
+            finalMap.set(insId, {
+              ...prev,
+              cantidad: Math.round((prev.cantidad + qty) * 1000) / 1000
+            });
+          } else {
+            finalMap.set(insId, {
+              idInsumo: insId,
+              cantidad: qty,
+              unidadMedida: unit,
+              esToppingExtra: Boolean(item.esExtraTopping || item.esToppingExtra || extraIds.has(insId))
+            });
+          }
+        }
+        // Asegurar que toppings extra del evento también queden incluidos si no estaban en incomingDetalles
+        for (const tp of rawExtraToppings) {
+          const tpId = Number(tp.idInsumo || tp.id || 0);
+          if (!tpId || finalMap.has(tpId)) continue;
+          finalMap.set(tpId, {
+            idInsumo: tpId,
+            cantidad: Number(tp.cantidad || 1),
+            unidadMedida: tp.unidadMedida || 'und',
+            esToppingExtra: true
+          });
+        }
+      } else {
+        for (const b of baseDetalles) {
+          finalMap.set(b.idInsumo, {
+            idInsumo: b.idInsumo,
+            cantidad: b.cantidad,
+            unidadMedida: b.unidadMedida,
+            esToppingExtra: false
+          });
+        }
+        for (const tp of rawExtraToppings) {
+          const tpId = Number(tp.idInsumo || tp.id || 0);
+          const tpQty = Number(tp.cantidad || 1);
+          if (!tpId || !(tpQty > 0)) continue;
+          if (finalMap.has(tpId)) {
+            const prev = finalMap.get(tpId);
+            finalMap.set(tpId, {
+              ...prev,
+              cantidad: Math.round((prev.cantidad + tpQty) * 1000) / 1000,
+              esToppingExtra: true
+            });
+          } else {
+            finalMap.set(tpId, {
+              idInsumo: tpId,
+              cantidad: tpQty,
+              unidadMedida: tp.unidadMedida || 'und',
+              esToppingExtra: true
+            });
+          }
+        }
+      }
+
+      const finalDetalles = Array.from(finalMap.values());
+      const deltasToCreate = [];
+      const handledVarIds = new Set();
+
+      for (const [varInsId, repId] of replacementByVarId.entries()) {
+        if (!finalMap.has(repId)) {
+          const item = finalMap.get(varInsId);
+          handledVarIds.add(varInsId);
+          deltasToCreate.push({
+            tipoAccion: 'REEMPLAZAR',
+            idInsumo: varInsId,
+            idInsumoReemplazado: repId,
+            cantidad: item.cantidad,
+            unidadMedida: item.unidadMedida,
+            observaciones: item.esToppingExtra ? 'Reemplazo / Topping extra de evento' : 'Reemplazo en evento'
+          });
+        }
+      }
+
+      for (const [baseId, baseItem] of baseMap.entries()) {
+        if (replacedBaseIds.has(baseId)) continue;
+        const finalItem = finalMap.get(baseId);
+        if (!finalItem) {
+          deltasToCreate.push({
+            tipoAccion: 'QUITAR',
+            idInsumo: baseId,
+            idInsumoReemplazado: null,
+            cantidad: 0,
+            unidadMedida: baseItem.unidadMedida,
+            observaciones: 'Retirado en variante de evento'
+          });
+        } else if (
+          Math.abs(Number(finalItem.cantidad) - Number(baseItem.cantidad)) > 0.001 ||
+          String(finalItem.unidadMedida).toLowerCase() !== String(baseItem.unidadMedida).toLowerCase()
+        ) {
+          deltasToCreate.push({
+            tipoAccion: 'MODIFICAR_CANTIDAD',
+            idInsumo: baseId,
+            idInsumoReemplazado: null,
+            cantidad: finalItem.cantidad,
+            unidadMedida: finalItem.unidadMedida,
+            observaciones: extraIds.has(baseId)
+              ? 'Topping extra de evento sumado a insumo base'
+              : 'Cantidad base editada desde evento'
+          });
+        }
+      }
+
+      for (const item of finalDetalles) {
+        if (!baseMap.has(item.idInsumo) && !handledVarIds.has(item.idInsumo)) {
+          deltasToCreate.push({
+            tipoAccion: 'AGREGAR',
+            idInsumo: item.idInsumo,
+            idInsumoReemplazado: null,
+            cantidad: item.cantidad,
+            unidadMedida: item.unidadMedida,
+            observaciones: item.esToppingExtra || extraIds.has(item.idInsumo)
+              ? 'Topping extra añadido por evento'
+              : 'Insumo añadido en variante de evento'
+          });
+        }
+      }
+
+      await VarianteInsumo.destroy({ where: { idVariante: varRow.idVariante } });
+      for (const dl of deltasToCreate) {
+        await VarianteInsumo.create({
+          idVariante: varRow.idVariante,
+          ...dl
+        });
+      }
+
+      if (finalDetalles.length > 0 || baseFicha) {
+        await FichaTecnicaService.saveForVariante(prodId, varRow.idVariante, {
+          varianteNombre: varNombre,
+          descripcion: varDesc || `Variante de evento: ${eventoRow.nombreEvento}`,
+          procedimiento: prodCfg.procedimiento || sharedCfg.procedimiento || baseFicha?.procedimiento || '',
+          tiempoPreparacion: Number(prodCfg.tiempoPreparacion ?? sharedCfg.tiempoPreparacion ?? baseFicha?.tiempoPreparacion ?? 0),
+          rendimiento: prodCfg.rendimiento || sharedCfg.rendimiento || baseFicha?.rendimiento || '1 porción',
+          especificaciones: varSpecs,
+          caracteristicas: baseFicha?.caracteristicas || `Variante de Evento: ${eventoRow.nombreEvento}`,
+          informacionNutricional: baseFicha?.informacionNutricional || '',
+          condicionesAlmacenamiento: baseFicha?.condicionesAlmacenamiento || '',
+          vidaUtil: baseFicha?.vidaUtil || '',
+          observaciones: `Creada por evento "${eventoRow.nombreEvento}"${extraText ? ` • Toppings extra: ${extraText}` : ''}`,
+          detalles: finalDetalles
+        });
+      }
+    }
+
+    return syncedIds;
+  }
+
   static async create(data) {
-    const { 
+    await ensureVarianteEventoSchemaOnce();
+    const {
       nombreEvento, nombre, descripcion, fechaInicio, fechaFin, estado,
       productoId, tipoEvento, icono, imagen, descuento, nuevoPrecio, accion, insumos, insumosAsociados, productos, isTemporal,
       crearComoProducto, productoNuevo
@@ -287,6 +735,8 @@ class EventoService {
     }
 
     let finalProductoId = productoId ? Number(productoId) : null;
+    const modeBCreatedVariantIds = [];
+    let modeBPrimaryVarianteId = null;
 
     // Bidireccional: Crear producto desde el evento si se solicita
     if (crearComoProducto) {
@@ -355,21 +805,26 @@ class EventoService {
           const v = pData.variantes[i];
           const createdV = await Variante.create({
             idProducto: nuevoProd.idProducto,
-            nombre: v.nombre || (i === 0 ? 'Edición Especial' : `Opción #${i + 1}`),
+            nombre: v.nombre || (i === 0 ? `Edición ${stripEmojis(finalNombre)}` : `Opción #${i + 1}`),
             precio: v.precio !== undefined && v.precio !== "" ? Number(v.precio) : (nuevoPrecio || prodPrecio),
-            estado: 1
+            estado: 1,
+            creadaPorEvento: 1
           });
+          modeBCreatedVariantIds.push(createdV.idVariante);
           if (i === 0) primaryVarianteId = createdV.idVariante;
         }
       } else {
         const nuevaVariante = await Variante.create({
           idProducto: nuevoProd.idProducto,
-          nombre: 'Edición Especial',
+          nombre: stripEmojis(finalNombre) || 'Edición Especial',
           precio: nuevoPrecio || prodPrecio,
-          estado: 1
+          estado: 1,
+          creadaPorEvento: 1
         });
+        modeBCreatedVariantIds.push(nuevaVariante.idVariante);
         primaryVarianteId = nuevaVariante.idVariante;
       }
+      modeBPrimaryVarianteId = primaryVarianteId;
 
       // Crear Ficha Técnica Oficial Completa
       const nuevaFicha = await FichaTecnica.create({
@@ -412,6 +867,11 @@ class EventoService {
     const cleanDesc = stripEmojis(descripcion || '');
     const cleanIcon = stripEmojis(icono || '') || 'party';
 
+    if (!finalProductoId && Array.isArray(productos) && productos.length > 0) {
+      const firstPid = Number(productos[0]?.idProducto || productos[0]?.id || 0);
+      if (firstPid > 0) finalProductoId = firstPid;
+    }
+
     const created = await Evento.create({
       nombreEvento: cleanNombre,
       descripcion: cleanDesc,
@@ -429,10 +889,36 @@ class EventoService {
       productosAsociados: productos ? JSON.stringify(productos) : null
     });
 
+    if (crearComoProducto) {
+      if (modeBCreatedVariantIds.length > 0) {
+        await Variante.update(
+          { idEvento: created.idEvento, creadaPorEvento: 1 },
+          { where: { idVariante: modeBCreatedVariantIds } }
+        );
+      }
+      if (modeBPrimaryVarianteId && normalizedInsumos.length > 0) {
+        for (const extra of normalizedInsumos) {
+          if (extra.idInsumo) {
+            await VarianteInsumo.create({
+              idVariante: modeBPrimaryVarianteId,
+              tipoAccion: 'AGREGAR',
+              idInsumo: Number(extra.idInsumo),
+              cantidad: Number(extra.cantidad || 1),
+              unidadMedida: extra.unidadMedida || 'und',
+              observaciones: 'Topping extra añadido por evento'
+            });
+          }
+        }
+      }
+    } else {
+      await this._syncVariantesParaEventoExistente(created, data, { isUpdate: false });
+    }
+
     return this.getById(created.idEvento);
   }
 
   static async update(id, data) {
+    await ensureVarianteEventoSchemaOnce();
     const e = await Evento.findByPk(id);
     if (!e) {
       const error = new Error('Evento no encontrado');
@@ -440,7 +926,7 @@ class EventoService {
       throw error;
     }
 
-    const { 
+    const {
       nombreEvento, nombre, descripcion, fechaInicio, fechaFin, estado,
       productoId, tipoEvento, icono, imagen, descuento, nuevoPrecio, accion, insumos, insumosAsociados, productos, isTemporal
     } = data;
@@ -461,10 +947,10 @@ class EventoService {
         e.fechaFin = null;
       }
     } else {
-       if (fechaInicio !== undefined) e.fechaInicio = fechaInicio;
-       if (fechaFin !== undefined) e.fechaFin = fechaFin;
+      if (fechaInicio !== undefined) e.fechaInicio = fechaInicio;
+      if (fechaFin !== undefined) e.fechaFin = fechaFin;
     }
-    
+
     if (estado !== undefined) e.estado = estado === 'Activo' || estado === 1 ? 1 : 0;
     if (productoId !== undefined) e.idProducto = productoId;
     if (tipoEvento !== undefined) e.tipoEvento = tipoEvento;
@@ -483,6 +969,7 @@ class EventoService {
     if (productos !== undefined) e.productosAsociados = productos ? JSON.stringify(productos) : null;
 
     await e.save();
+    await this._syncVariantesParaEventoExistente(e, data, { isUpdate: true });
     return this.getById(id);
   }
 

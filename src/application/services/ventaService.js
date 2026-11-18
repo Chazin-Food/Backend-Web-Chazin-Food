@@ -1,4 +1,4 @@
-const { Venta, DetalleVentaProducto, Cliente, User, Role } = require('../../persistence/models');
+const { Venta, DetalleVentaProducto, Cliente, User, Role, Variante } = require('../../persistence/models');
 
 function convertUnits(amount, fromUnit, toUnit) {
   if (!amount || isNaN(amount)) return 0;
@@ -425,7 +425,9 @@ class VentaService {
         const pTot = Number(p.total || 0) > 0 ? Number(p.total) : (pUnit + addsSum) * pQty;
 
         // Buscar detalle relacional en BD para resolver el nombre real del producto del catálogo
-        const matchingDetail = (v.detalles || []).find(d => 
+        const matchingDetail = (v.detalles || []).find(d =>
+          !p.esVarianteBase && Number(d.idVariante) === Number(p.idVariante || p.id)
+        ) || (v.detalles || []).find(d =>
           Number(d.idVariante) === Number(p.idVariante || p.id)
         ) || (v.detalles || [])[pIdx];
 
@@ -434,16 +436,26 @@ class VentaService {
         const realProductoNombre =
           rawMatchingProd && !rawMatchingProd.startsWith('__SISTEMA') ? rawMatchingProd : null;
         const realVarianteNombre =
-          rawMatchingVar && !rawMatchingVar.startsWith('__SISTEMA') ? rawMatchingVar : null;
+          rawMatchingVar && !rawMatchingVar.startsWith('__SISTEMA') && !rawMatchingVar.toLowerCase().includes('- base')
+            ? rawMatchingVar
+            : null;
 
         const finalNombre = realProductoNombre || p.nombreProducto || p.nombre || "Producto";
+        const resolvedVarNombre = p.esVarianteBase ? null : (realVarianteNombre || p.varianteNombre || (p.nombre !== finalNombre ? p.nombre : null));
 
         return {
           id: p.id || p.idVariante || p.idDetalleVenta,
+          idProducto: p.idProducto || matchingDetail?.variante?.idProducto || null,
           idVariante: p.idVariante || p.id,
+          esVarianteBase: Boolean(p.esVarianteBase),
           nombre: finalNombre,
           nombreProducto: realProductoNombre || p.nombreProducto || finalNombre,
-          nombreVariante: realVarianteNombre || (p.nombre !== finalNombre ? p.nombre : null),
+          nombreVariante: resolvedVarNombre,
+          varianteNombre: resolvedVarNombre,
+          varianteDescripcion: p.varianteDescripcion || matchingDetail?.variante?.descripcion || null,
+          varianteEspecificaciones: p.varianteEspecificaciones || null,
+          varianteCambios: Array.isArray(p.varianteCambios) ? p.varianteCambios : [],
+          esVarianteDeEvento: Boolean(p.esVarianteDeEvento || matchingDetail?.variante?.creadaPorEvento || matchingDetail?.variante?.idEvento),
           cantidad: pQty,
           precioUnitario: pUnit,
           total: pTot,
@@ -458,7 +470,10 @@ class VentaService {
         const rawJoinedProd = d.variante?.producto?.nombre;
         const rawJoinedVar = d.variante?.nombre;
         const cleanJoinedProd = rawJoinedProd && !rawJoinedProd.startsWith('__SISTEMA') ? rawJoinedProd : null;
-        const cleanJoinedVar = rawJoinedVar && !rawJoinedVar.startsWith('__SISTEMA') ? rawJoinedVar : null;
+        const cleanJoinedVar =
+          rawJoinedVar && !rawJoinedVar.startsWith('__SISTEMA') && !rawJoinedVar.toLowerCase().includes('- base')
+            ? rawJoinedVar
+            : null;
         let pName = cleanJoinedProd || cleanJoinedVar || null;
         let pAdiciones = [];
         let pObs = "";
@@ -501,10 +516,15 @@ class VentaService {
 
         return {
           id: d.idDetalleVenta || d.idVariante,
+          idProducto: d.variante?.idProducto || null,
           idVariante: d.idVariante,
+          esVarianteBase: Boolean(rawJoinedVar && String(rawJoinedVar).toLowerCase().includes('- base')),
           nombre: realProdName,
           nombreProducto: realProdName,
           nombreVariante: realVarName,
+          varianteNombre: realVarName,
+          varianteDescripcion: d.variante?.descripcion || null,
+          esVarianteDeEvento: Boolean(d.variante?.creadaPorEvento || d.variante?.idEvento),
           cantidad: pQty,
           precioUnitario: pUnit,
           total: pTot,
@@ -1170,6 +1190,25 @@ class VentaService {
       throw error;
     }
 
+    // Validar que ninguna variante seleccionada en pedidos online esté inactiva
+    if (!esDevolucion && origenVenta === 'ONLINE' && Array.isArray(rawDetails) && rawDetails.length > 0) {
+      for (const itemCheck of rawDetails) {
+        if (itemCheck.esVarianteBase) continue;
+        const reqVarId = itemCheck.idVariante || itemCheck.varianteId;
+        if (!reqVarId) continue;
+        const varRow = await Variante.findByPk(reqVarId).catch(() => null);
+        if (
+          varRow &&
+          !String(varRow.nombre || '').toLowerCase().includes('- base') &&
+          Number(varRow.estado) === 0
+        ) {
+          const error = new Error(`La variante "${varRow.nombre}" está inactiva y no se puede ordenar en este momento.`);
+          error.statusCode = 400;
+          throw error;
+        }
+      }
+    }
+
     // Ítem #124: tiempo estimado de entrega híbrido (Automático según fichas técnicas + modalidad o Manual si se especifica)
     const initialItemsForPrep = (Array.isArray(data.productos) && data.productos.length > 0)
       ? data.productos
@@ -1215,8 +1254,15 @@ class VentaService {
                 ? it.adiciones.reduce((s, a) => s + (Number(a.precio || a.precioUnitario || 0)), 0)
                 : 0;
               return {
-                idVariante: it.idVariante || it.varianteId,
+                idProducto: it.idProducto || it.productoId || null,
+                idVariante: it.idVariante || it.varianteId || null,
+                esVarianteBase: Boolean(it.esVarianteBase),
                 nombre: it.nombre || it.observaciones || it.observacion || "Producto",
+                varianteNombre: it.varianteNombre || null,
+                varianteDescripcion: it.varianteDescripcion || null,
+                varianteEspecificaciones: it.varianteEspecificaciones || null,
+                varianteCambios: Array.isArray(it.varianteCambios) ? it.varianteCambios : [],
+                esVarianteDeEvento: Boolean(it.esVarianteDeEvento),
                 cantidad: itQty,
                 precioUnitario: itPrice,
                 total: esDevolucion ? 0 : (Number(it.subtotal || it.total) > 0 ? Number(it.subtotal || it.total) : (itPrice + itAdds) * itQty),
@@ -1318,32 +1364,68 @@ class VentaService {
         const obsProdItem = Array.isArray(obsObj.productos) ? obsObj.productos[detailIdx] : null;
         let chosenVarianteId = null;
 
-        // 1. Verificar si d.idVariante existe directamente en la tabla `variante`
-        if (d.idVariante) {
+        const prodId = d.idProducto || obsProdItem?.idProducto || (!d.esVarianteBase ? null : d.idVariante);
+        const isBaseSelection = Boolean(d.esVarianteBase || obsProdItem?.esVarianteBase);
+
+        // 1. Verificar si d.idVariante existe directamente en la tabla `variante` (cuando NO es selección explícita de producto base)
+        if (!isBaseSelection && d.idVariante) {
           try {
             const [matchById] = await sequelize.query(
-              'SELECT idVariante FROM variante WHERE idVariante = :id LIMIT 1',
+              'SELECT idVariante, idProducto FROM variante WHERE idVariante = :id LIMIT 1',
               { replacements: { id: d.idVariante } }
             );
             if (matchById && matchById.length > 0) {
-              chosenVarianteId = matchById[0].idVariante;
+              const rowProdId = Number(matchById[0].idProducto);
+              if (!prodId || Number(prodId) === rowProdId) {
+                chosenVarianteId = matchById[0].idVariante;
+              }
             }
           } catch (e) {
             console.warn('Error al consultar idVariante:', e.message);
           }
         }
 
-        // 2. Si no coincide, buscar si existe variante asociada al idProducto
+        // 2. Para selección base o si no coincide idVariante, preferir/crear la variante oculta `- base` del producto
         if (!chosenVarianteId) {
-          const prodId = d.idProducto || d.idVariante;
-          if (prodId) {
+          const lookupProdId = prodId || d.idVariante;
+          if (lookupProdId) {
             try {
-              const [matchByProd] = await sequelize.query(
-                'SELECT idVariante FROM variante WHERE idProducto = :id LIMIT 1',
-                { replacements: { id: prodId } }
+              const [baseDummy] = await sequelize.query(
+                "SELECT idVariante FROM variante WHERE idProducto = :id AND LOWER(nombre) LIKE '%- base%' ORDER BY idVariante ASC LIMIT 1",
+                { replacements: { id: lookupProdId } }
               );
-              if (matchByProd && matchByProd.length > 0) {
-                chosenVarianteId = matchByProd[0].idVariante;
+              if (baseDummy && baseDummy.length > 0) {
+                chosenVarianteId = baseDummy[0].idVariante;
+              } else if (isBaseSelection) {
+                // Crear fila oculta `- base` para no asignar una variante distinta al producto base
+                const [prodInfo] = await sequelize.query(
+                  'SELECT idProducto, nombre, precio FROM producto WHERE idProducto = :id LIMIT 1',
+                  { replacements: { id: lookupProdId } }
+                );
+                if (prodInfo && prodInfo.length > 0) {
+                  const dummyName = `${String(prodInfo[0].nombre || 'Producto').slice(0, 68)} - base`;
+                  await sequelize.query(
+                    'INSERT INTO variante (idProducto, nombre, precio, estado) VALUES (:idProducto, :nombre, :precio, 1)',
+                    { replacements: { idProducto: prodInfo[0].idProducto, nombre: dummyName, precio: Number(prodInfo[0].precio || 0) } }
+                  );
+                  const [insertedDummy] = await sequelize.query(
+                    'SELECT idVariante FROM variante WHERE idProducto = :id ORDER BY idVariante DESC LIMIT 1',
+                    { replacements: { id: prodInfo[0].idProducto } }
+                  );
+                  if (insertedDummy && insertedDummy.length > 0) {
+                    chosenVarianteId = insertedDummy[0].idVariante;
+                  }
+                }
+              }
+
+              if (!chosenVarianteId) {
+                const [matchByProd] = await sequelize.query(
+                  "SELECT idVariante FROM variante WHERE idProducto = :id ORDER BY CASE WHEN LOWER(nombre) LIKE '%- base%' THEN 0 ELSE 1 END, estado DESC, idVariante ASC LIMIT 1",
+                  { replacements: { id: lookupProdId } }
+                );
+                if (matchByProd && matchByProd.length > 0) {
+                  chosenVarianteId = matchByProd[0].idVariante;
+                }
               }
             } catch (e) {
               console.warn('Error al consultar idProducto en variante:', e.message);
@@ -2004,17 +2086,21 @@ class VentaService {
     if (varId) {
       try {
         varRow = await Variante.findByPk(varId);
-        varDeltas = await VarianteInsumo.findAll({
-          where: { idVariante: varId },
-          include: [
-            { model: Insumo, as: 'insumo' },
-            { model: Insumo, as: 'insumoReemplazado' }
-          ]
-        });
+        const isBaseDummyRow = Boolean(d.esVarianteBase || (varRow && String(varRow.nombre || '').toLowerCase().includes('- base')));
+        if (!isBaseDummyRow) {
+          varDeltas = await VarianteInsumo.findAll({
+            where: { idVariante: varId },
+            include: [
+              { model: Insumo, as: 'insumo' },
+              { model: Insumo, as: 'insumoReemplazado' }
+            ]
+          });
+        }
       } catch (e) {}
     }
 
-    if (varId) {
+    const isBaseDummySelection = Boolean(d.esVarianteBase || (varRow && String(varRow.nombre || '').toLowerCase().includes('- base')));
+    if (varId && !isBaseDummySelection) {
       try {
         const fichaVar = await FichaTecnica.findOne({
           where: { idVariante: varId, tipo: 'VARIANTE', estado: 1 },

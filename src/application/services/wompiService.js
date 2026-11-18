@@ -72,16 +72,31 @@ class WompiService {
       const cantidad = Math.max(1, Number(it.cantidad || 1));
       let precioBase = null;
       let idProducto = it.idProducto || null;
+      let precioVariante = null;
 
-      if (it.idVariante || it.varianteId) {
-        const variante = await Variante.findByPk(it.idVariante || it.varianteId).catch(() => null);
+      const reqVarId = !it.esVarianteBase ? (it.idVariante || it.varianteId) : null;
+      if (reqVarId) {
+        const variante = await Variante.findByPk(reqVarId).catch(() => null);
         if (variante) {
+          const isDummyBase = String(variante.nombre || '').toLowerCase().includes('- base');
+          if (!isDummyBase && Number(variante.estado) === 0) {
+            const err = new Error(`La variante "${variante.nombre}" no está disponible en este momento.`);
+            err.statusCode = 400;
+            throw err;
+          }
           idProducto = idProducto || variante.idProducto;
+          if (!isDummyBase && Number(variante.precio) > 0) {
+            precioVariante = Number(variante.precio);
+          }
         }
       }
       if (idProducto) {
         const producto = await Product.findByPk(idProducto).catch(() => null);
-        if (producto) precioBase = Number(producto.precio || 0);
+        if (producto) {
+          precioBase = precioVariante !== null ? precioVariante : Number(producto.precio || 0);
+        }
+      } else if (precioVariante !== null) {
+        precioBase = precioVariante;
       }
       if (precioBase === null || !(precioBase > 0)) return null;
 

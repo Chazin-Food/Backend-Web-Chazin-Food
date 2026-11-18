@@ -2,6 +2,16 @@ const { Op } = require('sequelize');
 const { Product, CategoriaProducto, Evento, Variante, VarianteInsumo, ComboProducto, FichaTecnica, DetalleFichaInsumo, Insumo, DetalleVentaProducto, Resena } = require('../../persistence/models');
 const FichaTecnicaService = require('./fichaTecnicaService');
 const EventoService = require('./eventoService');
+const { ensureVarianteEventoSchemaOnce } = require('../../infrastructure/utils/dbUtils');
+
+function resolveVarianteEstadoValue(v, fallback = 1) {
+  if (!v || (v.estado === undefined && v.activo === undefined)) return fallback;
+  if (v.activo === false) return 0;
+  if (v.estado === 0 || v.estado === '0' || String(v.estado || '').toLowerCase() === 'inactivo' || v.estado === false) {
+    return 0;
+  }
+  return 1;
+}
 
 /**
  * Normaliza unidades de medida entre receta e inventario para calcular porciones disponibles.
@@ -256,7 +266,8 @@ class ProductService {
     }
   }
 
-  static async _queryFormattedProducts({ eliminado = 0, order = [['idProducto', 'ASC']] } = {}) {
+  static async _queryFormattedProducts({ eliminado = 0, order = [['idProducto', 'ASC']], onlyActiveVariants = false } = {}) {
+    await ensureVarianteEventoSchemaOnce();
     const [products, fichas, allInsumos, ventasPorVariante] = await Promise.all([
       Product.findAll({
         where: {
@@ -283,8 +294,14 @@ class ProductService {
         {
           model: Variante,
           as: 'variantes',
-          attributes: ['idVariante', 'nombre', 'descripcion', 'precio', 'imagen', 'estado'],
+          attributes: ['idVariante', 'nombre', 'descripcion', 'precio', 'imagen', 'estado', 'idEvento', 'creadaPorEvento'],
           include: [
+            {
+              model: Evento,
+              as: 'evento',
+              attributes: ['idEvento', 'nombreEvento', 'tipoEvento', 'estado'],
+              required: false
+            },
             {
               model: VarianteInsumo,
               as: 'insumosModificados',
@@ -467,9 +484,20 @@ class ProductService {
           /bebida|gaseos|refresco/i.test(catNombre) ||
           /gaseosa|coca|pepsi|sprite|quatro|cuatro|postob[oó]n|agua\b/i.test(p.nombre || '');
         const rawVars = Array.isArray(p.variantes) ? p.variantes : [];
-        const realRawVars = rawVars.filter(v =>
-          (v?.estado === undefined || v?.estado === null || Number(v.estado) !== 0) &&
-          !isDummyOrBaseVariant(v?.nombre, p.nombre)
+        const baseVarRow = rawVars.find(
+          v => !(v?.creadaPorEvento || v?.idEvento) && isDummyOrBaseVariant(v?.nombre, p.nombre)
+        ) || null;
+        const realRawVars = rawVars.filter(v => {
+          const isEvtVar = Boolean(v?.creadaPorEvento || v?.idEvento);
+          const isDummy = !isEvtVar && isDummyOrBaseVariant(v?.nombre, p.nombre);
+          if (isDummy) return false;
+          if (onlyActiveVariants) {
+            return v?.estado === undefined || v?.estado === null || Number(v.estado) !== 0;
+          }
+          return true;
+        });
+        const realActiveVars = realRawVars.filter(
+          v => v?.estado === undefined || v?.estado === null || Number(v.estado) !== 0
         );
         const baseFichaProd = fichaMap.get(Number(p.idProducto)) || null;
 
@@ -549,6 +577,7 @@ class ProductService {
                 }));
               }
 
+              const varEstado = v.estado !== undefined && v.estado !== null ? Number(v.estado) : 1;
               return {
                 id: v.idVariante,
                 idVariante: v.idVariante,
@@ -556,7 +585,16 @@ class ProductService {
                 descripcion: v.descripcion || '',
                 precio: ProductService.resolveVariantPrice(v.precio, realPrecio),
                 imagen: v.imagen || '',
-                estado: v.estado !== undefined ? v.estado : 1,
+                estado: varEstado,
+                activo: varEstado !== 0,
+                idEvento: v.idEvento ? Number(v.idEvento) : null,
+                creadaPorEvento: Boolean(v.creadaPorEvento || v.idEvento),
+                eventoOrigen: v.evento ? {
+                  idEvento: v.evento.idEvento,
+                  nombreEvento: v.evento.nombreEvento,
+                  tipoEvento: v.evento.tipoEvento,
+                  estado: v.evento.estado === 1 ? 'Activo' : 'Inactivo'
+                } : null,
                 fichaTecnica: formattedVarFicha,
                 insumosModificados: mappedDeltas
               };
@@ -581,7 +619,8 @@ class ProductService {
           ? formatFichaForProductResponse(baseFichaProd, p, null, baseMappedDetalles, null, isDrinkProd)
           : null;
 
-        const idVariantePrincipal = realRawVars[0]?.idVariante || rawVars[0]?.idVariante || p.idProducto;
+        const idVariantePrincipal = realActiveVars[0]?.idVariante || baseVarRow?.idVariante || rawVars[0]?.idVariante || p.idProducto;
+        const idVarianteBase = baseVarRow?.idVariante || null;
 
         // Calcular número total de ventas históricas del producto (Ítem #104)
         let totalVentas = 0;
@@ -655,6 +694,7 @@ class ProductService {
           itemsCombo: itemsComboFormatted,
           variantes,
           idVariantePrincipal,
+          idVarianteBase,
           tieneVariantes: variantes.length > 0,
           fichaTecnica: formattedBaseFicha,
           adiciones,
@@ -663,7 +703,8 @@ class ProductService {
       });
   }
 
-  static async getProducts() {
+  static async getProducts({ onlyActiveVariants = false } = {}) {
+    await ensureVarianteEventoSchemaOnce();
     if (!ProductService._catalogVariantsSyncTriggered) {
       ProductService._catalogVariantsSyncTriggered = true;
       const { ensureCatalogVariantsAndDrinkFichas } = require('../../infrastructure/utils/catalogVariantsSync');
@@ -673,7 +714,7 @@ class ProductService {
         invalidateNamespaces(['productos', 'fichas']);
       }
     }
-    return this._queryFormattedProducts({ eliminado: 0, order: [['idProducto', 'ASC']] });
+    return this._queryFormattedProducts({ eliminado: 0, order: [['idProducto', 'ASC']], onlyActiveVariants });
   }
 
   static async getProductsPapelera() {
@@ -703,6 +744,7 @@ class ProductService {
   }
 
   static async createProduct(data) {
+    await ensureVarianteEventoSchemaOnce();
     const { nombre, precio, descripcion, imagen, categoria, adiciones, idCategoriaProducto, estado, configuracionCombo, itemsCombo } = data;
     if (!nombre || !nombre.trim()) {
       const error = new Error('El nombre del producto es obligatorio');
@@ -764,7 +806,7 @@ class ProductService {
 
     // Crear variantes enviadas o variante base por defecto
     const validVariants = Array.isArray(data.variantes)
-      ? data.variantes.filter(v => v && v.nombre && v.nombre.trim() && v.nombre.trim().toLowerCase() !== nombre.trim().toLowerCase())
+      ? data.variantes.filter(v => v && v.nombre && v.nombre.trim() && (v.creadaPorEvento || v.idEvento || v.nombre.trim().toLowerCase() !== nombre.trim().toLowerCase()))
       : [];
 
     if (validVariants.length > 0) {
@@ -775,7 +817,9 @@ class ProductService {
           descripcion: v.descripcion || null,
           precio: ProductService.resolveVariantPrice(v.precio, finalPrecio),
           imagen: v.imagen || null,
-          estado: normalizedEstado
+          estado: resolveVarianteEstadoValue(v, normalizedEstado),
+          idEvento: v.idEvento ? Number(v.idEvento) : null,
+          creadaPorEvento: v.creadaPorEvento || v.idEvento ? 1 : 0
         });
 
         if (Array.isArray(v.insumosModificados) && v.insumosModificados.length > 0) {
@@ -822,6 +866,7 @@ class ProductService {
   }
 
   static async updateProduct(id, data) {
+    await ensureVarianteEventoSchemaOnce();
     const p = await Product.findByPk(id);
     if (!p) {
       const error = new Error('Producto no encontrado');
@@ -878,8 +923,9 @@ class ProductService {
       const basePrice = Number(p.precio) || 0;
       const existingVariantes = await Variante.findAll({ where: { idProducto: id } });
       const existingIds = existingVariantes.map(v => Number(v.idVariante));
-      
-      const filteredIncoming = variantes.filter(v => v && v.nombre && v.nombre.trim() && v.nombre.trim().toLowerCase() !== p.nombre.toLowerCase());
+      const existingByIdMap = new Map(existingVariantes.map(ev => [Number(ev.idVariante), ev]));
+
+      const filteredIncoming = variantes.filter(v => v && v.nombre && v.nombre.trim() && (v.creadaPorEvento || v.idEvento || v.nombre.trim().toLowerCase() !== p.nombre.toLowerCase()));
 
       if (filteredIncoming.length > 0) {
         const matchedExistingIds = new Set(
@@ -900,19 +946,30 @@ class ProductService {
 
           if (v.idVariante && existingIds.includes(Number(v.idVariante))) {
             currentVarId = Number(v.idVariante);
-            await Variante.update(
-              { nombre: vNombre, descripcion: vDesc, precio: vPrecio, imagen: vImagen },
-              { where: { idVariante: currentVarId } }
-            );
+            const prevRow = existingByIdMap.get(currentVarId);
+            const nextEstado = resolveVarianteEstadoValue(v, prevRow?.estado !== undefined ? Number(prevRow.estado) : p.estado);
+            const updatePayload = { nombre: vNombre, descripcion: vDesc, precio: vPrecio, imagen: vImagen, estado: nextEstado };
+            if (v.idEvento !== undefined) updatePayload.idEvento = v.idEvento ? Number(v.idEvento) : null;
+            if (v.creadaPorEvento !== undefined) updatePayload.creadaPorEvento = v.creadaPorEvento || v.idEvento ? 1 : 0;
+            await Variante.update(updatePayload, { where: { idVariante: currentVarId } });
           } else {
             const reusableDummy = existingVariantes.find(
               ev => !usedExistingIds.has(Number(ev.idVariante)) && isDummyOrBaseVariant(ev.nombre, p.nombre)
             );
+            const nextEstado = resolveVarianteEstadoValue(v, p.estado);
             if (reusableDummy) {
               currentVarId = Number(reusableDummy.idVariante);
               usedExistingIds.add(currentVarId);
               await Variante.update(
-                { nombre: vNombre, descripcion: vDesc, precio: vPrecio, imagen: vImagen },
+                {
+                  nombre: vNombre,
+                  descripcion: vDesc,
+                  precio: vPrecio,
+                  imagen: vImagen,
+                  estado: nextEstado,
+                  idEvento: v.idEvento ? Number(v.idEvento) : null,
+                  creadaPorEvento: v.creadaPorEvento || v.idEvento ? 1 : 0
+                },
                 { where: { idVariante: currentVarId } }
               );
             } else {
@@ -922,7 +979,9 @@ class ProductService {
                 descripcion: vDesc,
                 precio: vPrecio,
                 imagen: vImagen,
-                estado: p.estado
+                estado: nextEstado,
+                idEvento: v.idEvento ? Number(v.idEvento) : null,
+                creadaPorEvento: v.creadaPorEvento || v.idEvento ? 1 : 0
               });
               currentVarId = Number(newVar.idVariante);
             }
@@ -1007,6 +1066,45 @@ class ProductService {
     }
 
     return this.getProductById(id);
+  }
+
+  static async toggleVarianteEstado(idProducto, idVariante, rawEstado) {
+    await ensureVarianteEventoSchemaOnce();
+    const varId = Number(idVariante);
+    const prodId = idProducto ? Number(idProducto) : null;
+    if (!Number.isFinite(varId) || varId <= 0) {
+      const error = new Error('Variante inválida');
+      error.statusCode = 400;
+      throw error;
+    }
+
+    const v = await Variante.findByPk(varId);
+    if (!v || (prodId && Number(v.idProducto) !== prodId)) {
+      const error = new Error('Variante no encontrada para este producto');
+      error.statusCode = 404;
+      throw error;
+    }
+
+    let nextEstado;
+    if (rawEstado !== undefined && rawEstado !== null) {
+      nextEstado = (rawEstado === 0 || rawEstado === '0' || String(rawEstado).toLowerCase() === 'inactivo' || rawEstado === false) ? 0 : 1;
+    } else {
+      nextEstado = Number(v.estado ?? 1) === 1 ? 0 : 1;
+    }
+
+    v.estado = nextEstado;
+    await v.save();
+
+    return {
+      idProducto: Number(v.idProducto),
+      idVariante: Number(v.idVariante),
+      nombre: v.nombre,
+      estado: nextEstado,
+      activo: nextEstado === 1,
+      message: nextEstado === 1
+        ? `La variante "${v.nombre}" está activa y visible en el módulo de clientes`
+        : `La variante "${v.nombre}" fue inactivada y ocultada en el módulo de clientes`
+    };
   }
 
   static async deleteProduct(id) {
