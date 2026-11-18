@@ -377,18 +377,29 @@ class InsumoService {
 
       // ── Campos editables: Stock Mínimo, Stock Máximo, Descripción, Estado, IVA y Adición ──
       // Los datos maestros (nombre, categoría, unidad, precio/costo y stock) son inmutables
-      if (stockMinimo !== undefined && stockMinimo !== null && stockMinimo !== '') {
-        insumo.stockMinimo = parseFloat(stockMinimo);
+      if (stockMinimo !== undefined) {
+        const minParsed = parseFloat(stockMinimo);
+        if (isNaN(minParsed) || minParsed < 0) {
+          const error = new Error('El stock mínimo debe ser un número válido mayor o igual a 0.');
+          error.statusCode = 400;
+          throw error;
+        }
+        insumo.stockMinimo = minParsed;
       }
-      if (stockMaximo !== undefined && stockMaximo !== null && stockMaximo !== '') {
-        const minVal = stockMinimo !== undefined ? parseFloat(stockMinimo) : parseFloat(insumo.stockMinimo || 0);
-        const maxVal = parseFloat(stockMaximo);
-        if (maxVal < minVal) {
+      if (stockMaximo !== undefined) {
+        const maxParsed = parseFloat(stockMaximo);
+        if (isNaN(maxParsed) || maxParsed < 0) {
+          const error = new Error('El stock máximo debe ser un número válido mayor o igual a 0.');
+          error.statusCode = 400;
+          throw error;
+        }
+        const currentMin = parseFloat(insumo.stockMinimo || 0);
+        if (maxParsed < currentMin) {
           const error = new Error('La cantidad máxima no puede ser inferior a la cantidad mínima.');
           error.statusCode = 400;
           throw error;
         }
-        insumo.stockMaximo = maxVal;
+        insumo.stockMaximo = maxParsed;
       }
       if (descripcion !== undefined) {
         insumo.descripcion = descripcion;

@@ -177,7 +177,8 @@ class ProveedorService {
       idTipoDocumento, estado, nombreContacto, contacto
     } = data;
 
-    const finalNumeroDocumento = numeroDocumento || nit || documento || '';
+    let cleanNumeroDocumento = (numeroDocumento || nit || documento || '').toString().replace(/\D/g, '');
+    let cleanTelefono = (telefono || '').toString().replace(/\D/g, '');
     const finalCorreo = correo || email || '';
     let finalNombreContacto = nombreContacto || contacto || '';
 
@@ -187,15 +188,13 @@ class ProveedorService {
     if (!nombre || !String(nombre).trim())
       errores.push({ campo: 'nombre', mensaje: 'El nombre del proveedor es requerido.' });
 
-    if (!finalNumeroDocumento || !String(finalNumeroDocumento).trim())
+    if (!cleanNumeroDocumento || !String(cleanNumeroDocumento).trim())
       errores.push({ campo: 'numeroDocumento', mensaje: 'El número de documento es obligatorio.' });
-    else if (!/^[\d.\-\s]+$/.test(String(finalNumeroDocumento).trim()))
-      errores.push({ campo: 'numeroDocumento', mensaje: 'El número de documento solo puede contener dígitos, puntos y guiones.' });
 
-    if (!telefono || !String(telefono).trim())
+    if (!cleanTelefono || !String(cleanTelefono).trim())
       errores.push({ campo: 'telefono', mensaje: 'El teléfono es obligatorio.' });
-    else if (!/^[\d\s+\-()]+$/.test(String(telefono).trim()))
-      errores.push({ campo: 'telefono', mensaje: 'El teléfono solo puede contener dígitos. No se permiten letras.' });
+    else if (!/^\d{7,10}$/.test(cleanTelefono))
+      errores.push({ campo: 'telefono', mensaje: 'El teléfono debe tener entre 7 y 10 dígitos numéricos.' });
 
     if (!finalNombreContacto || !String(finalNombreContacto).trim())
       errores.push({ campo: 'nombreContacto', mensaje: 'La persona de contacto es obligatoria.' });
@@ -216,12 +215,12 @@ class ProveedorService {
       throw error;
     }
 
-    if (finalNumeroDocumento && String(finalNumeroDocumento).trim()) {
+    if (cleanNumeroDocumento) {
       const existingDoc = await Proveedor.findOne({
-        where: { numeroDocumento: String(finalNumeroDocumento).trim() }
+        where: { numeroDocumento: cleanNumeroDocumento }
       });
       if (existingDoc) {
-        const error = new Error(`Ya existe un proveedor registrado con el número de documento / NIT: ${finalNumeroDocumento}`);
+        const error = new Error(`Ya existe un proveedor registrado con el número de documento / NIT: ${cleanNumeroDocumento}`);
         error.statusCode = 400;
         throw error;
       }
@@ -264,8 +263,8 @@ class ProveedorService {
       idTipoProveedor: parsedTipoProv,
       clasificacion: clasificacionStr,
       idTipoDocumento: parsedTipoDoc,
-      numeroDocumento: finalNumeroDocumento,
-      telefono: telefono || '',
+      numeroDocumento: cleanNumeroDocumento,
+      telefono: cleanTelefono,
       correo: finalCorreo,
       direccion: direccion || '',
       nombreContacto: finalNombreContacto,
@@ -292,26 +291,25 @@ class ProveedorService {
       throw error;
     }
 
+    const esJuridica = p.idTipoDocumento === 3;
+
     let {
       nombre, numeroDocumento, nit, documento, telefono, correo, email,
       direccion, tipoPersona, idTipoProveedor, tipoProveedor,
       idTipoDocumento, estado, nombreContacto, contacto
     } = data;
 
-    const finalNumeroDocumento = numeroDocumento !== undefined ? numeroDocumento : (nit !== undefined ? nit : documento);
+    // Sanitizar teléfono a sólo dígitos
+    let cleanTelefono = telefono !== undefined ? String(telefono).replace(/\D/g, '') : undefined;
+
     const finalCorreo = correo !== undefined ? correo : email;
     const finalNombreContacto = nombreContacto !== undefined ? nombreContacto : contacto;
 
     const errores = [];
 
-    if (finalNumeroDocumento !== undefined && String(finalNumeroDocumento).trim() !== '') {
-      if (!/^[\d]+$/.test(String(finalNumeroDocumento).trim()))
-        errores.push({ campo: 'numeroDocumento', mensaje: 'El número de documento solo puede contener dígitos, sin puntos ni guiones.' });
-    }
-
-    if (telefono !== undefined && String(telefono).trim() !== '') {
-      if (!/^[\d\s+\-()]+$/.test(String(telefono).trim()))
-        errores.push({ campo: 'telefono', mensaje: 'El teléfono solo puede contener dígitos. No se permiten letras.' });
+    if (cleanTelefono !== undefined && cleanTelefono !== '') {
+      if (!/^\d{7,10}$/.test(cleanTelefono))
+        errores.push({ campo: 'telefono', mensaje: 'El teléfono debe tener entre 7 y 10 dígitos numéricos.' });
     }
 
     if (finalNombreContacto !== undefined && String(finalNombreContacto).trim() !== '') {
@@ -326,29 +324,29 @@ class ProveedorService {
       throw error;
     }
 
-    if (finalNumeroDocumento && String(finalNumeroDocumento).trim()) {
-      const { Op } = require('sequelize');
-      const existingDoc = await Proveedor.findOne({
-        where: {
-          numeroDocumento: String(finalNumeroDocumento).trim(),
-          idProveedor: { [Op.ne]: idProveedor }
-        }
-      });
-      if (existingDoc) {
-        const error = new Error(`Ya existe otro proveedor registrado con el número de documento / NIT: ${finalNumeroDocumento}`);
-        error.statusCode = 400;
-        throw error;
-      }
+    // Reglas de inmutabilidad estrictas:
+    // Persona Natural: CC y Nombre inmutables; Teléfono, Tipo de Proveedor, Correo, Dirección editables.
+    // Persona Jurídica: Razón Social, NIT y Correo inmutables; Teléfono, Tipo de Proveedor, Contacto, Dirección editables.
+    if (esJuridica) {
+      // Inmutables: p.nombre, p.numeroDocumento, p.correo (se mantienen inalterados)
+      if (cleanTelefono !== undefined) p.telefono = cleanTelefono;
+      if (finalNombreContacto !== undefined) p.nombreContacto = finalNombreContacto || '';
+      if (direccion !== undefined) p.direccion = direccion || '';
+    } else {
+      // Natural:
+      // Inmutables: p.nombre, p.numeroDocumento (se mantienen inalterados)
+      if (cleanTelefono !== undefined) p.telefono = cleanTelefono;
+      if (finalCorreo !== undefined) p.correo = finalCorreo || '';
+      if (finalNombreContacto !== undefined) p.nombreContacto = finalNombreContacto || '';
+      if (direccion !== undefined) p.direccion = direccion || '';
     }
 
-    if (nombre !== undefined) p.nombre = nombre.trim();
-    if (finalNumeroDocumento !== undefined) p.numeroDocumento = finalNumeroDocumento || '';
-    if (telefono !== undefined) p.telefono = telefono || '';
-    if (finalCorreo !== undefined) p.correo = finalCorreo || '';
-    if (direccion !== undefined) p.direccion = direccion || '';
-    if (finalNombreContacto !== undefined) p.nombreContacto = finalNombreContacto || '';
+    // También limpiar el numeroDocumento existente en BD si contenía caracteres antiguos no numéricos
+    if (p.numeroDocumento && /\D/.test(p.numeroDocumento)) {
+      p.numeroDocumento = p.numeroDocumento.replace(/\D/g, '');
+    }
 
-    // Actualizar tipo de proveedor y clasificacion
+    // Actualizar tipo de proveedor y clasificacion (siempre editable)
     const rawClasif = data.tiposProveedor || data.clasificacion;
     if (rawClasif !== undefined) {
       if (Array.isArray(rawClasif) && rawClasif.length > 0) {
@@ -364,15 +362,6 @@ class ProveedorService {
       if (tipoProveedor === 'Distribuidor' || tipoProveedor === 'Proveedor') p.idTipoProveedor = 2;
       else if (tipoProveedor === 'Fabricante') p.idTipoProveedor = 3;
       else if (tipoProveedor === 'Mayorista') p.idTipoProveedor = 1;
-    }
-
-    // Actualizar tipo de documento / persona
-    if (tipoPersona !== undefined) {
-      if (tipoPersona === 'Jurídica') p.idTipoDocumento = 3;
-      else if (p.idTipoDocumento === 3) p.idTipoDocumento = 1;
-    }
-    if (idTipoDocumento !== undefined) {
-      p.idTipoDocumento = Number(idTipoDocumento) || p.idTipoDocumento;
     }
 
     if (estado !== undefined) p.estado = (estado === 'Activo' || estado === 1) ? 1 : 0;
