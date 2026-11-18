@@ -15,7 +15,7 @@ const SMTP_TIMEOUTS = {
 };
 
 /**
- * Servicio unificado de envío de correos transaccionales (SMTP Nodemailer + Resend API HTTP).
+ * Servicio unificado de envío de correos transaccionales (Brevo API HTTP v3 + Resend API HTTP + SMTP Nodemailer).
  */
 class EmailService {
   /**
@@ -80,6 +80,74 @@ class EmailService {
       }),
       from
     };
+  }
+
+  /**
+   * Envía un correo mediante la API HTTP v3 de Brevo (puerto 443, sin bloqueo SMTP en Render).
+   */
+  static async _sendViaBrevo({ to, subject, text, html }) {
+    const apiKey = (process.env.BREVO_API_KEY || '').trim();
+    if (!apiKey || typeof fetch !== 'function') {
+      return { attempted: false, ok: false };
+    }
+
+    const rawSender = (
+      process.env.BREVO_SENDER_EMAIL ||
+      process.env.SMTP_USER ||
+      process.env.EMAIL_USER ||
+      ''
+    ).trim();
+    const angleMatch = rawSender.match(/<([^>]+)>/);
+    const senderEmail = (angleMatch ? angleMatch[1] : rawSender).trim();
+    const senderName = (process.env.BREVO_SENDER_NAME || 'Chazin Food').trim();
+
+    if (!senderEmail) {
+      console.error('Error Brevo: falta BREVO_SENDER_EMAIL o SMTP_USER verificado en Brevo.');
+      return { attempted: false, ok: false };
+    }
+
+    const toList = (Array.isArray(to) ? to : [to])
+      .filter(Boolean)
+      .map((email) => ({ email: String(email).trim() }));
+
+    if (toList.length === 0) {
+      console.error('Error Brevo: no se especificó un destinatario válido.');
+      return { attempted: false, ok: false };
+    }
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 12000);
+    try {
+      const response = await fetch('https://api.brevo.com/v3/smtp/email', {
+        method: 'POST',
+        headers: {
+          accept: 'application/json',
+          'api-key': apiKey,
+          'content-type': 'application/json'
+        },
+        body: JSON.stringify({
+          sender: { name: senderName, email: senderEmail },
+          to: toList,
+          subject,
+          textContent: text,
+          htmlContent: html
+        }),
+        signal: controller.signal
+      });
+
+      if (!response.ok) {
+        const errBody = await response.text().catch(() => '');
+        console.error(`Error Brevo HTTP ${response.status}:`, errBody || response.statusText);
+        return { attempted: true, ok: false, error: `Brevo HTTP ${response.status}` };
+      }
+
+      return { attempted: true, ok: true };
+    } catch (err) {
+      console.error('Error de red al enviar correo via Brevo:', err.message);
+      return { attempted: true, ok: false, error: err.message };
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   /**
@@ -175,17 +243,18 @@ class EmailService {
   }
 
   /**
-   * Canal centralizado de entrega: Resend HTTP -> SMTP Nodemailer -> modo dev (solo fuera de producción).
+   * Canal centralizado de entrega: Brevo API HTTP v3 -> Resend HTTP -> SMTP Nodemailer -> modo dev (solo fuera de producción).
    */
   static async _deliverEmail({ to, subject, text, renderHtml, label, devLines }) {
     try {
+      const hasBrevo = Boolean((process.env.BREVO_API_KEY || '').trim());
       const hasResend = Boolean((process.env.RESEND_API_KEY || '').trim());
       const smtpConfig = this.getTransporter();
 
-      if (!hasResend && !smtpConfig) {
+      if (!hasBrevo && !hasResend && !smtpConfig) {
         if (process.env.NODE_ENV === 'production') {
           console.error(
-            `❌ No hay proveedor de correo configurado en producción (SMTP_USER/SMTP_PASS o RESEND_API_KEY faltantes) para enviar ${label} a ${to}`
+            `❌ No hay proveedor de correo configurado en producción (BREVO_API_KEY, RESEND_API_KEY o SMTP_USER/SMTP_PASS faltantes) para enviar ${label} a ${to}`
           );
           return false;
         }
@@ -200,6 +269,14 @@ class EmailService {
       }
 
       const html = await renderHtml();
+
+      if (hasBrevo) {
+        const brevoResult = await this._sendViaBrevo({ to, subject, text, html });
+        if (brevoResult.ok) {
+          console.log(`✅ Correo (${label}) enviado via Brevo a ${to}`);
+          return true;
+        }
+      }
 
       if (hasResend) {
         const resendResult = await this._sendViaResend({ to, subject, text, html });
