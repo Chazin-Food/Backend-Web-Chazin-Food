@@ -509,7 +509,7 @@ class AuthService {
     };
   }
 
-  static async forgotPassword(data) {
+  static async forgotPassword(data, options = {}) {
     const { email, correo } = data || {};
     const targetEmail = (email || correo || '').trim().toLowerCase();
 
@@ -539,16 +539,24 @@ class AuthService {
       { expiresIn: '1h' }
     );
 
-    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+    const frontendUrl = EmailService.resolveFrontendUrl(options.requestOrigin);
     const resetLink = `${frontendUrl}/reset-password?token=${resetToken}&email=${encodeURIComponent(user.email)}`;
 
     // Envío del correo con diseño React Email a través de EmailService
-    await EmailService.sendPasswordResetEmail({
+    const sent = await EmailService.sendPasswordResetEmail({
       email: user.email,
       nombre: user.nombre,
       apellidos: user.apellidos,
       resetLink
     });
+
+    if (!sent) {
+      const error = new Error(
+        'No fue posible enviar el correo de recuperación en este momento. Verifica las credenciales de correo (SMTP o Resend) del servidor.'
+      );
+      error.statusCode = 503;
+      throw error;
+    }
 
     return { message: 'Si el correo está registrado, recibirás las instrucciones para restablecer tu contraseña.' };
   }

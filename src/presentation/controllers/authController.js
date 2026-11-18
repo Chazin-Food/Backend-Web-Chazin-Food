@@ -47,7 +47,9 @@ const updateUserProfile = async (req, res, next) => {
 
 const forgotPassword = async (req, res, next) => {
   try {
-    const result = await AuthService.forgotPassword(req.body);
+    const result = await AuthService.forgotPassword(req.body, {
+      requestOrigin: req.headers?.origin
+    });
     res.json(result);
   } catch (error) {
     if (error.statusCode) res.status(error.statusCode);
