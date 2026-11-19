@@ -4,7 +4,9 @@ const getMovimientos = async (req, res, next) => {
   try {
     const filter = {
       idInsumo: req.query.idInsumo,
-      tipo: req.query.tipo
+      tipo: req.query.tipo,
+      limit: req.query.limit,
+      offset: req.query.offset
     };
     const movimientos = await TrazabilidadService.getAll(filter);
     res.json(movimientos);

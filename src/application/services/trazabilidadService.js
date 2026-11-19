@@ -18,13 +18,18 @@ class TrazabilidadService {
       where.tipo = filter.tipo;
     }
 
+    const limit = Math.min(Math.max(parseInt(filter.limit, 10) || 300, 1), 500);
+    const offset = Math.max(parseInt(filter.offset, 10) || 0, 0);
+
     const registros = await Trazabilidad.findAll({
       where,
       include: [
-        { model: Insumo, as: 'insumo', required: false },
-        { model: User, as: 'usuario', required: false }
+        { model: Insumo, as: 'insumo', required: false, attributes: ['idInsumo', 'nombre'] },
+        { model: User, as: 'usuario', required: false, attributes: ['idUsuario', 'nombre', 'apellidos'] }
       ],
-      order: [['fecha', 'DESC']]
+      order: [['fecha', 'DESC']],
+      limit,
+      offset
     });
 
     return registros.map(r => {
