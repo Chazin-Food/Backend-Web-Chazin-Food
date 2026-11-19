@@ -1,5 +1,15 @@
 const ResenaService = require('../../application/services/resenaService');
 
+const getRecentResenas = async (req, res, next) => {
+  try {
+    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 20, 1), 100);
+    const data = await ResenaService.getRecientes(limit);
+    res.json(data);
+  } catch (err) {
+    next(err);
+  }
+};
+
 const getProductResenas = async (req, res, next) => {
   try {
     const { idProducto } = req.params;
@@ -78,6 +88,7 @@ const deleteResena = async (req, res, next) => {
 };
 
 module.exports = {
+  getRecentResenas,
   getProductResenas,
   getUserResenas,
   getRatingsBulk,

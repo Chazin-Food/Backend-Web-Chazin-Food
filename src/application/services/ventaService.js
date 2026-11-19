@@ -635,6 +635,9 @@ class VentaService {
 
     const origen = isOnline ? 'ONLINE' : 'PUNTO_FISICO';
     const origenNombre = isOnline ? 'Venta Online' : 'Punto Físico';
+    const metodoPagoFinal = (isOnline && !esDevolucion && (!metodoPago || String(metodoPago).toLowerCase().trim() === 'efectivo'))
+      ? 'Wompi'
+      : metodoPago;
 
     const hybridEst = computeHybridDeliveryEstimate({
       productos,
@@ -682,8 +685,8 @@ class VentaService {
       tiempoAutomaticoSugerido: hybridEst.autoEstimate,
       empaqueParaLlevar,
       tipoEntrega,
-      metodoPago,
-      metodoPagoNombre: String(metodoPago).toLowerCase() === 'wompi' ? 'Wompi (Pago en Línea)' : metodoPago,
+      metodoPago: metodoPagoFinal,
+      metodoPagoNombre: String(metodoPagoFinal || '').toLowerCase().includes('wompi') ? 'Wompi (Pago en Línea)' : metodoPagoFinal,
       estadoPago,
       estadoAprobacion: v.estadoAprobacion || obsData.estadoAprobacion || 'PENDIENTE',
       estadoEntrega: v.estadoEntrega,

@@ -1,5 +1,5 @@
 const { Op } = require('sequelize');
-const { Resena, Product, User, Venta, DetalleVentaProducto, Variante } = require('../../persistence/models');
+const { Resena, Product, User, Cliente, Venta, DetalleVentaProducto, Variante } = require('../../persistence/models');
 
 class ResenaService {
   /**
@@ -15,7 +15,7 @@ class ResenaService {
           attributes: ['idUsuario', 'nombre', 'apellidos']
         }
       ],
-      order: [['fechaResena', 'DESC']]
+      order: [['fechaResena', 'DESC'], ['idResena', 'DESC']]
     });
 
     const total = resenas.length;
@@ -26,14 +26,86 @@ class ResenaService {
     return {
       promedio,
       total,
-      resenas: resenas.map(r => ({
-        id: r.idResena,
-        idUsuario: r.idUsuario,
-        nombre: `${r.usuario?.nombre || ''} ${r.usuario?.apellidos || ''}`.trim(),
-        puntuacion: r.puntuacion,
-        comentario: r.comentario,
-        fecha: r.fechaResena
-      }))
+      resenas: resenas.map(r => {
+        const nombreCompleto = `${r.usuario?.nombre || ''} ${r.usuario?.apellidos || ''}`.trim() || 'Cliente registrado';
+        return {
+          id: r.idResena,
+          idResena: r.idResena,
+          idUsuario: r.idUsuario,
+          nombre: nombreCompleto,
+          usuario: r.usuario ? {
+            idUsuario: r.usuario.idUsuario,
+            nombre: r.usuario.nombre || '',
+            apellidos: r.usuario.apellidos || ''
+          } : null,
+          puntuacion: Number(r.puntuacion || 0),
+          comentario: r.comentario || '',
+          fecha: r.fechaResena
+        };
+      })
+    };
+  }
+
+  /**
+   * Obtiene las reseñas activas más recientes de toda la tienda junto con el promedio y total global real.
+   */
+  static async getRecientes(limit = 20) {
+    const safeLimit = Math.min(Math.max(parseInt(limit, 10) || 20, 1), 100);
+
+    const [resenas, todasPuntuaciones] = await Promise.all([
+      Resena.findAll({
+        where: { estado: 1 },
+        include: [
+          {
+            model: User,
+            as: 'usuario',
+            attributes: ['idUsuario', 'nombre', 'apellidos']
+          },
+          {
+            model: Product,
+            as: 'producto',
+            attributes: ['idProducto', 'nombre', 'imagen', 'categoria']
+          }
+        ],
+        order: [['fechaResena', 'DESC'], ['idResena', 'DESC']],
+        limit: safeLimit
+      }),
+      Resena.findAll({
+        where: { estado: 1 },
+        attributes: ['puntuacion'],
+        raw: true
+      })
+    ]);
+
+    const total = todasPuntuaciones.length;
+    const promedioGlobal = total > 0
+      ? Math.round((todasPuntuaciones.reduce((s, r) => s + Number(r.puntuacion || 0), 0) / total) * 10) / 10
+      : 0;
+
+    return {
+      promedioGlobal,
+      total,
+      resenas: resenas.map(r => {
+        const nombreCompleto = `${r.usuario?.nombre || ''} ${r.usuario?.apellidos || ''}`.trim() || 'Cliente registrado';
+        return {
+          id: r.idResena,
+          idResena: r.idResena,
+          idUsuario: r.idUsuario,
+          idProducto: r.idProducto,
+          nombre: nombreCompleto,
+          usuario: r.usuario ? {
+            idUsuario: r.usuario.idUsuario,
+            nombre: r.usuario.nombre || '',
+            apellidos: r.usuario.apellidos || ''
+          } : null,
+          productoNombre: r.producto?.nombre || `Producto #${r.idProducto}`,
+          productoImagen: r.producto?.imagen || null,
+          productoCategoria: r.producto?.categoria || '',
+          puntuacion: Number(r.puntuacion || 0),
+          comentario: r.comentario || '',
+          fecha: r.fechaResena
+        };
+      })
     };
   }
 
@@ -97,44 +169,92 @@ class ResenaService {
   }
 
   /**
-   * Verifica si el usuario ha comprado ese producto (tiene al menos 1 venta entregada/aprobada con ese producto).
+   * Verifica si el usuario ha comprado ese producto (tiene al menos 1 venta válida/no cancelada con ese producto).
    */
   static async usuarioComproProducto(idUsuario, idProducto) {
-    // Buscamos ventas del usuario con detalles que contengan variantes del producto
-    const variantes = await Variante.findAll({
-      where: { idProducto },
-      attributes: ['idVariante']
-    });
-    const varianteIds = variantes.map(v => v.idVariante);
-    if (!varianteIds.length) return false;
+    const targetProdId = Number(idProducto);
+    if (!idUsuario || !targetProdId) return false;
 
-    const cliente = await User.findByPk(idUsuario, {
+    const userWithClient = await User.findByPk(idUsuario, {
       include: [{ association: 'clienteInfo', attributes: ['idCliente'] }]
     });
-    if (!cliente?.clienteInfo) return false;
 
-    const idCliente = cliente.clienteInfo.idCliente;
+    let idCliente = userWithClient?.clienteInfo?.idCliente || null;
+    if (!idCliente) {
+      const clienteRow = await Cliente.findOne({
+        where: { idUsuario },
+        attributes: ['idCliente']
+      });
+      idCliente = clienteRow?.idCliente || null;
+    }
+    if (!idCliente) return false;
 
-    const venta = await Venta.findOne({
-      where: {
-        idCliente,
-        estadoEntrega: { [Op.in]: ['ENTREGADO', 'LISTO', 'EN_CAMINO'] }
-      },
-      include: [{
-        model: DetalleVentaProducto,
-        as: 'detalles',
-        where: { idVariante: { [Op.in]: varianteIds } },
-        required: true
-      }]
+    const validSaleWhere = {
+      idCliente,
+      estadoEntrega: { [Op.ne]: 'CANCELADO' },
+      [Op.or]: [
+        { estadoAprobacion: { [Op.ne]: 'RECHAZADO' } },
+        { estadoAprobacion: { [Op.is]: null } }
+      ]
+    };
+
+    const variantes = await Variante.findAll({
+      where: { idProducto: targetProdId },
+      attributes: ['idVariante'],
+      raw: true
+    });
+    const varianteIds = variantes.map(v => v.idVariante);
+
+    if (varianteIds.length > 0) {
+      const ventaDirecta = await Venta.findOne({
+        where: validSaleWhere,
+        attributes: ['idVenta'],
+        include: [{
+          model: DetalleVentaProducto,
+          as: 'detalles',
+          where: { idVariante: { [Op.in]: varianteIds } },
+          attributes: ['idDetalleVenta'],
+          required: true
+        }]
+      });
+      if (ventaDirecta) return true;
+    }
+
+    // Fallback estructural sobre ventas reales del cliente en BD (ej. combos o variantes guardadas en JSON de observaciones)
+    const ventasCliente = await Venta.findAll({
+      where: validSaleWhere,
+      attributes: ['idVenta', 'observaciones'],
+      order: [['idVenta', 'DESC']],
+      limit: 50,
+      raw: true
     });
 
-    return !!venta;
+    for (const v of ventasCliente) {
+      if (!v.observaciones || typeof v.observaciones !== 'string' || !v.observaciones.trim().startsWith('{')) continue;
+      try {
+        const parsed = JSON.parse(v.observaciones);
+        const productosObs = Array.isArray(parsed.productos) ? parsed.productos : [];
+        const matched = productosObs.some(p => Number(p?.idProducto || p?.id) === targetProdId);
+        if (matched) return true;
+      } catch {
+        // Ignorar observaciones no JSON
+      }
+    }
+
+    return false;
   }
 
   /**
    * Crea una nueva reseña. Valida: usuario compró el producto, una reseña por producto.
    */
   static async create(idUsuario, { idProducto, puntuacion, comentario }) {
+    const targetProdId = parseInt(idProducto, 10);
+    if (isNaN(targetProdId) || targetProdId <= 0) {
+      const err = new Error('Producto inválido para registrar la reseña.');
+      err.statusCode = 400;
+      throw err;
+    }
+
     // Validar puntuación
     const pts = parseInt(puntuacion, 10);
     if (isNaN(pts) || pts < 1 || pts > 5) {
@@ -144,7 +264,7 @@ class ResenaService {
     }
 
     // Verificar que compró el producto
-    const compro = await this.usuarioComproProducto(idUsuario, idProducto);
+    const compro = await this.usuarioComproProducto(idUsuario, targetProdId);
     if (!compro) {
       const err = new Error('Solo puedes reseñar productos que hayas comprado.');
       err.statusCode = 403;
@@ -152,7 +272,7 @@ class ResenaService {
     }
 
     // Una reseña por usuario por producto
-    const existente = await Resena.findOne({ where: { idUsuario, idProducto, estado: 1 } });
+    const existente = await Resena.findOne({ where: { idUsuario, idProducto: targetProdId, estado: 1 } });
     if (existente) {
       const err = new Error('Ya has dejado una reseña para este producto. Puedes editarla.');
       err.statusCode = 409;
@@ -161,14 +281,22 @@ class ResenaService {
 
     const resena = await Resena.create({
       idUsuario,
-      idProducto,
+      idProducto: targetProdId,
       puntuacion: pts,
       comentario: (comentario || '').trim(),
       fechaResena: new Date(),
       estado: 1
     });
 
-    return { id: resena.idResena, puntuacion: resena.puntuacion, comentario: resena.comentario };
+    return {
+      id: resena.idResena,
+      idResena: resena.idResena,
+      idUsuario,
+      idProducto: targetProdId,
+      puntuacion: resena.puntuacion,
+      comentario: resena.comentario,
+      fecha: resena.fechaResena
+    };
   }
 
   /**
@@ -187,7 +315,15 @@ class ResenaService {
     if (comentario !== undefined) resena.comentario = (comentario || '').trim();
     await resena.save();
 
-    return { id: resena.idResena, puntuacion: resena.puntuacion, comentario: resena.comentario };
+    return {
+      id: resena.idResena,
+      idResena: resena.idResena,
+      idUsuario,
+      idProducto: resena.idProducto,
+      puntuacion: resena.puntuacion,
+      comentario: resena.comentario,
+      fecha: resena.fechaResena
+    };
   }
 
   /**
@@ -211,7 +347,13 @@ class ResenaService {
   static async getMia(idUsuario, idProducto) {
     const resena = await Resena.findOne({ where: { idUsuario, idProducto, estado: 1 } });
     if (!resena) return null;
-    return { id: resena.idResena, puntuacion: resena.puntuacion, comentario: resena.comentario };
+    return {
+      id: resena.idResena,
+      idResena: resena.idResena,
+      puntuacion: resena.puntuacion,
+      comentario: resena.comentario,
+      fecha: resena.fechaResena
+    };
   }
 }
 

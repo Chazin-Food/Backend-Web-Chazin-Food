@@ -151,7 +151,7 @@ const MUTATION_INVALIDATION_MAP = [
   { prefix: '/api/devoluciones', namespaces: ['productos', 'insumos', 'dashboard'] },
   { prefix: '/api/clientes', namespaces: ['dashboard'] },
   { prefix: '/api/empleados', namespaces: ['roles', 'dashboard'] },
-  { prefix: '/api/resenas', namespaces: ['productos'] },
+  { prefix: '/api/resenas', namespaces: ['productos', 'dashboard'] },
   { prefix: '/api/wompi', namespaces: ['productos', 'adiciones', 'dashboard'] }
 ];
 

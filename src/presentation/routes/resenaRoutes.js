@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const {
+  getRecentResenas,
   getProductResenas,
   getUserResenas,
   getRatingsBulk,
@@ -12,6 +13,7 @@ const {
 const { protect } = require('../../infrastructure/middlewares/authMiddleware');
 
 // Públicas
+router.get('/recientes', getRecentResenas);
 router.get('/producto/:idProducto', getProductResenas);
 router.get('/usuario/:idUsuario', getUserResenas);
 router.get('/ratings', getRatingsBulk); // ?ids=1,2,3

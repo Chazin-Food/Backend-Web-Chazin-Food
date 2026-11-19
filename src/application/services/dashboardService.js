@@ -606,10 +606,124 @@ class DashboardService {
 
       return ventas.map(v => VentaService.formatVenta(v));
     } catch (error) {
-      console.error('Error in getVentasRecientes:', error);
-      return [];
-    }
-  }
+      console.error('Error in getVentasRecientes:', error);
+      return [];
+    }
+  }
+
+  static async getComentariosObservaciones(filtro = {}) {
+    try {
+      const ResenaService = require('./resenaService');
+      const VentaService = require('./ventaService');
+      const { Venta, Cliente, User, DetalleVentaProducto } = require('../../persistence/models');
+      const { startDate, endDate } = parseDateRange(filtro);
+
+      const whereVentas = {
+        estadoEntrega: { [Op.ne]: 'CANCELADO' }
+      };
+      if (startDate) {
+        whereVentas.fechaVenta = {
+          [Op.between]: [startDate, endDate || new Date()]
+        };
+      }
+
+      const [resenasData, ventas] = await Promise.all([
+        ResenaService.getRecientes(20).catch(() => ({ promedioGlobal: 0, total: 0, resenas: [] })),
+        Venta.findAll({
+          where: whereVentas,
+          include: [
+            {
+              model: Cliente,
+              as: 'cliente',
+              include: [{ model: User, as: 'usuario', attributes: ['idUsuario', 'nombre', 'apellidos'] }]
+            },
+            { model: User, as: 'usuario', attributes: ['idUsuario', 'nombre', 'apellidos'] },
+            { model: DetalleVentaProducto, as: 'detalles' }
+          ],
+          order: [['idVenta', 'DESC']],
+          limit: 80
+        }).catch(() => [])
+      ]);
+
+      const isTrivialObservation = (raw) => {
+        const clean = String(raw || '').trim();
+        if (!clean || clean.length < 3) return true;
+        if (clean.startsWith('{') || clean.startsWith('[')) return true;
+        const lower = clean.toLowerCase();
+        return (
+          lower === 'n/a' ||
+          lower === 'na' ||
+          lower === 'ninguna' ||
+          lower === 'ninguno' ||
+          lower === 'sin observaciones' ||
+          lower === 'sin notas' ||
+          lower === 'ninguna observacion' ||
+          lower === 'ninguna observación' ||
+          lower === 'prueba' ||
+          lower === 'test' ||
+          lower.startsWith('qa_') ||
+          lower.includes('prueba automatizada')
+        );
+      };
+
+      const observaciones = [];
+      for (const v of ventas) {
+        const formatted = VentaService.formatVenta(v);
+        const parts = [];
+        const seen = new Set();
+
+        const pushPart = (val) => {
+          const clean = String(val || '').trim();
+          if (isTrivialObservation(clean)) return;
+          const key = clean.toLowerCase();
+          if (seen.has(key)) return;
+          seen.add(key);
+          parts.push(clean);
+        };
+
+        pushPart(formatted.especificaciones);
+        pushPart(formatted.observacionCocina);
+
+        if (Array.isArray(formatted.productos)) {
+          for (const item of formatted.productos) {
+            const itemNote = String(item?.observaciones || item?.observacion || item?.nota || '').trim();
+            const itemNameLower = String(item?.nombre || item?.nombreProducto || '').trim().toLowerCase();
+            if (itemNote && itemNote.toLowerCase() !== itemNameLower) {
+              pushPart(itemNote);
+            }
+          }
+        }
+
+        if (parts.length > 0) {
+          observaciones.push({
+            id: formatted.id || formatted.idVenta,
+            codigo: formatted.codigoPedido || formatted.numeroVenta || `#${String(formatted.id || '').padStart(4, '0')}`,
+            cliente: formatted.clienteNombre || formatted.cliente || 'Cliente General',
+            origen: formatted.origenNombre || (formatted.tipoEntrega === 'Domicilio' ? 'Venta Online' : 'Punto Físico'),
+            nota: parts.join(' · '),
+            fecha: formatted.fechaFormatted || (formatted.fecha ? String(formatted.fecha).slice(0, 10) : ''),
+            estado: formatted.estado || ''
+          });
+          if (observaciones.length >= 15) break;
+        }
+      }
+
+      return {
+        promedioGlobal: Number(resenasData?.promedioGlobal || 0),
+        totalResenas: Number(resenasData?.total || 0),
+        resenas: Array.isArray(resenasData?.resenas) ? resenasData.resenas : [],
+        observaciones
+      };
+    } catch (error) {
+      console.error('Error in getComentariosObservaciones:', error);
+      return {
+        promedioGlobal: 0,
+        totalResenas: 0,
+        resenas: [],
+        observaciones: []
+      };
+    }
+  }
 }
 
 module.exports = DashboardService;

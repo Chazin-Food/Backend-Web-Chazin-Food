@@ -45,4 +45,20 @@ const getVentasRecientes = async (req, res, next) => {
   }
 };
 
-module.exports = { getStats, getVentasChart, getProductosPopulares, getAlertasStock, getVentasRecientes };
+const getComentariosObservaciones = async (req, res, next) => {
+  try {
+    const data = await DashboardService.getComentariosObservaciones(req.query);
+    res.json(data);
+  } catch (error) {
+    next(error);
+  }
+};
+
+module.exports = {
+  getStats,
+  getVentasChart,
+  getProductosPopulares,
+  getAlertasStock,
+  getVentasRecientes,
+  getComentariosObservaciones
+};
