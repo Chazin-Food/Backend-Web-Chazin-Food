@@ -69,7 +69,7 @@ app.use((req, res, next) => {
             return originalJson.call(this, obj);
           }
           res.setHeader('Content-Encoding', 'gzip');
-          res.setHeader('Vary', 'Accept-Encoding');
+          res.vary('Accept-Encoding');
           res.setHeader('Content-Type', 'application/json; charset=utf-8');
           res.setHeader('Content-Length', compressed.length);
           return res.send(compressed);

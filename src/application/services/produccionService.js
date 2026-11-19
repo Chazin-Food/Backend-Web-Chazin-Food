@@ -177,7 +177,7 @@ class ProduccionService {
           }
         ],
         order: [['idVenta', 'DESC']],
-        limit: 250
+        limit: 120
       });
 
       // Paso 2: Hidratar variantes, productos, recetas y eventos UNA SOLA VEZ por ID único en paralelo
@@ -310,6 +310,8 @@ class ProduccionService {
         const horaStr = formatColombiaTime(v.fechaVenta) || obsObj.horario || "12:00 PM";
 
         // Format items and technical sheet (recipe) data
+        const estRaw = String(v.estadoEntrega || 'PENDIENTE').toUpperCase();
+        const isHistoricalOrder = estRaw === 'ENTREGADO' || estRaw === 'COMPLETADA' || estRaw === 'DESPACHADO' || estRaw === 'EN_CAMINO';
         const productosList = [];
         let totalItemsCount = 0;
 
@@ -662,21 +664,32 @@ class ProduccionService {
                 combinedSpecsParts.push(String(ft.especificaciones).trim());
               }
 
-              receta = {
-                idFichaTecnica: activeFt.idFichaTecnica,
-                idProducto: activeFt.idProducto || prod?.idProducto || null,
-                idVariante: !esVarianteBaseFinal ? (d.idVariante || null) : null,
-                tiempoPreparacion: `${inferredPrepMin} min`,
-                tiempoPreparacionMin: inferredPrepMin,
-                rendimiento: activeFt.rendimiento || "1 porción",
-                especificaciones: combinedSpecsParts.join(' • '),
-                caracteristicas: activeFt.caracteristicas || ft?.caracteristicas || "",
-                informacionNutricional: activeFt.informacionNutricional || ft?.informacionNutricional || "",
-                condicionesAlmacenamiento: activeFt.condicionesAlmacenamiento || ft?.condicionesAlmacenamiento || "",
-                vidaUtil: activeFt.vidaUtil || ft?.vidaUtil || "",
-                ingredientes,
-                pasos
-              };
+              receta = isHistoricalOrder
+                ? {
+                    idFichaTecnica: activeFt.idFichaTecnica,
+                    idProducto: activeFt.idProducto || prod?.idProducto || null,
+                    idVariante: !esVarianteBaseFinal ? (d.idVariante || null) : null,
+                    tiempoPreparacion: `${inferredPrepMin} min`,
+                    tiempoPreparacionMin: inferredPrepMin,
+                    rendimiento: activeFt.rendimiento || "1 porción",
+                    ingredientes: [],
+                    pasos: []
+                  }
+                : {
+                    idFichaTecnica: activeFt.idFichaTecnica,
+                    idProducto: activeFt.idProducto || prod?.idProducto || null,
+                    idVariante: !esVarianteBaseFinal ? (d.idVariante || null) : null,
+                    tiempoPreparacion: `${inferredPrepMin} min`,
+                    tiempoPreparacionMin: inferredPrepMin,
+                    rendimiento: activeFt.rendimiento || "1 porción",
+                    especificaciones: combinedSpecsParts.join(' • '),
+                    caracteristicas: activeFt.caracteristicas || ft?.caracteristicas || "",
+                    informacionNutricional: activeFt.informacionNutricional || ft?.informacionNutricional || "",
+                    condicionesAlmacenamiento: activeFt.condicionesAlmacenamiento || ft?.condicionesAlmacenamiento || "",
+                    vidaUtil: activeFt.vidaUtil || ft?.vidaUtil || "",
+                    ingredientes,
+                    pasos
+                  };
             } else {
               if (!esVarianteBaseFinal && varianteCambios.length === 0 && Array.isArray(matchedObsProd?.varianteCambios) && matchedObsProd.varianteCambios.length > 0) {
                 varianteCambios.push(...matchedObsProd.varianteCambios);

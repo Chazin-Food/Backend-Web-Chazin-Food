@@ -195,6 +195,7 @@ class FichaTecnicaService {
         {
           model: DetalleFichaInsumo,
           as: 'detalles',
+          separate: true,
           include: [{ model: Insumo, as: 'insumo', attributes: ['idInsumo', 'nombre', 'unidadMedida', 'precioUnitario', 'estado'] }]
         },
         { model: Product, as: 'producto', attributes: ['idProducto', 'nombre', 'estado', 'eliminado', 'categoria'] },

@@ -360,6 +360,7 @@ class ProductService {
         {
           model: DetalleFichaInsumo,
           as: 'detalles',
+          separate: true,
           include: [{ model: Insumo, as: 'insumo', attributes: ['idInsumo', 'nombre', 'stock', 'unidadMedida', 'estado', 'precioUnitario'] }]
         }
       ],

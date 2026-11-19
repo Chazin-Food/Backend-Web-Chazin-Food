@@ -2,9 +2,9 @@ const crypto = require('crypto');
 const zlib = require('zlib');
 
 const store = new Map();
-const MAX_CACHE_ENTRIES = 50;
-const MAX_CACHE_BYTES = 8 * 1024 * 1024; // 8 MB máximo total en RAM (seguro para contenedores 512 MB en Render)
-const MAX_ENTRY_BYTES = 1.5 * 1024 * 1024; // No cachear payloads individuales > 1.5 MB
+const MAX_CACHE_ENTRIES = 40;
+const MAX_CACHE_BYTES = 5 * 1024 * 1024; // 5 MB máximo total en RAM (seguro para heap V8 de ~252 MB en Render Free)
+const MAX_ENTRY_BYTES = 1 * 1024 * 1024; // No cachear payloads individuales > 1 MB
 let currentCacheBytes = 0;
 
 function deleteCacheKey(key) {
@@ -68,18 +68,6 @@ function storeEntry(namespace, key, payload, ttlMs) {
   store.set(key, entry);
   currentCacheBytes += entry.sizeBytes;
 
-  if (raw.length > 1024 && raw.length <= 512 * 1024) {
-    zlib.gzip(raw, (err, compressed) => {
-      if (!err && compressed && store.get(key) === entry) {
-        if (currentCacheBytes + compressed.length <= MAX_CACHE_BYTES) {
-          entry.gzipped = compressed;
-          entry.sizeBytes += compressed.length;
-          currentCacheBytes += compressed.length;
-        }
-      }
-    });
-  }
-
   return entry;
 }
 
@@ -100,7 +88,7 @@ function cacheResponse(namespace, { ttlMs = 30000, cacheControl = 'public, max-a
         res.setHeader('Cache-Control', cacheControl);
       }
       res.setHeader('ETag', existing.etag);
-      res.setHeader('Vary', 'Accept-Encoding');
+      res.vary('Accept-Encoding');
       res.setHeader('X-Cache', 'HIT');
 
       if (req.headers['if-none-match'] === existing.etag) {
@@ -115,6 +103,26 @@ function cacheResponse(namespace, { ttlMs = 30000, cacheControl = 'public, max-a
         return res.status(200).send(existing.gzipped);
       }
 
+      if (acceptEncoding.includes('gzip') && existing.raw.length > 1024) {
+        return zlib.gzip(existing.raw, (err, compressed) => {
+          if (res.headersSent) return;
+          if (!err && compressed) {
+            if (store.get(key) === existing && !existing.gzipped && currentCacheBytes + compressed.length <= MAX_CACHE_BYTES) {
+              existing.gzipped = compressed;
+              existing.sizeBytes += compressed.length;
+              currentCacheBytes += compressed.length;
+            }
+            res.setHeader('Content-Encoding', 'gzip');
+            res.setHeader('Content-Type', 'application/json; charset=utf-8');
+            res.setHeader('Content-Length', compressed.length);
+            return res.status(200).send(compressed);
+          }
+          res.setHeader('Content-Type', 'application/json; charset=utf-8');
+          res.setHeader('Content-Length', existing.raw.length);
+          return res.status(200).send(existing.raw);
+        });
+      }
+
       res.setHeader('Content-Type', 'application/json; charset=utf-8');
       res.setHeader('Content-Length', existing.raw.length);
       return res.status(200).send(existing.raw);
@@ -126,15 +134,41 @@ function cacheResponse(namespace, { ttlMs = 30000, cacheControl = 'public, max-a
 
     const originalJson = res.json.bind(res);
     res.json = function (obj) {
-      if (res.statusCode >= 200 && res.statusCode < 300 && obj !== undefined) {
+      if (res.statusCode >= 200 && res.statusCode < 300 && obj !== undefined && !res.headersSent) {
         const saved = storeEntry(namespace, key, obj, ttlMs);
-        if (saved && !res.headersSent) {
+        if (saved) {
           if (cacheControl) {
             res.setHeader('Cache-Control', cacheControl);
           }
           res.setHeader('ETag', saved.etag);
-          res.setHeader('Vary', 'Accept-Encoding');
+          res.vary('Accept-Encoding');
           res.setHeader('X-Cache', 'MISS');
+
+          // Enviar el buffer ya serializado UNA sola vez (evita doble JSON.stringify y doble gzip en memoria)
+          const acceptEncoding = req.headers['accept-encoding'] || '';
+          if (acceptEncoding.includes('gzip') && saved.raw.length > 1024) {
+            return zlib.gzip(saved.raw, (err, compressed) => {
+              if (res.headersSent) return;
+              if (!err && compressed) {
+                if (store.get(key) === saved && currentCacheBytes + compressed.length <= MAX_CACHE_BYTES) {
+                  saved.gzipped = compressed;
+                  saved.sizeBytes += compressed.length;
+                  currentCacheBytes += compressed.length;
+                }
+                res.setHeader('Content-Encoding', 'gzip');
+                res.setHeader('Content-Type', 'application/json; charset=utf-8');
+                res.setHeader('Content-Length', compressed.length);
+                return res.status(res.statusCode).send(compressed);
+              }
+              res.setHeader('Content-Type', 'application/json; charset=utf-8');
+              res.setHeader('Content-Length', saved.raw.length);
+              return res.status(res.statusCode).send(saved.raw);
+            });
+          }
+
+          res.setHeader('Content-Type', 'application/json; charset=utf-8');
+          res.setHeader('Content-Length', saved.raw.length);
+          return res.status(res.statusCode).send(saved.raw);
         }
       }
       return originalJson(obj);
