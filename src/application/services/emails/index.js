@@ -13,6 +13,7 @@ const PasswordResetEmail = require('./PasswordResetEmail');
 const PasswordChangedEmail = require('./PasswordChangedEmail');
 const UserUpdatedEmail = require('./UserUpdatedEmail');
 const { colors, typography, LOGO_OFFICIAL_URL } = require('./EmailStyles');
+const { getColombiaYear } = require('../../../infrastructure/utils/colombiaDateUtils');
 
 const e = React.createElement;
 
@@ -43,7 +44,7 @@ function getEmailHeader(subtitle = 'Comidas Rápidas Artesanales') {
 
 // Generador de pie de página HTML estático
 function getEmailFooter() {
-  const currentYear = new Date().getFullYear();
+  const currentYear = getColombiaYear();
   const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
 
   return `

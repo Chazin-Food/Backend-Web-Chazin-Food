@@ -1,6 +1,11 @@
 const crypto = require('crypto');
 const VentaService = require('./ventaService');
 const { Venta, sequelize } = require('../../persistence/models');
+const {
+  getColombiaDateISO,
+  extractDateOnlyISO,
+  formatColombiaTime12
+} = require('../../infrastructure/utils/colombiaDateUtils');
 
 class WompiService {
   /**
@@ -61,11 +66,13 @@ class WompiService {
     const items = pedidoData.detalles || pedidoData.items || pedidoData.productos || [];
     if (!Array.isArray(items) || items.length === 0) return null;
 
-    const hoy = new Date().toISOString().slice(0, 10);
+    const hoy = getColombiaDateISO();
     const eventosActivos = await Evento.findAll({ where: { estado: 1 } }).catch(() => []);
-    const eventosVigentes = eventosActivos.filter(e =>
-      (!e.fechaInicio || String(e.fechaInicio) <= hoy) && (!e.fechaFin || String(e.fechaFin) >= hoy)
-    );
+    const eventosVigentes = eventosActivos.filter(e => {
+      const inicioISO = extractDateOnlyISO(e.fechaInicio);
+      const finISO = extractDateOnlyISO(e.fechaFin);
+      return (!inicioISO || inicioISO <= hoy) && (!finISO || finISO >= hoy);
+    });
 
     let subtotal = 0;
     for (const it of items) {
@@ -248,13 +255,21 @@ class WompiService {
     }
 
     const url = `${this.getBaseUrl()}/transactions/${idTransaccion}`;
-    const response = await fetch(url, {
-      method: 'GET',
-      headers: {
-        'Authorization': `Bearer ${privateKey}`,
-        'Content-Type': 'application/json'
-      }
-    });
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 12000);
+    let response;
+    try {
+      response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${privateKey}`,
+          'Content-Type': 'application/json'
+        },
+        signal: controller.signal
+      });
+    } finally {
+      clearTimeout(timeoutId);
+    }
 
     if (!response.ok) {
       const errorText = await response.text();
@@ -307,7 +322,7 @@ class WompiService {
         obsObj.metodoPago = `Wompi (${metodoPagoTipo})`;
         obsObj.estadoAprobacion = 'APROBADO';
         if (!yaAprobada) {
-          obsObj.horaEstado = new Date().toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'America/Bogota' });
+          obsObj.horaEstado = formatColombiaTime12(new Date());
           obsObj.fechaAprobacionPago = new Date().toISOString();
         }
 

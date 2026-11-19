@@ -1240,7 +1240,10 @@ async function ensurePreciosRealesInsumosYStock() {
       await sequelize.query('UPDATE insumo SET stock = ' + s.minStock + ', estado = 1 WHERE idInsumo = ' + s.id + ' AND (stock <= 0 OR stock IS NULL)');
     }
     await sequelize.query('UPDATE insumo SET estado = 1 WHERE eliminado = 0 AND (stock > 0 OR stock IS NULL)');
-    await sequelize.query('UPDATE insumo SET fechaVencimiento = NULL WHERE fechaVencimiento IS NOT NULL AND fechaVencimiento <= CURDATE()');
+    const { getColombiaDateISO } = require('./colombiaDateUtils');
+    await sequelize.query('UPDATE insumo SET fechaVencimiento = NULL WHERE fechaVencimiento IS NOT NULL AND fechaVencimiento < ?', {
+      replacements: [getColombiaDateISO()]
+    });
 
     console.log('[DB] ✅ Precios reales de Medellín (43 insumos) y stock de producción garantizados.');
   } catch (err) {

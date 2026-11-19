@@ -57,13 +57,30 @@ function formatCliente(c) {
   };
 }
 
-function calculateSaleEligibility(venta) {
+function resolveDeliveryReferenceDate(venta, obsVenta = {}) {
+  const obs = obsVenta && typeof obsVenta === 'object' ? obsVenta : {};
+  const candidates = [
+    obs.fechaEntrega,
+    obs.tiemposEstados?.entregado?.fecha,
+    obs.fechaCambioEstado,
+    venta?.fechaVenta
+  ];
+  for (const raw of candidates) {
+    if (!raw) continue;
+    const d = new Date(raw);
+    if (!isNaN(d.getTime())) return d;
+  }
+  return null;
+}
+
+function calculateSaleEligibility(venta, evalNow = null) {
   if (!venta) {
     return {
       elegible: false,
       razon: 'Venta no encontrada',
       horasRestantes: 0,
-      diasTranscurridos: 0
+      diasTranscurridos: 0,
+      fechaEntregaRef: null
     };
   }
 
@@ -75,40 +92,62 @@ function calculateSaleEligibility(venta) {
       horasRestantes: 0,
       diasTranscurridos: 0,
       cumplePlazo: false,
-      esVentaEntregada: true
+      esVentaEntregada: true,
+      fechaEntregaRef: null
     };
   }
 
-  const fechaVenta = venta.fechaVenta ? new Date(venta.fechaVenta) : new Date();
-  const ahora = new Date();
-  const diffMs = ahora.getTime() - fechaVenta.getTime();
+  const deliveryRefDate = resolveDeliveryReferenceDate(venta, obsVentaCheck);
+  const parsedEval = evalNow ? new Date(evalNow) : null;
+  const refNow = parsedEval && !isNaN(parsedEval.getTime()) ? parsedEval : new Date();
+
+  const estadoEntrega = String(venta.estadoEntrega || '').toUpperCase();
+  const esVentaEntregada =
+    estadoEntrega === 'ENTREGADO' ||
+    estadoEntrega === 'LISTO' ||
+    estadoEntrega === 'DESPACHADO' ||
+    estadoEntrega === 'COMPLETADA' ||
+    estadoEntrega === 'EN_CAMINO';
+
+  if (!deliveryRefDate) {
+    return {
+      elegible: false,
+      razon: 'El pedido no tiene una fecha de entrega válida registrada.',
+      horasRestantes: 0,
+      diasTranscurridos: 0,
+      cumplePlazo: false,
+      esVentaEntregada,
+      fechaEntregaRef: null
+    };
+  }
+
+  const diffMs = Math.max(0, refNow.getTime() - deliveryRefDate.getTime());
   const diffHours = diffMs / (1000 * 60 * 60);
   const diffDays = diffHours / 24;
 
   const horasRestantes = Math.max(0, Math.round((POLICIES.MAX_HORAS - diffHours) * 10) / 10);
   const cumplePlazo = diffHours <= POLICIES.MAX_HORAS;
 
-  const estadoEntrega = String(venta.estadoEntrega || '').toUpperCase();
-  const esVentaEntregada = estadoEntrega === 'ENTREGADO' || estadoEntrega === 'LISTO' || estadoEntrega === 'COMPLETADA' || estadoEntrega === 'EN_CAMINO';
-
   if (!cumplePlazo) {
     return {
       elegible: false,
-      razon: `Ha superado el plazo máximo de ${POLICIES.MAX_DIAS} días (${POLICIES.MAX_HORAS} horas) estipulado en la política de la empresa.`,
+      razon: `Ha superado el plazo máximo de ${POLICIES.MAX_DIAS} días (${POLICIES.MAX_HORAS} horas) desde la entrega del pedido.`,
       horasRestantes: 0,
       diasTranscurridos: Math.round(diffDays * 10) / 10,
       cumplePlazo: false,
-      esVentaEntregada
+      esVentaEntregada,
+      fechaEntregaRef: deliveryRefDate.toISOString()
     };
   }
 
   return {
     elegible: true,
-    razon: 'Dentro del plazo estipulado en la política (hasta 2 días)',
+    razon: 'Dentro del plazo estipulado desde la entrega (hasta 48 horas / 2 días)',
     horasRestantes,
     diasTranscurridos: Math.round(diffDays * 10) / 10,
     cumplePlazo: true,
-    esVentaEntregada
+    esVentaEntregada,
+    fechaEntregaRef: deliveryRefDate.toISOString()
   };
 }
 
@@ -271,7 +310,8 @@ function formatDevolucionRow(rawRow) {
     || (plain.idVentaReemplazo ? `VEN-${String(plain.idVentaReemplazo).padStart(4, '0')}` : null);
   plain.codigoDevolucion = `DEV-${String(plain.idDevolucion || plain.id || 0).padStart(4, '0')}`;
   plain.codigoVenta = plain.venta ? `VEN-${String(plain.venta.idVenta || plain.venta.id || 0).padStart(4, '0')}` : `VEN-${plain.idVenta || ''}`;
-  plain.politicaInfo = calculateSaleEligibility(plain.venta);
+  // Evaluar plazo contra la fecha de radicación de la devolución para no invalidar solicitudes históricas ya enviadas
+  plain.politicaInfo = calculateSaleEligibility(plain.venta, plain.fecha || null);
   return plain;
 }
 

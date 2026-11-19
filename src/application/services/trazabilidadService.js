@@ -1,11 +1,8 @@
 const { Trazabilidad, Insumo, User } = require('../../persistence/models');
+const { formatColombiaDateTime24 } = require('../../infrastructure/utils/colombiaDateUtils');
 
 function formatFecha(d) {
-  if (!d) return '';
-  const dateObj = new Date(d);
-  if (isNaN(dateObj.getTime())) return String(d);
-  const pad = (n) => String(n).padStart(2, '0');
-  return `${pad(dateObj.getDate())}/${pad(dateObj.getMonth() + 1)}/${dateObj.getFullYear()} ${pad(dateObj.getHours())}:${pad(dateObj.getMinutes())}`;
+  return formatColombiaDateTime24(d);
 }
 
 class TrazabilidadService {

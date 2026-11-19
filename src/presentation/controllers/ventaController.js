@@ -47,7 +47,11 @@ const getVentasStats = async (req, res, next) => {
   try {
     const filter = {
       periodo: req.query.periodo,
-      estado: req.query.estado
+      estado: req.query.estado,
+      fechaInicio: req.query.fechaInicio,
+      fechaFin: req.query.fechaFin,
+      startDate: req.query.startDate,
+      endDate: req.query.endDate
     };
     const stats = await VentaService.getStats(filter);
     res.json(stats);

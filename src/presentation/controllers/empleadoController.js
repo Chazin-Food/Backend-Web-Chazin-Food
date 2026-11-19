@@ -1,5 +1,6 @@
 const { Empleado, User, Role } = require('../../persistence/models');
 const { Op } = require('sequelize');
+const { getColombiaDateISO, extractDateOnlyISO } = require('../../infrastructure/utils/colombiaDateUtils');
 
 /**
  * Normaliza cualquier formato de estado a 'Activo', 'Inactivo' o 'Incapacitado'
@@ -159,8 +160,9 @@ const createEmpleado = async (req, res, next) => {
       });
     }
 
-    const fInicio = fechaInicio || fechaContratacion || new Date().toISOString().split('T')[0];
-    const fFin = fechaFin ? String(fechaFin).split('T')[0] : null;
+    const todayStr = getColombiaDateISO();
+    const fInicio = extractDateOnlyISO(fechaInicio || fechaContratacion) || todayStr;
+    const fFin = fechaFin ? extractDateOnlyISO(fechaFin) : null;
 
     if (fFin && fInicio && fFin < fInicio) {
       return res.status(400).json({
@@ -184,7 +186,6 @@ const createEmpleado = async (req, res, next) => {
 
     // Regla de estado automático: Si hoy es posterior a fechaFin, el contrato finalizó
     let estadoFinal = normalizeEstadoValue(estado);
-    const todayStr = new Date().toISOString().split('T')[0];
     if (fFin && todayStr > fFin && estadoFinal === 'Activo') {
       estadoFinal = 'Inactivo';
     }
@@ -268,8 +269,9 @@ const updateEmpleado = async (req, res, next) => {
       }
     }
 
-    const fInicio = fechaInicio !== undefined ? fechaInicio : (fechaContratacion !== undefined ? fechaContratacion : empleado.fechaInicio || empleado.fechaContratacion);
-    const fFin = fechaFin !== undefined ? (fechaFin ? String(fechaFin).split('T')[0] : null) : empleado.fechaFin;
+    const rawInicio = fechaInicio !== undefined ? fechaInicio : (fechaContratacion !== undefined ? fechaContratacion : empleado.fechaInicio || empleado.fechaContratacion);
+    const fInicio = extractDateOnlyISO(rawInicio);
+    const fFin = fechaFin !== undefined ? (fechaFin ? extractDateOnlyISO(fechaFin) : null) : extractDateOnlyISO(empleado.fechaFin);
 
     if (fFin && fInicio && fFin < fInicio) {
       return res.status(400).json({
@@ -278,7 +280,7 @@ const updateEmpleado = async (req, res, next) => {
     }
 
     let estadoFinal = estado !== undefined ? normalizeEstadoValue(estado) : empleado.estado;
-    const todayStr = new Date().toISOString().split('T')[0];
+    const todayStr = getColombiaDateISO();
     if (fFin && todayStr > fFin && estadoFinal === 'Activo') {
       estadoFinal = 'Inactivo';
     }

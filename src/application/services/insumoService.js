@@ -1,33 +1,53 @@
 const { Insumo, CategoriaInsumo, Proveedor, FichaTecnica, DetalleFichaInsumo, Trazabilidad, DetalleInsumoPreparadoInsumo, LoteInsumo, DetalleCompraInsumo } = require('../../persistence/models');
 const database = require('../../persistence/config/db');
-
-function getColombiaDateISO() {
-  return new Date().toLocaleDateString('en-CA', { timeZone: 'America/Bogota' });
-}
+const {
+  getColombiaDateISO,
+  extractDateOnlyISO,
+  diffCalendarDaysColombia
+} = require('../../infrastructure/utils/colombiaDateUtils');
 
 function isLoteExpiredByDateOrState(lote, todayCol = getColombiaDateISO()) {
   if (!lote) return false;
   if (lote.estado === 'VENCIDO') return true;
   if (lote.estado === 'AGOTADO') return false;
-  const fechaStr = lote.fechaVencimiento ? String(lote.fechaVencimiento).slice(0, 10) : null;
-  return Boolean(fechaStr && fechaStr <= todayCol);
+  const fechaStr = extractDateOnlyISO(lote.fechaVencimiento);
+  // Regla de negocio: fechaVencimiento === hoy sigue utilizable hasta las 11:59 PM de hoy
+  return Boolean(fechaStr && fechaStr < todayCol);
+}
+
+function getExpirationMeta(fechaVencimiento, todayCol = getColombiaDateISO(), forceExpired = false) {
+  const fechaISO = extractDateOnlyISO(fechaVencimiento);
+  const diasParaVencer = fechaISO ? diffCalendarDaysColombia(fechaISO, todayCol) : null;
+  const estaVencido = Boolean(forceExpired || (diasParaVencer !== null && diasParaVencer < 0));
+  const venceHoy = !estaVencido && diasParaVencer === 0;
+  const proximoAVencer = !estaVencido && diasParaVencer !== null && diasParaVencer >= 0 && diasParaVencer <= 5;
+  return { diasParaVencer, estaVencido, venceHoy, proximoAVencer };
 }
 
 function formatInsumo(i, options = {}) {
   const todayCol = getColombiaDateISO();
   const catNombre = i.categoria ? i.categoria.nombre : 'Sin categoría';
   const provNombre = i.proveedor ? i.proveedor.nombre : 'Sin Proveedor';
-  const lotesList = (i.lotes || []).map(l => ({
-    idLote: l.idLote,
-    idInsumo: l.idInsumo,
-    idCompra: l.idCompra,
-    numeroLote: l.numeroLote,
-    cantidad: parseFloat(l.cantidad || 0),
-    cantidadDisponible: parseFloat(l.cantidadDisponible !== undefined ? l.cantidadDisponible : l.cantidad || 0),
-    fechaVencimiento: l.fechaVencimiento || null,
-    estado: isLoteExpiredByDateOrState(l, todayCol) ? 'VENCIDO' : (l.estado || 'ACTIVO'),
-    estaVencido: isLoteExpiredByDateOrState(l, todayCol)
-  }));
+  const lotesList = (i.lotes || []).map(l => {
+    const expired = isLoteExpiredByDateOrState(l, todayCol);
+    const expMeta = getExpirationMeta(l.fechaVencimiento, todayCol, expired);
+    return {
+      idLote: l.idLote,
+      idInsumo: l.idInsumo,
+      idCompra: l.idCompra,
+      numeroLote: l.numeroLote,
+      cantidad: parseFloat(l.cantidad || 0),
+      cantidadDisponible: parseFloat(l.cantidadDisponible !== undefined ? l.cantidadDisponible : l.cantidad || 0),
+      fechaVencimiento: l.fechaVencimiento || null,
+      estado: expired ? 'VENCIDO' : (l.estado || 'ACTIVO'),
+      estaVencido: expMeta.estaVencido,
+      diasParaVencer: expMeta.diasParaVencer,
+      venceHoy: expMeta.venceHoy,
+      proximoAVencer: expMeta.proximoAVencer
+    };
+  });
+
+  const insExpMeta = getExpirationMeta(i.fechaVencimiento, todayCol, false);
 
   const stockNum = parseFloat(i.stock || 0);
   const countCompras = options.comprasMap ? (options.comprasMap.get(Number(i.idInsumo)) || 0) : 0;
@@ -45,6 +65,10 @@ function formatInsumo(i, options = {}) {
     stockMaximo: parseFloat(i.stockMaximo !== undefined && i.stockMaximo !== null ? i.stockMaximo : 100),
     fechaExpedicion: i.fechaExpedicion || null,
     fechaVencimiento: i.fechaVencimiento || null,
+    diasParaVencer: insExpMeta.diasParaVencer,
+    estaVencido: insExpMeta.estaVencido,
+    venceHoy: insExpMeta.venceHoy,
+    proximoAVencer: insExpMeta.proximoAVencer,
     unidadMedida: i.unidadMedida,
     precioUnitario: parseFloat(i.precioUnitario || 0),
     idProveedor: i.idProveedor,
@@ -75,10 +99,10 @@ class InsumoService {
       const today = getColombiaDateISO();
       const { Op } = require('sequelize');
 
-      // 1. Lotes con fecha de vencimiento cumplida o pasada que sigan activos
+      // 1. Lotes cuya fecha de vencimiento ya pasó (< hoy Colombia) que sigan activos
       const lotesVencidos = await LoteInsumo.findAll({
         where: {
-          fechaVencimiento: { [Op.lte]: today },
+          fechaVencimiento: { [Op.lt]: today },
           estado: 'ACTIVO'
         },
         include: [{ model: Insumo, as: 'insumo' }]
@@ -93,19 +117,19 @@ class InsumoService {
         }
       }
 
-      // 2. Insumos con fecha de vencimiento directa cumplida y estado activo
+      // 2. Insumos con fecha de vencimiento directa anterior a hoy Colombia y estado activo
       const directVencidos = await Insumo.findAll({
         where: {
           eliminado: 0,
           estado: 1,
-          fechaVencimiento: { [Op.lte]: today }
+          fechaVencimiento: { [Op.lt]: today }
         }
       });
       for (const ins of directVencidos) {
         affectedInsumosMap.set(ins.idInsumo, ins);
       }
 
-      // 3. Inactivar insumos solo si no tienen lotes vigentes y su stock es <= 0
+      // 3. Inactivar insumos solo si no tienen lotes vigentes (incluyendo los que vencen hoy) y su stock es <= 0
       const inactivados = [];
       for (const [idInsumo, insumo] of affectedInsumosMap.entries()) {
         const remainingStock = Math.max(0, Number(insumo.stock || 0));
@@ -113,7 +137,7 @@ class InsumoService {
           where: {
             idInsumo,
             estado: 'ACTIVO',
-            fechaVencimiento: { [Op.gt]: today },
+            fechaVencimiento: { [Op.gte]: today },
             cantidadDisponible: { [Op.gt]: 0 }
           }
         }).catch(() => 0);

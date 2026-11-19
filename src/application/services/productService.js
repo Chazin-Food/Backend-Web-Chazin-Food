@@ -3,6 +3,7 @@ const { Product, CategoriaProducto, Evento, Variante, VarianteInsumo, ComboProdu
 const FichaTecnicaService = require('./fichaTecnicaService');
 const EventoService = require('./eventoService');
 const { ensureVarianteEventoSchemaOnce } = require('../../infrastructure/utils/dbUtils');
+const { getColombiaDateISO } = require('../../infrastructure/utils/colombiaDateUtils');
 
 const BROKEN_IMAGE_REPLACEMENTS = {
   'photo-1619740455993-9e612b1af08a': 'https://res.cloudinary.com/dckwtknmq/image/upload/v1788993441/c9pne5jrmjv5po93xhhl.jpg'
@@ -280,6 +281,7 @@ class ProductService {
 
   static async _queryFormattedProducts({ eliminado = 0, order = [['idProducto', 'ASC']], onlyActiveVariants = false } = {}) {
     await ensureVarianteEventoSchemaOnce();
+    const todayCol = getColombiaDateISO();
     const [products, fichas, allInsumos, ventasPorVariante] = await Promise.all([
       Product.findAll({
         where: {
@@ -326,17 +328,27 @@ class ProductService {
             }
           ]
         },
-        { 
-          model: Evento, 
-          as: 'eventos', 
+        {
+          model: Evento,
+          as: 'eventos',
           separate: true,
-          where: { 
+          where: {
             estado: 1,
-            [Op.or]: [
-              { fechaFin: null },
-              { fechaFin: { [Op.gte]: new Date().toISOString().split('T')[0] } }
+            [Op.and]: [
+              {
+                [Op.or]: [
+                  { fechaInicio: null },
+                  { fechaInicio: { [Op.lte]: todayCol } }
+                ]
+              },
+              {
+                [Op.or]: [
+                  { fechaFin: null },
+                  { fechaFin: { [Op.gte]: todayCol } }
+                ]
+              }
             ]
-          } 
+          }
         },
         {
           model: ComboProducto,

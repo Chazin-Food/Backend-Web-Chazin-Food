@@ -6,6 +6,7 @@ const bcrypt = require('bcryptjs');
 const EmailService = require('./emailService');
 const FidelidadService = require('./fidelidadService');
 const AuthService = require('./authService');
+const { formatColombiaDateES } = require('../../infrastructure/utils/colombiaDateUtils');
 
 class ClienteService {
   static async formatCliente(c) {
@@ -78,7 +79,7 @@ class ClienteService {
         }
         return {
           idTrans: v.codigoPedido || `VEN-${String(v.idVenta).padStart(4, '0')}`,
-          fecha: v.fechaVenta ? new Date(v.fechaVenta).toLocaleDateString('es-CO') : 'Reciente',
+          fecha: v.fechaVenta ? formatColombiaDateES(v.fechaVenta, 'Reciente') : 'Reciente',
           producto: prodNombre,
           total: `$${Number(v.total || 0).toLocaleString('es-CO')}`
         };

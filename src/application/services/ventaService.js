@@ -1,4 +1,11 @@
 const { Venta, DetalleVentaProducto, Cliente, User, Role, Variante } = require('../../persistence/models');
+const {
+  getColombiaDateISO,
+  getColombiaPeriodRange,
+  formatColombiaDateES,
+  formatColombiaTime12,
+  formatColombiaTimeWithSeconds12
+} = require('../../infrastructure/utils/colombiaDateUtils');
 
 function convertUnits(amount, fromUnit, toUnit) {
   if (!amount || isNaN(amount)) return 0;
@@ -188,30 +195,8 @@ function extractCleanSpecifications(raw) {
   return '';
 }
 
-function formatColombiaTime(dateInput) {
-  if (!dateInput) return null;
-  const d = dateInput instanceof Date ? dateInput : new Date(dateInput);
-  if (isNaN(d.getTime())) return null;
-  return new Intl.DateTimeFormat('en-US', {
-    timeZone: 'America/Bogota',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: true
-  }).format(d);
-}
-
-function formatColombiaTimeWithSeconds(dateInput) {
-  if (!dateInput) return null;
-  const d = dateInput instanceof Date ? dateInput : new Date(dateInput);
-  if (isNaN(d.getTime())) return null;
-  return new Intl.DateTimeFormat('en-US', {
-    timeZone: 'America/Bogota',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hour12: true
-  }).format(d);
-}
+const formatColombiaTime = formatColombiaTime12;
+const formatColombiaTimeWithSeconds = formatColombiaTimeWithSeconds12;
 
 function inferProductPrepMinutes(nombreProducto = '', ftTiempo = null) {
   const n = String(nombreProducto || '').toLowerCase();
@@ -289,17 +274,18 @@ function calculateOrderPrepTime(productosList = []) {
   return { totalMin: maxDrinkMin, formatted: `${maxDrinkMin} min` };
 }
 
-function computeHybridDeliveryEstimate({ productos = [], tipoEntrega = '', estadoEntrega = 'PENDIENTE', savedTiempo = '', savedModo = '' }) {
+function computeHybridDeliveryEstimate({ productos = [], tipoEntrega = '', estadoEntrega = 'PENDIENTE', estadoCocina = '', savedTiempo = '', savedModo = '' }) {
   const prep = calculateOrderPrepTime(productos);
   const esDomicilio = String(tipoEntrega || '').toLowerCase().includes('domicilio');
   const est = String(estadoEntrega || 'PENDIENTE').toUpperCase();
+  const cocinaEst = String(estadoCocina || '').toUpperCase();
 
   let autoEstimate;
-  if (est === 'ENTREGADO' || est === 'COMPLETADA') {
+  if (est === 'ENTREGADO' || est === 'COMPLETADA' || cocinaEst === 'ENTREGADO') {
     autoEstimate = 'Entregado';
-  } else if (est === 'DESPACHADO') {
+  } else if (est === 'DESPACHADO' || est === 'EN_CAMINO' || cocinaEst === 'DESPACHADO' || cocinaEst === 'EN_CAMINO') {
     autoEstimate = esDomicilio ? 'En camino' : 'Listo para entrega';
-  } else if (est === 'LISTO') {
+  } else if (est === 'LISTO' || cocinaEst === 'LISTO') {
     autoEstimate = esDomicilio ? '15-20 min' : 'Listo para entrega';
   } else if (esDomicilio) {
     autoEstimate = `${prep.totalMin + 15}-${prep.totalMin + 25} min`;
@@ -309,7 +295,7 @@ function computeHybridDeliveryEstimate({ productos = [], tipoEntrega = '', estad
     autoEstimate = `${prep.totalMin + 3}-${prep.totalMin + 8} min`;
   }
 
-  if (est === 'ENTREGADO' || est === 'COMPLETADA') {
+  if (est === 'ENTREGADO' || est === 'COMPLETADA' || cocinaEst === 'ENTREGADO') {
     return { effectiveEstimate: 'Entregado', autoEstimate, modo: 'AUTO' };
   }
 
@@ -366,13 +352,13 @@ class VentaService {
       const d = new Date(v.fechaVenta);
       if (!isNaN(d.getTime())) {
         horario = formatColombiaTime(d);
-        fechaFormatted = d.toLocaleDateString('es-CO', { timeZone: 'America/Bogota', year: 'numeric', month: '2-digit', day: '2-digit' });
+        fechaFormatted = formatColombiaDateES(d);
       }
     }
     if (!horario && obsData.horario) {
       horario = obsData.horario;
     }
-    horario = horario || "12:30 PM";
+    horario = horario || '12:00 PM';
 
     // Ítem #11: "Empaque para llevar" es una opción de empaque, NO un tipo de entrega.
     // Solo se clasifica como "Recoger" si el tipo de entrega explícito lo indica.
@@ -620,7 +606,10 @@ class VentaService {
       : null;
 
     const fechaCambioEstado = obsData.fechaCambioEstado || ultimoCambio?.fecha || v.fechaVenta || null;
-    const horaEstado = formatColombiaTime(obsData.fechaCambioEstado || ultimoCambio?.fecha) || obsData.horaEstado || ultimoCambio?.hora || horario || "12:30 PM";
+    const horaEstado = formatColombiaTime(obsData.fechaCambioEstado || ultimoCambio?.fecha) || obsData.horaEstado || ultimoCambio?.hora || horario || '12:00 PM';
+    const fechaEntrega = obsData.fechaEntrega
+      || obsData.tiemposEstados?.entregado?.fecha
+      || (String(v.estadoEntrega || '').toUpperCase() === 'ENTREGADO' ? (obsData.fechaCambioEstado || v.fechaVenta || null) : null);
 
     const origenColumna = String(v.origen || '').toUpperCase();
     const isOnline = origenColumna ? origenColumna === 'ONLINE' : (
@@ -643,6 +632,7 @@ class VentaService {
       productos,
       tipoEntrega,
       estadoEntrega: v.estadoEntrega,
+      estadoCocina: obsData.estadoCocina,
       savedTiempo: v.tiempoEstimadoEntrega || obsData.tiempoEstimadoEntrega || obsData.tiempoEstimado,
       savedModo: obsData.modoTiempoEntrega
     });
@@ -676,6 +666,7 @@ class VentaService {
       horaEstado,
       horaCambioEstado: horaEstado,
       fechaCambioEstado,
+      fechaEntrega,
       tiemposEstados: obsData.tiemposEstados || null,
       historialEstados: obsData.historialEstados || [],
       origen,
@@ -724,46 +715,18 @@ class VentaService {
     };
   }
 
-  static async getAll(filter = {}) {
-    const filterObj = typeof filter === 'string' ? { periodo: filter } : (filter || {});
-    const { periodo, estado, search } = filterObj;
-    const { Op } = require('sequelize');
-    const where = {};
+  static _applyFilters(where, filterObj = {}, Op) {
+    const { periodo, estado } = filterObj;
+    const range = getColombiaPeriodRange(periodo, {
+      year: filterObj.year,
+      startDate: filterObj.fechaInicio || filterObj.startDate || filterObj.desde,
+      endDate: filterObj.fechaFin || filterObj.endDate || filterObj.hasta
+    });
 
-    const normalizedPeriod = String(periodo || '').toLowerCase().trim();
-    if (normalizedPeriod && !['todos', 'personalizado', 'all', ''].includes(normalizedPeriod)) {
-      const now = new Date();
-      if (normalizedPeriod === 'hoy') {
-        const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
-        where.fechaVenta = { [Op.gte]: startOfDay };
-      } else if (normalizedPeriod === '7dias' || normalizedPeriod === '7_dias' || normalizedPeriod === 'semana') {
-        const sevenDaysAgo = new Date(now.getTime() - (7 * 24 * 60 * 60 * 1000));
-        where.fechaVenta = { [Op.gte]: sevenDaysAgo };
-      } else if (normalizedPeriod === 'mes' || normalizedPeriod === 'este_mes' || normalizedPeriod === 'mes actual' || normalizedPeriod === 'mes_actual') {
-        const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0);
-        where.fechaVenta = { [Op.gte]: startOfMonth };
-      } else if (normalizedPeriod === 'mes_anterior' || normalizedPeriod === 'mes anterior') {
-        const startOfLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1, 0, 0, 0);
-        const endOfLastMonth = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59);
-        where.fechaVenta = { [Op.between]: [startOfLastMonth, endOfLastMonth] };
-      } else if (normalizedPeriod === '3_meses' || normalizedPeriod === 'ultimos_3_meses' || normalizedPeriod === 'últimos 3 meses' || normalizedPeriod === 'ultimos 3 meses') {
-        const threeMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 2, 1, 0, 0, 0);
-        where.fechaVenta = { [Op.gte]: threeMonthsAgo };
-      } else if (normalizedPeriod === '6_meses' || normalizedPeriod === 'ultimos_6_meses' || normalizedPeriod === 'últimos 6 meses' || normalizedPeriod === 'ultimos 6 meses') {
-        const sixMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 5, 1, 0, 0, 0);
-        where.fechaVenta = { [Op.gte]: sixMonthsAgo };
-      } else if (normalizedPeriod === 'ano' || normalizedPeriod === 'este_ano' || normalizedPeriod === 'año' || normalizedPeriod === 'año actual' || normalizedPeriod === 'ano actual') {
-        const startOfYear = new Date(now.getFullYear(), 0, 1, 0, 0, 0);
-        where.fechaVenta = { [Op.gte]: startOfYear };
-      }
-    } else if (filterObj.fechaInicio || filterObj.fechaFin) {
+    if (range.start || range.end) {
       const fechaFilter = {};
-      if (filterObj.fechaInicio) fechaFilter[Op.gte] = new Date(filterObj.fechaInicio);
-      if (filterObj.fechaFin) {
-        const endD = new Date(filterObj.fechaFin);
-        endD.setHours(23, 59, 59, 999);
-        fechaFilter[Op.lte] = endD;
-      }
+      if (range.start) fechaFilter[Op.gte] = range.start;
+      if (range.end) fechaFilter[Op.lte] = range.end;
       where.fechaVenta = fechaFilter;
     }
 
@@ -778,6 +741,14 @@ class VentaService {
         where.estadoEntrega = { [Op.in]: ['CANCELADO', 'Anulada'] };
       }
     }
+  }
+
+  static async getAll(filter = {}) {
+    const filterObj = typeof filter === 'string' ? { periodo: filter } : (filter || {});
+    const { search } = filterObj;
+    const { Op } = require('sequelize');
+    const where = {};
+    this._applyFilters(where, filterObj, Op);
 
     const { Variante, Product, DetalleVentaAdicion, Adicion } = require('../../persistence/models');
     const ventas = await Venta.findAll({
@@ -828,50 +799,9 @@ class VentaService {
 
   static async getStats(filter = {}) {
     const filterObj = typeof filter === 'string' ? { periodo: filter } : (filter || {});
-    const { periodo, estado } = filterObj;
     const { Op } = require('sequelize');
     const where = {};
-
-    const normalizedPeriod = String(periodo || '').toLowerCase().trim();
-    if (normalizedPeriod && !['todos', 'personalizado', 'all', ''].includes(normalizedPeriod)) {
-      const now = new Date();
-      if (normalizedPeriod === 'hoy') {
-        where.fechaVenta = { [Op.gte]: new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0) };
-      } else if (normalizedPeriod === '7dias' || normalizedPeriod === '7_dias' || normalizedPeriod === 'semana') {
-        where.fechaVenta = { [Op.gte]: new Date(now.getTime() - (7 * 24 * 60 * 60 * 1000)) };
-      } else if (normalizedPeriod === 'mes' || normalizedPeriod === 'este_mes' || normalizedPeriod === 'mes actual' || normalizedPeriod === 'mes_actual') {
-        where.fechaVenta = { [Op.gte]: new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0) };
-      } else if (normalizedPeriod === 'mes_anterior' || normalizedPeriod === 'mes anterior') {
-        where.fechaVenta = {
-          [Op.between]: [
-            new Date(now.getFullYear(), now.getMonth() - 1, 1, 0, 0, 0),
-            new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59)
-          ]
-        };
-      } else if (normalizedPeriod === '3_meses' || normalizedPeriod === 'ultimos_3_meses' || normalizedPeriod === 'últimos 3 meses' || normalizedPeriod === 'ultimos 3 meses') {
-        where.fechaVenta = { [Op.gte]: new Date(now.getFullYear(), now.getMonth() - 2, 1, 0, 0, 0) };
-      } else if (normalizedPeriod === '6_meses' || normalizedPeriod === 'ultimos_6_meses' || normalizedPeriod === 'últimos 6 meses' || normalizedPeriod === 'ultimos 6 meses') {
-        where.fechaVenta = { [Op.gte]: new Date(now.getFullYear(), now.getMonth() - 5, 1, 0, 0, 0) };
-      } else if (normalizedPeriod === 'ano' || normalizedPeriod === 'este_ano' || normalizedPeriod === 'año' || normalizedPeriod === 'año actual' || normalizedPeriod === 'ano actual') {
-        where.fechaVenta = { [Op.gte]: new Date(now.getFullYear(), 0, 1, 0, 0, 0) };
-      }
-    } else if (filterObj.fechaInicio || filterObj.fechaFin) {
-      const fechaFilter = {};
-      if (filterObj.fechaInicio) fechaFilter[Op.gte] = new Date(filterObj.fechaInicio);
-      if (filterObj.fechaFin) {
-        const endD = new Date(filterObj.fechaFin);
-        endD.setHours(23, 59, 59, 999);
-        fechaFilter[Op.lte] = endD;
-      }
-      where.fechaVenta = fechaFilter;
-    }
-
-    if (estado && estado !== 'Todos') {
-      if (estado === 'Pendiente') where.estadoEntrega = { [Op.in]: ['PENDIENTE', 'Pendiente'] };
-      else if (estado === 'En Preparación') where.estadoEntrega = { [Op.in]: ['PREPARANDO', 'En Preparación'] };
-      else if (estado === 'Completada') where.estadoEntrega = { [Op.in]: ['ENTREGADO', 'LISTO', 'Completada'] };
-      else if (estado === 'Anulada') where.estadoEntrega = { [Op.in]: ['CANCELADO', 'Anulada'] };
-    }
+    this._applyFilters(where, filterObj, Op);
 
     // Consulta ligera sin JOINs para estadísticas (evita consumo innecesario de RAM en Render)
     const rows = await Venta.findAll({
@@ -1408,6 +1338,21 @@ class VentaService {
 
     obsObj.estadoAprobacion = finalEstadoAprobacion;
 
+    const finalEstadoEntrega = data.estadoEntrega || data.estado || 'ENTREGADO';
+    const upperEstadoEntrega = String(finalEstadoEntrega).toUpperCase();
+    if (upperEstadoEntrega === 'ENTREGADO' || upperEstadoEntrega === 'COMPLETADA') {
+      obsObj.estadoCocina = 'ENTREGADO';
+      obsObj.fechaEntrega = obsObj.fechaEntrega || now.toISOString();
+      obsObj.horaEntrega = obsObj.horaEntrega || formattedHorario;
+      obsObj.tiemposEstados.entregado = {
+        estado: 'Entregado',
+        hora: formattedHorario,
+        horaExacta: formattedHorarioExacto,
+        fecha: obsObj.fechaEntrega
+      };
+      obsObj.tiempoEstimadoEntrega = 'Entregado';
+    }
+
     const obsStr = JSON.stringify(obsObj);
 
     const venta = await Venta.create({
@@ -1418,11 +1363,11 @@ class VentaService {
       subtotal: finalSubtotal,
       descuentoAplicado: finalDescuento,
       total: finalTotal,
-      estadoEntrega: data.estadoEntrega || data.estado || 'ENTREGADO',
+      estadoEntrega: finalEstadoEntrega,
       observaciones: obsStr,
       estadoAprobacion: finalEstadoAprobacion,
       origen: origenVenta,
-      tiempoEstimadoEntrega: tiempoEstimadoEntregaVenta
+      tiempoEstimadoEntrega: upperEstadoEntrega === 'ENTREGADO' ? 'Entregado' : tiempoEstimadoEntregaVenta
     });
 
     if (rawDetails.length > 0) {

@@ -1,5 +1,10 @@
 const { Venta, DetalleVentaProducto, DetalleVentaAdicion, Adicion, Variante, VarianteInsumo, Product, FichaTecnica, DetalleFichaInsumo, Insumo, Cliente, User, Evento } = require('../../persistence/models');
 const { ensureVarianteEventoSchemaOnce } = require('../../infrastructure/utils/dbUtils');
+const {
+  getColombiaDateISO,
+  formatColombiaTime12: formatColombiaTime,
+  formatColombiaTimeWithSeconds12: formatColombiaTimeWithSeconds
+} = require('../../infrastructure/utils/colombiaDateUtils');
 
 const getProductEmoji = (nombre = "") => {
   const n = (nombre || "").toLowerCase();
@@ -16,40 +21,8 @@ const getProductEmoji = (nombre = "") => {
 
 const { Op } = require('sequelize');
 
-function formatColombiaTime(dateInput) {
-  if (!dateInput) return null;
-  const d = dateInput instanceof Date ? dateInput : new Date(dateInput);
-  if (isNaN(d.getTime())) return null;
-  return new Intl.DateTimeFormat('en-US', {
-    timeZone: 'America/Bogota',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: true
-  }).format(d);
-}
-
-function formatColombiaTimeWithSeconds(dateInput) {
-  if (!dateInput) return null;
-  const d = dateInput instanceof Date ? dateInput : new Date(dateInput);
-  if (isNaN(d.getTime())) return null;
-  return new Intl.DateTimeFormat('en-US', {
-    timeZone: 'America/Bogota',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hour12: true
-  }).format(d);
-}
-
 function formatColombiaDate(dateInput) {
-  const d = dateInput ? (dateInput instanceof Date ? dateInput : new Date(dateInput)) : new Date();
-  if (isNaN(d.getTime())) return new Date().toISOString().split('T')[0];
-  return new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'America/Bogota',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit'
-  }).format(d);
+  return getColombiaDateISO(dateInput || new Date());
 }
 
 function inferProductPrepMinutes(nombreProducto = '', ftTiempo = null) {

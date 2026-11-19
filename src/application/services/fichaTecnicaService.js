@@ -472,7 +472,7 @@ class FichaTecnicaService {
         versionActual: versionFields.versionActual,
         fechaInicioVigencia: versionFields.fechaInicioVigencia,
         versionesAnteriores: versionFields.versionesAnteriores,
-        fechaCreacion: Sequelize.literal("CONVERT_TZ(NOW(), '+00:00', '-05:00')")
+        fechaCreacion: new Date()
       });
     } else {
       const updatePayload = {
@@ -495,7 +495,7 @@ class FichaTecnicaService {
         estado: data.estado !== undefined ? data.estado : 1
       };
       if (f.estado === 0) {
-        updatePayload.fechaCreacion = Sequelize.literal("CONVERT_TZ(NOW(), '+00:00', '-05:00')");
+        updatePayload.fechaCreacion = new Date();
       }
       await f.update(updatePayload);
     }
@@ -562,7 +562,7 @@ class FichaTecnicaService {
         versionActual: versionFields.versionActual,
         fechaInicioVigencia: versionFields.fechaInicioVigencia,
         versionesAnteriores: versionFields.versionesAnteriores,
-        fechaCreacion: Sequelize.literal("CONVERT_TZ(NOW(), '+00:00', '-05:00')"),
+        fechaCreacion: new Date(),
         estado: 1
       });
     } else {
@@ -649,7 +649,7 @@ class FichaTecnicaService {
         versionActual: versionFields.versionActual,
         fechaInicioVigencia: versionFields.fechaInicioVigencia,
         versionesAnteriores: versionFields.versionesAnteriores,
-        fechaCreacion: Sequelize.literal("CONVERT_TZ(NOW(), '+00:00', '-05:00')")
+        fechaCreacion: new Date()
       }, { transaction: options.transaction });
     } else {
       const updatePayload = {
@@ -673,7 +673,7 @@ class FichaTecnicaService {
         estado: data.estado !== undefined ? data.estado : 1
       };
       if (f.estado === 0) {
-        updatePayload.fechaCreacion = Sequelize.literal("CONVERT_TZ(NOW(), '+00:00', '-05:00')");
+        updatePayload.fechaCreacion = new Date();
       }
       await f.update(updatePayload, { transaction: options.transaction });
     }
@@ -744,7 +744,7 @@ class FichaTecnicaService {
       condicionesAlmacenamiento: data.condicionesAlmacenamiento || null,
       vidaUtil: data.vidaUtil || null,
       observaciones: data.observaciones || null,
-      fechaCreacion: Sequelize.literal("CONVERT_TZ(NOW(), '+00:00', '-05:00')"),
+      fechaCreacion: new Date(),
       estado: 1
     });
 

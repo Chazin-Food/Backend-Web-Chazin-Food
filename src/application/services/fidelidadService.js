@@ -8,6 +8,8 @@
  * - Cada vez que se sube de nivel o se renueva con 3 compras, se restablece el mes (30 días completos).
  */
 
+const { MS_PER_DAY } = require('../../infrastructure/utils/colombiaDateUtils');
+
 const NIVELES_CONFIG = {
   Nuevo: {
     nombre: "Nuevo",
@@ -47,115 +49,135 @@ const NIVELES_CONFIG = {
   }
 };
 
+function normalizeTipoNivel(rawTipo) {
+  const t = String(rawTipo || 'Nuevo').trim().toLowerCase();
+  if (t === 'regular') return 'Regular';
+  if (t === 'frecuente') return 'Frecuente';
+  if (t === 'vip') return 'VIP';
+  return 'Nuevo';
+}
+
 class FidelidadService {
   /**
    * Normaliza y evalúa el estado de fidelidad del cliente según fechas actuales
    */
-  static evaluarEstadoFidelidad(fidelidadData = {}, totalVentasReales = 0) {
-    const now = new Date();
-    let tipo = fidelidadData.tipo || "Nuevo";
-    if (tipo === "NUEVO") tipo = "Nuevo";
-    if (tipo === "REGULAR") tipo = "Regular";
-    if (tipo === "FRECUENTE") tipo = "Frecuente";
-    if (tipo === "vip") tipo = "VIP";
+  static evaluarEstadoFidelidad(fidelidadData = {}, totalVentasReales = 0, now = new Date()) {
+    const evalNow = now instanceof Date && !isNaN(now.getTime()) ? now : new Date();
+    let tipo = normalizeTipoNivel(fidelidadData.tipo);
 
     let comprasCiclo = Number(fidelidadData.comprasCiclo !== undefined ? fidelidadData.comprasCiclo : (fidelidadData.ciclo || 0));
     let comprasTotales = Number(fidelidadData.comprasTotales || totalVentasReales || 0);
-    
+
     const rawInicio = fidelidadData.fechaInicioNivel || fidelidadData.inicio;
     const rawVence = fidelidadData.fechaVencimientoNivel || fidelidadData.vence;
 
-    let fechaInicio = rawInicio ? new Date(rawInicio) : new Date();
-    let fechaVencimiento = rawVence ? new Date(rawVence) : null;
+    const parsedInicio = rawInicio ? new Date(rawInicio) : null;
+    let fechaInicio = parsedInicio && !isNaN(parsedInicio.getTime()) ? parsedInicio : (tipo === 'Nuevo' ? null : new Date(evalNow));
+
+    const parsedVence = rawVence ? new Date(rawVence) : null;
+    let fechaVencimiento = parsedVence && !isNaN(parsedVence.getTime()) ? parsedVence : null;
 
     // Si es un cliente antiguo sin fecha de vencimiento pero con nivel asignado
-    if (!fechaVencimiento && tipo !== "Nuevo") {
-      fechaVencimiento = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+    if (!fechaVencimiento && tipo !== 'Nuevo') {
+      fechaVencimiento = new Date(evalNow.getTime() + 30 * MS_PER_DAY);
     }
 
     let enGracia = false;
     let diasRestantes = null;
     let diasGraciaRestantes = 0;
-    let estadoCiclo = "ACTIVO"; // 'ACTIVO' | 'EN_GRACIA' | 'EXPIRADO'
+    let estadoCiclo = 'ACTIVO'; // 'ACTIVO' | 'EN_GRACIA' | 'EXPIRADO'
+
+    const degradarANuevo = () => {
+      tipo = 'Nuevo';
+      enGracia = false;
+      diasGraciaRestantes = 0;
+      diasRestantes = null;
+      fechaInicio = null;
+      fechaVencimiento = null;
+      estadoCiclo = 'ACTIVO';
+      comprasCiclo = 0;
+    };
+
+    const aplicarRegularDesde = (regStartMs, expMs) => {
+      const regEndMs = regStartMs + 30 * MS_PER_DAY;
+      const msRestantesReg = regEndMs - evalNow.getTime();
+      if (msRestantesReg > 0) {
+        tipo = 'Regular';
+        enGracia = false;
+        diasGraciaRestantes = 0;
+        diasRestantes = Math.max(1, Math.ceil(msRestantesReg / MS_PER_DAY));
+        fechaInicio = new Date(regStartMs);
+        fechaVencimiento = new Date(regEndMs);
+        estadoCiclo = 'ACTIVO';
+        comprasCiclo = 0;
+      } else {
+        // Superó también los 30 días de vigencia en Regular
+        degradarANuevo();
+      }
+      return expMs;
+    };
 
     // Evaluación para clientes en niveles con vigencia (Regular, Frecuente, VIP)
-    if (tipo !== "Nuevo" && fechaVencimiento) {
-      const msDiff = fechaVencimiento.getTime() - now.getTime();
-      const diasVigenciaRestantes = Math.ceil(msDiff / (1000 * 60 * 60 * 24));
+    if (tipo !== 'Nuevo' && fechaVencimiento) {
+      const msDiff = fechaVencimiento.getTime() - evalNow.getTime();
 
-      if (diasVigenciaRestantes > 0) {
+      if (msDiff > 0) {
         // Nivel activo dentro del mes
-        diasRestantes = diasVigenciaRestantes;
+        diasRestantes = Math.max(1, Math.ceil(msDiff / MS_PER_DAY));
         enGracia = false;
-        estadoCiclo = "ACTIVO";
+        estadoCiclo = 'ACTIVO';
       } else {
-        // El mes venció, evaluar periodos de gracia con precisión exacta
+        // El mes venció, evaluar periodos de gracia y cascada con fechas coherentes e idempotentes
         const msExpirado = Math.abs(msDiff);
-        const diasExpirado = msExpirado / (1000 * 60 * 60 * 24);
+        const diasExpirado = msExpirado / MS_PER_DAY;
+        const vencimientoBaseMs = fechaVencimiento.getTime();
 
-        if (tipo === "VIP") {
+        if (tipo === 'VIP') {
           const limiteGraciaVIP = 15;
           if (diasExpirado <= limiteGraciaVIP) {
-            // Está en periodo de gracia VIP de 15 días
             enGracia = true;
             diasGraciaRestantes = Math.max(1, Math.ceil(limiteGraciaVIP - diasExpirado));
             diasRestantes = 0;
-            estadoCiclo = "EN_GRACIA";
+            estadoCiclo = 'EN_GRACIA';
           } else {
-            // Pasaron los 15 días de gracia de VIP -> Baja a Frecuente
+            // Pasaron los 15 días de gracia de VIP -> Baja a Frecuente (su ventana de gracia de 10d comienza en vencimientoBase + 15d)
             const diasExcedidosFrecuente = diasExpirado - limiteGraciaVIP;
             const limiteGraciaFrecuente = 10;
 
             if (diasExcedidosFrecuente <= limiteGraciaFrecuente) {
-              // Ahora está en periodo de gracia de Frecuente (10 días)
-              tipo = "Frecuente";
+              tipo = 'Frecuente';
               enGracia = true;
               diasGraciaRestantes = Math.max(1, Math.ceil(limiteGraciaFrecuente - diasExcedidosFrecuente));
               diasRestantes = 0;
-              estadoCiclo = "EN_GRACIA";
+              // Ajustar vence para que persistir en BD conserve la ventana restante de Frecuente
+              fechaVencimiento = new Date(vencimientoBaseMs + limiteGraciaVIP * MS_PER_DAY);
+              estadoCiclo = 'EN_GRACIA';
               comprasCiclo = 0;
             } else {
-              // Pasaron también los 10 días de gracia -> Baja a Regular
-              tipo = "Regular";
-              enGracia = false;
-              diasGraciaRestantes = 0;
-              diasRestantes = 30; // Nuevo ciclo de 1 mes en Regular
-              fechaVencimiento = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
-              fechaInicio = now;
-              estadoCiclo = "ACTIVO";
-              comprasCiclo = 0;
+              // Pasaron también los 10 días de gracia de Frecuente -> Baja a Regular (o Nuevo si pasaron 30d más)
+              aplicarRegularDesde(vencimientoBaseMs + (limiteGraciaVIP + limiteGraciaFrecuente) * MS_PER_DAY, msExpirado);
             }
           }
-        } else if (tipo === "Frecuente") {
+        } else if (tipo === 'Frecuente') {
           const limiteGraciaFrecuente = 10;
           if (diasExpirado <= limiteGraciaFrecuente) {
-            // Está en periodo de gracia Frecuente de 10 días
             enGracia = true;
             diasGraciaRestantes = Math.max(1, Math.ceil(limiteGraciaFrecuente - diasExpirado));
             diasRestantes = 0;
-            estadoCiclo = "EN_GRACIA";
+            estadoCiclo = 'EN_GRACIA';
           } else {
-            // Pasaron los 10 días -> Baja a Regular
-            tipo = "Regular";
-            enGracia = false;
-            diasGraciaRestantes = 0;
-            diasRestantes = 30;
-            fechaVencimiento = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
-            fechaInicio = now;
-            estadoCiclo = "ACTIVO";
-            comprasCiclo = 0;
+            // Pasaron los 10 días -> Baja a Regular (o Nuevo si superó 30d en Regular)
+            aplicarRegularDesde(vencimientoBaseMs + limiteGraciaFrecuente * MS_PER_DAY, msExpirado);
           }
-        } else if (tipo === "Regular") {
+        } else if (tipo === 'Regular') {
           // Regular no tiene días de gracia extra -> Baja directo a Nuevo
-          tipo = "Nuevo";
-          enGracia = false;
-          diasGraciaRestantes = 0;
-          diasRestantes = null;
-          fechaVencimiento = null;
-          estadoCiclo = "ACTIVO";
-          comprasCiclo = 0;
+          degradarANuevo();
         }
       }
+    } else if (tipo === 'Nuevo') {
+      fechaInicio = null;
+      fechaVencimiento = null;
+      diasRestantes = null;
     }
 
     const config = NIVELES_CONFIG[tipo] || NIVELES_CONFIG.Nuevo;
@@ -183,13 +205,15 @@ class FidelidadService {
   /**
    * Registra una compra aprobada/completada y actualiza el nivel de fidelidad
    */
-  static registrarCompra(fidelidadActual = {}) {
-    const estado = this.evaluarEstadoFidelidad(fidelidadActual);
-    const now = new Date();
+  static registrarCompra(fidelidadActual = {}, now = new Date()) {
+    const evalNow = now instanceof Date && !isNaN(now.getTime()) ? now : new Date();
+    const tipoOriginal = normalizeTipoNivel(fidelidadActual?.tipo);
+    const estado = this.evaluarEstadoFidelidad(fidelidadActual, 0, evalNow);
+    const degrado = estado.tipo !== tipoOriginal;
 
     let nuevoTipo = estado.tipo;
     let nuevoComprasCiclo = (estado.comprasCiclo || 0) + 1;
-    let comprasTotales = (estado.comprasTotales || 0) + 1;
+    const comprasTotales = (estado.comprasTotales || 0) + 1;
     let ascendio = false;
     let renovo = false;
 
@@ -198,40 +222,48 @@ class FidelidadService {
       renovo = true;
       nuevoComprasCiclo = 1; // 1ra compra de su nuevo ciclo reactivado
     } else if (nuevoComprasCiclo >= 3) {
-      if (nuevoTipo === "Nuevo") {
-        nuevoTipo = "Regular";
+      if (nuevoTipo === 'Nuevo') {
+        nuevoTipo = 'Regular';
         ascendio = true;
-      } else if (nuevoTipo === "Regular") {
-        nuevoTipo = "Frecuente";
+      } else if (nuevoTipo === 'Regular') {
+        nuevoTipo = 'Frecuente';
         ascendio = true;
-      } else if (nuevoTipo === "Frecuente") {
-        nuevoTipo = "VIP";
+      } else if (nuevoTipo === 'Frecuente') {
+        nuevoTipo = 'VIP';
         ascendio = true;
-      } else if (nuevoTipo === "VIP") {
+      } else if (nuevoTipo === 'VIP') {
         // En VIP se renueva la membresía mensual (no acumula tiempo extra, inicia 30 días limpios)
-        nuevoTipo = "VIP";
+        nuevoTipo = 'VIP';
         renovo = true;
       }
       nuevoComprasCiclo = 0;
     }
 
     // Regla de NO SUMAR TIEMPO ACUMULADO:
-    // Si asciende o renueva, inicia un nuevo mes limpio de 30 días (now + 30d).
-    // Si es una compra intermedia dentro de su mes activo, NO altera la fecha de vencimiento original.
-    const rawVenceActual = fidelidadActual.fechaVencimientoNivel || fidelidadActual.vence;
-    const rawInicioActual = fidelidadActual.fechaInicioNivel || fidelidadActual.inicio;
+    // Usar el estado ya evaluado/normalizado para no arrastrar fechas expiradas ni degradadas viejas.
+    let nuevaFechaInicio = null;
+    let nuevaFechaVencimiento = null;
 
-    let nuevaFechaVencimiento = rawVenceActual 
-      ? new Date(rawVenceActual) 
-      : new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+    if (nuevoTipo !== 'Nuevo') {
+      const estadoVence = estado.fechaVencimientoNivel ? new Date(estado.fechaVencimientoNivel) : null;
+      const estadoInicio = estado.fechaInicioNivel ? new Date(estado.fechaInicioNivel) : null;
+      const venceValido = estadoVence && !isNaN(estadoVence.getTime()) && estadoVence.getTime() > evalNow.getTime();
 
-    if (ascendio || renovo || !rawVenceActual || estado.enGracia || nuevoTipo !== estado.tipo) {
-      nuevaFechaVencimiento = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+      if (ascendio || renovo || estado.enGracia || nuevoTipo !== estado.tipo || !venceValido) {
+        nuevaFechaInicio = evalNow;
+        nuevaFechaVencimiento = new Date(evalNow.getTime() + 30 * MS_PER_DAY);
+      } else {
+        nuevaFechaInicio = degrado
+          ? (estadoInicio || evalNow)
+          : (estadoInicio && !isNaN(estadoInicio.getTime()) ? estadoInicio : evalNow);
+        nuevaFechaVencimiento = estadoVence;
+      }
     }
 
     const config = NIVELES_CONFIG[nuevoTipo] || NIVELES_CONFIG.Nuevo;
-    const msDiff = nuevaFechaVencimiento.getTime() - now.getTime();
-    const diasRestantes = nuevoTipo === "Nuevo" ? null : Math.max(1, Math.ceil(msDiff / (1000 * 60 * 60 * 24)));
+    const diasRestantes = nuevoTipo === 'Nuevo' || !nuevaFechaVencimiento
+      ? null
+      : Math.max(1, Math.ceil((nuevaFechaVencimiento.getTime() - evalNow.getTime()) / MS_PER_DAY));
 
     return {
       tipo: nuevoTipo,
@@ -242,12 +274,12 @@ class FidelidadService {
       comprasMeta: 3,
       progresoPorcentaje: Math.round((nuevoComprasCiclo / 3) * 100),
       siguienteNivel: config.siguienteNivel,
-      fechaInicioNivel: (ascendio || renovo || !rawInicioActual) ? now.toISOString() : (new Date(rawInicioActual)).toISOString(),
-      fechaVencimientoNivel: nuevoTipo === "Nuevo" ? null : nuevaFechaVencimiento.toISOString(),
+      fechaInicioNivel: nuevaFechaInicio ? nuevaFechaInicio.toISOString() : null,
+      fechaVencimientoNivel: nuevaFechaVencimiento ? nuevaFechaVencimiento.toISOString() : null,
       diasRestantes,
       enGracia: false,
       diasGraciaRestantes: 0,
-      estadoCiclo: "ACTIVO",
+      estadoCiclo: 'ACTIVO',
       ascendio,
       renovo
     };

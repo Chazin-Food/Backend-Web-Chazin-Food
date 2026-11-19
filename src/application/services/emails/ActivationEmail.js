@@ -308,8 +308,8 @@ function ActivationEmail({
                   margin: 0
                 }
               },
-              e('strong', null, 'Consejo de seguridad: '),
-              'Al iniciar sesión con tu clave temporal, puedes dirigirte a tu perfil en cualquier momento para configurar una contraseña personalizada.'
+              e('strong', null, 'Consejo de seguridad y vigencia: '),
+              'El enlace de activación tiene una vigencia de 72 horas. Al iniciar sesión con tu clave temporal, puedes dirigirte a tu perfil en cualquier momento para configurar una contraseña personalizada.'
             )
           )
         ),

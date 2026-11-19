@@ -1,11 +1,12 @@
 const React = require('react');
 const { Section, Text, Link, Hr } = require('@react-email/components');
 const { colors } = require('./EmailStyles');
+const { getColombiaYear } = require('../../../infrastructure/utils/colombiaDateUtils');
 
 const e = React.createElement;
 
 function EmailFooter() {
-  const currentYear = new Date().getFullYear();
+  const currentYear = getColombiaYear();
   const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
 
   return e(

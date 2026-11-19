@@ -165,9 +165,9 @@ class EmailService {
       (process.env.SMTP_USER ? `Chazin Food <${process.env.SMTP_USER.trim()}>` : 'Chazin Food <onboarding@resend.dev>')
     ).trim();
 
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 12000);
     try {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 12000);
       const response = await fetch('https://api.resend.com/emails', {
         method: 'POST',
         headers: {
@@ -177,7 +177,6 @@ class EmailService {
         body: JSON.stringify({ from, to: Array.isArray(to) ? to : [to], subject, text, html }),
         signal: controller.signal
       });
-      clearTimeout(timer);
 
       if (!response.ok) {
         const errBody = await response.text().catch(() => '');
@@ -189,6 +188,8 @@ class EmailService {
     } catch (err) {
       console.error('Error de red al enviar correo via Resend:', err.message);
       return { attempted: true, ok: false, error: err.message };
+    } finally {
+      clearTimeout(timer);
     }
   }
 

@@ -2,6 +2,14 @@ const { Op } = require('sequelize');
 const { Evento, Product, Variante, VarianteInsumo, FichaTecnica, DetalleFichaInsumo, Insumo } = require('../../persistence/models');
 const FichaTecnicaService = require('./fichaTecnicaService');
 const { ensureVarianteEventoSchemaOnce } = require('../../infrastructure/utils/dbUtils');
+const {
+  MS_PER_DAY,
+  getColombiaDateISO,
+  extractDateOnlyISO,
+  colombiaStartOfDay,
+  colombiaEndOfDay,
+  diffCalendarDaysColombia
+} = require('../../infrastructure/utils/colombiaDateUtils');
 
 const stripEmojis = (str) => {
   if (!str || typeof str !== 'string') return '';
@@ -42,10 +50,10 @@ const isDummyVariantCollisionName = (vName = '', pName = '') => {
 };
 
 function evaluarVigenciaEvento(e, now = new Date()) {
-  const rawInicio = e.fechaInicio;
-  const rawFin = e.fechaFin;
+  const inicioISO = extractDateOnlyISO(e.fechaInicio);
+  const finISO = extractDateOnlyISO(e.fechaFin);
 
-  if (!rawFin) {
+  if (!finISO) {
     return {
       estadoVigencia: 'PERMANENTE',
       estaVigente: e.estado === 1,
@@ -54,27 +62,27 @@ function evaluarVigenciaEvento(e, now = new Date()) {
       urgente: false,
       label: 'Vigencia Permanente',
       shortLabel: 'Permanente',
-      fechaInicio: rawInicio,
+      fechaInicio: inicioISO,
       fechaFin: null
     };
   }
 
-  const finDate = new Date(`${rawFin}T23:59:59`);
-  const inicioDate = rawInicio ? new Date(`${rawInicio}T00:00:00`) : null;
+  const todayISO = getColombiaDateISO(now);
+  const finDate = colombiaEndOfDay(finISO);
+  const inicioDate = inicioISO ? colombiaStartOfDay(inicioISO) : null;
 
   const msRestantes = finDate.getTime() - now.getTime();
-  const diasRestantes = Math.ceil(msRestantes / (1000 * 60 * 60 * 24));
+  const diasCalendario = diffCalendarDaysColombia(finISO, todayISO);
   const horasRestantes = Math.max(0, Math.floor(msRestantes / (1000 * 60 * 60)));
   const minutosRestantes = Math.max(0, Math.floor((msRestantes % (1000 * 60 * 60)) / (1000 * 60)));
   const segundosRestantes = Math.max(0, Math.floor((msRestantes % (1000 * 60)) / 1000));
 
-  if (inicioDate && now < inicioDate) {
-    const msHastaInicio = inicioDate.getTime() - now.getTime();
-    const diasParaInicio = Math.ceil(msHastaInicio / (1000 * 60 * 60 * 24));
+  if (inicioDate && now.getTime() < inicioDate.getTime()) {
+    const diasParaInicio = Math.max(1, diffCalendarDaysColombia(inicioISO, todayISO) ?? Math.ceil((inicioDate.getTime() - now.getTime()) / MS_PER_DAY));
     return {
       estadoVigencia: 'PROGRAMADO',
       estaVigente: false,
-      diasRestantes,
+      diasRestantes: Math.max(0, diasCalendario ?? Math.ceil(msRestantes / MS_PER_DAY)),
       horasRestantes,
       minutosRestantes,
       segundosRestantes,
@@ -82,13 +90,17 @@ function evaluarVigenciaEvento(e, now = new Date()) {
       urgente: false,
       label: `Inicia en ${diasParaInicio} día${diasParaInicio !== 1 ? 's' : ''}`,
       shortLabel: `En ${diasParaInicio}d`,
-      fechaInicio: rawInicio,
-      fechaFin: rawFin
+      fechaInicio: inicioISO,
+      fechaFin: finISO
     };
   }
 
   if (msRestantes < 0) {
-    const diasExpirado = Math.abs(diasRestantes);
+    const calDiff = diffCalendarDaysColombia(todayISO, finISO);
+    const diasExpirado = calDiff !== null && calDiff > 0 ? calDiff : 1;
+    const expiredLabel = calDiff === 0
+      ? 'Finalizado hoy'
+      : `Finalizado hace ${diasExpirado} día${diasExpirado !== 1 ? 's' : ''}`;
     return {
       estadoVigencia: 'EXPIRADO',
       estaVigente: false,
@@ -98,29 +110,28 @@ function evaluarVigenciaEvento(e, now = new Date()) {
       segundosRestantes: 0,
       diasExpirado,
       urgente: false,
-      label: `Finalizado hace ${diasExpirado} día${diasExpirado !== 1 ? 's' : ''}`,
+      label: expiredLabel,
       shortLabel: 'Finalizado',
-      fechaInicio: rawInicio,
-      fechaFin: rawFin
+      fechaInicio: inicioISO,
+      fechaFin: finISO
     };
   }
 
   // Activo dentro de la vigencia
+  const diasRestantes = Math.max(0, diasCalendario ?? Math.ceil(msRestantes / MS_PER_DAY));
   const urgente = diasRestantes <= 3;
   let label = `Quedan ${diasRestantes} días`;
   let shortLabel = `${diasRestantes}d restantes`;
 
-  if (horasRestantes < 24) {
-    if (horasRestantes === 0) {
-      label = `¡Termina pronto! (Quedan ${minutosRestantes}m)`;
-      shortLabel = `${minutosRestantes}m restantes`;
-    } else {
-      label = `¡Termina hoy! (Quedan ${horasRestantes}h ${minutosRestantes > 0 ? `${minutosRestantes}m` : ''})`.trim();
-      shortLabel = `${horasRestantes}h restantes`;
-    }
-  } else if (diasRestantes === 1) {
-    label = `¡Último día! (Quedan ${horasRestantes}h)`;
-    shortLabel = '¡Último día!';
+  if (horasRestantes === 0) {
+    label = `¡Termina pronto! (Quedan ${minutosRestantes}m)`;
+    shortLabel = `${minutosRestantes}m restantes`;
+  } else if (diasCalendario === 0 || horasRestantes < 24) {
+    label = `¡Termina hoy! (Quedan ${horasRestantes}h ${minutosRestantes > 0 ? `${minutosRestantes}m` : ''})`.trim();
+    shortLabel = `${horasRestantes}h restantes`;
+  } else if (diasCalendario === 1) {
+    label = `Finaliza mañana (Quedan ${horasRestantes}h)`;
+    shortLabel = 'Finaliza mañana';
   }
 
   return {
@@ -133,8 +144,8 @@ function evaluarVigenciaEvento(e, now = new Date()) {
     urgente,
     label,
     shortLabel,
-    fechaInicio: rawInicio,
-    fechaFin: rawFin
+    fechaInicio: inicioISO,
+    fechaFin: finISO
   };
 }
 
@@ -235,7 +246,7 @@ class EventoService {
   static async getAll() {
     await ensureVarianteEventoSchemaOnce();
     const now = new Date();
-    const todayStr = now.toISOString().split('T')[0];
+    const todayStr = getColombiaDateISO(now);
 
     // Auto-expirar eventos vencidos como máximo una vez cada 5 minutos para no escribir en cada GET público
     if (Date.now() - lastAutoExpireAt >= AUTO_EXPIRE_TTL_MS) {
@@ -734,6 +745,14 @@ class EventoService {
       throw error;
     }
 
+    const inicioNorm = isTemporal ? extractDateOnlyISO(fechaInicio) : null;
+    const finNorm = isTemporal ? extractDateOnlyISO(fechaFin) : null;
+    if (inicioNorm && finNorm && finNorm < inicioNorm) {
+      const error = new Error('La fecha de finalización no puede ser anterior a la fecha de inicio del evento.');
+      error.statusCode = 400;
+      throw error;
+    }
+
     let finalProductoId = productoId ? Number(productoId) : null;
     const modeBCreatedVariantIds = [];
     let modeBPrimaryVarianteId = null;
@@ -875,8 +894,8 @@ class EventoService {
     const created = await Evento.create({
       nombreEvento: cleanNombre,
       descripcion: cleanDesc,
-      fechaInicio: isTemporal ? fechaInicio : null,
-      fechaFin: isTemporal ? fechaFin : null,
+      fechaInicio: inicioNorm,
+      fechaFin: finNorm,
       estado: estado === 'Inactivo' || estado === 0 ? 0 : 1,
       idProducto: finalProductoId,
       tipoEvento: tipoEvento || 'EDICION_LIMITADA',
@@ -940,15 +959,23 @@ class EventoService {
     if (icono !== undefined) e.icono = stripEmojis(icono) || 'party';
     if (isTemporal !== undefined) {
       if (isTemporal) {
-        if (fechaInicio !== undefined) e.fechaInicio = fechaInicio;
-        if (fechaFin !== undefined) e.fechaFin = fechaFin;
+        if (fechaInicio !== undefined) e.fechaInicio = extractDateOnlyISO(fechaInicio);
+        if (fechaFin !== undefined) e.fechaFin = extractDateOnlyISO(fechaFin);
       } else {
         e.fechaInicio = null;
         e.fechaFin = null;
       }
     } else {
-      if (fechaInicio !== undefined) e.fechaInicio = fechaInicio;
-      if (fechaFin !== undefined) e.fechaFin = fechaFin;
+      if (fechaInicio !== undefined) e.fechaInicio = extractDateOnlyISO(fechaInicio);
+      if (fechaFin !== undefined) e.fechaFin = extractDateOnlyISO(fechaFin);
+    }
+
+    const checkInicio = extractDateOnlyISO(e.fechaInicio);
+    const checkFin = extractDateOnlyISO(e.fechaFin);
+    if (checkInicio && checkFin && checkFin < checkInicio) {
+      const error = new Error('La fecha de finalización no puede ser anterior a la fecha de inicio del evento.');
+      error.statusCode = 400;
+      throw error;
     }
 
     if (estado !== undefined) e.estado = estado === 'Activo' || estado === 1 ? 1 : 0;
