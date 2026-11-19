@@ -476,13 +476,35 @@ class ClienteService {
       newVence = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString();
     }
 
+    const incomingRawDoc = data.documento !== undefined ? data.documento : data.numeroDocumento;
+    if (incomingRawDoc !== undefined || data.tipoDocumento !== undefined) {
+      const currentTipoDoc = String(c.usuario?.tipoDocumento || existingMeta.tipoDocumento || 'C.C.').trim();
+      const currentRealDoc = String(c.usuario?.numeroDocumento || existingMeta.documento || '').trim();
+      const targetTipoDoc = data.tipoDocumento ? String(data.tipoDocumento).trim() : currentTipoDoc;
+      const incomingCleanDoc =
+        incomingRawDoc !== undefined && String(incomingRawDoc || '').trim() !== ''
+          ? sanitizeDocumento(incomingRawDoc, targetTipoDoc)
+          : '';
+
+      const tipoChanged = data.tipoDocumento !== undefined && targetTipoDoc !== currentTipoDoc;
+      const docChanged = incomingRawDoc !== undefined && incomingCleanDoc !== currentRealDoc;
+
+      if (tipoChanged || docChanged) {
+        const error = new Error('La identificación del cliente (tipo y número de documento) no se puede modificar.');
+        error.statusCode = 400;
+        throw error;
+      }
+    }
+
     const finalEstado = (!c.idUsuario || data.estado === 'Inactivo' || data.estado === 0) ? 0 : 1;
     c.direccion = JSON.stringify({
       direccion: newDireccionStr,
       tipo: newTipo,
       ciclo: newCiclo,
       inicio: newInicio,
-      vence: newVence
+      vence: newVence,
+      ...(existingMeta.tipoDocumento ? { tipoDocumento: existingMeta.tipoDocumento } : {}),
+      ...(existingMeta.documento ? { documento: existingMeta.documento } : {})
     });
 
     if (data.estado !== undefined) c.estado = finalEstado;
@@ -527,29 +549,7 @@ class ClienteService {
         }
       }
 
-      if (data.documento !== undefined || data.numeroDocumento !== undefined) {
-        const targetTipoDoc = data.tipoDocumento || c.usuario.tipoDocumento || 'C.C.';
-        const cleanDoc = sanitizeDocumento(data.documento || data.numeroDocumento, targetTipoDoc);
-        const currentDoc = String(c.usuario.numeroDocumento || c.usuario.idUsuario || '');
-        if (cleanDoc && cleanDoc !== currentDoc) {
-          const existingDoc = await User.findOne({
-            where: {
-              idUsuario: { [Op.ne]: c.usuario.idUsuario },
-              [Op.or]: [
-                { numeroDocumento: cleanDoc },
-                ...(!isNaN(parseInt(cleanDoc)) ? [{ idUsuario: parseInt(cleanDoc) }] : [])
-              ]
-            }
-          });
-          if (existingDoc) {
-            const error = new Error(`Ya existe un usuario registrado con el número de documento "${cleanDoc}"`);
-            error.statusCode = 400;
-            throw error;
-          }
-          c.usuario.numeroDocumento = cleanDoc;
-          if (data.tipoDocumento) c.usuario.tipoDocumento = data.tipoDocumento;
-        }
-      }
+      // La identificación del cliente (tipoDocumento y numeroDocumento) es inmutable en edición.
 
       if (data.telefono !== undefined) c.usuario.telefono = cleanTel;
       if (data.estado !== undefined) {
