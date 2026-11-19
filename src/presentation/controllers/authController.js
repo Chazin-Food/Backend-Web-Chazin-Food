@@ -114,6 +114,22 @@ const verifyEmail = async (req, res, next) => {
   }
 };
 
+const verifyDocument = async (req, res, next) => {
+  try {
+    const documento =
+      req.body?.numeroDocumento ||
+      req.body?.documento ||
+      req.query?.numeroDocumento ||
+      req.query?.documento;
+    const currentUserId = req.user ? (req.user.idUsuario || req.user.id || req.user._id) : null;
+    const result = await AuthService.checkDocument(documento, currentUserId);
+    res.json(result);
+  } catch (error) {
+    if (error.statusCode) res.status(error.statusCode);
+    next(error);
+  }
+};
+
 module.exports = {
   registerUser,
   loginUser,
@@ -125,4 +141,5 @@ module.exports = {
   verifyActivation,
   activateAccount,
   verifyEmail,
+  verifyDocument,
 };

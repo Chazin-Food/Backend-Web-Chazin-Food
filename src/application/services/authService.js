@@ -152,6 +152,12 @@ class AuthService {
       idCliente: createdCliente ? createdCliente.idCliente : null,
       nombre: user.nombre,
       apellidos: user.apellidos,
+      apellido: user.apellidos,
+      tipoDocumento: user.tipoDocumento || 'C.C.',
+      numeroDocumento: (finalDocumento && String(finalDocumento).trim().length >= 6) ? String(finalDocumento).trim() : '',
+      documento: (finalDocumento && String(finalDocumento).trim().length >= 6) ? String(finalDocumento).trim() : '',
+      tieneCedulaRegistrada: Boolean(finalDocumento && String(finalDocumento).trim().length >= 6),
+      telefono: user.telefono || '',
       email: user.email,
       correo: user.email,
       rol: role ? role.nombre : 'Cliente',
@@ -506,6 +512,58 @@ class AuthService {
       registered: true,
       message: 'El correo se encuentra registrado.',
       nombre: user.nombre
+    };
+  }
+
+  static async checkDocument(rawDocumento, currentUserId = null) {
+    const cleanDoc = typeof rawDocumento === 'string' || typeof rawDocumento === 'number'
+      ? String(rawDocumento).trim()
+      : '';
+    if (!cleanDoc) {
+      const error = new Error('El número de documento es requerido');
+      error.statusCode = 400;
+      throw error;
+    }
+
+    const { Op } = require('sequelize');
+    const numericId = /^\d+$/.test(cleanDoc) ? Number(cleanDoc) : null;
+    const whereClauses = [{ numeroDocumento: cleanDoc }];
+    if (numericId && Number.isSafeInteger(numericId) && numericId <= 2147483647) {
+      whereClauses.push({ idUsuario: numericId });
+    }
+
+    const found = await User.findOne({
+      where: { [Op.or]: whereClauses },
+      attributes: ['idUsuario', 'numeroDocumento', 'tipoDocumento']
+    });
+
+    if (!found) {
+      return {
+        exists: false,
+        registered: false,
+        isOwnDocument: false,
+        conflict: false,
+        message: 'Documento disponible.'
+      };
+    }
+
+    const isOwn = Boolean(currentUserId && Number(found.idUsuario) === Number(currentUserId));
+    if (isOwn) {
+      return {
+        exists: true,
+        registered: true,
+        isOwnDocument: true,
+        conflict: false,
+        message: 'Documento verificado de tu cuenta.'
+      };
+    }
+
+    return {
+      exists: true,
+      registered: true,
+      isOwnDocument: false,
+      conflict: true,
+      message: `El número de documento "${cleanDoc}" ya pertenece a otro usuario registrado.`
     };
   }
 

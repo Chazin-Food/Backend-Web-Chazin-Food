@@ -1,8 +1,8 @@
 const express = require('express');
 const router = express.Router();
 const { getUsers, getUserById, createUser, updateUser, changeUserPassword, toggleUserStatus, deleteUser } = require('../controllers/userController');
-const { registerUser, loginUser, forgotPassword, resetPassword, getUserProfile, updateUserProfile, googleAuth, verifyEmail, verifyActivation, activateAccount } = require('../controllers/authController');
-const { protect, requirePrivilege } = require('../../infrastructure/middlewares/authMiddleware');
+const { registerUser, loginUser, forgotPassword, resetPassword, getUserProfile, updateUserProfile, googleAuth, verifyEmail, verifyDocument, verifyActivation, activateAccount } = require('../controllers/authController');
+const { protect, optionalProtect, requirePrivilege } = require('../../infrastructure/middlewares/authMiddleware');
 const { cacheResponse } = require('../../infrastructure/utils/apiCache');
 
 const cacheUsuarios = cacheResponse('usuarios', { ttlMs: 15000, cacheControl: 'private, max-age=10' });
@@ -21,6 +21,10 @@ router.post('/register', registerUser);
 router.post('/verificar-correo', verifyEmail);
 router.get('/verificar-correo', verifyEmail);
 router.post('/check-email', verifyEmail);
+router.post('/verificar-documento', optionalProtect, verifyDocument);
+router.get('/verificar-documento', optionalProtect, verifyDocument);
+router.post('/check-document', optionalProtect, verifyDocument);
+router.get('/check-document', optionalProtect, verifyDocument);
 router.post('/recuperar-contrasena', forgotPassword);
 router.post('/forgot-password', forgotPassword);
 router.post('/restablecer-contrasena', resetPassword);
