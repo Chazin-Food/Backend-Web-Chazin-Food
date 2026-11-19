@@ -11,14 +11,17 @@ const {
   hardDeleteInsumoPreparado,
 } = require('../controllers/insumoPreparadoController');
 const { protect, requirePrivilege } = require('../../infrastructure/middlewares/authMiddleware');
+const { cacheResponse } = require('../../infrastructure/utils/apiCache');
+
+const cachePreparados = cacheResponse('insumos-preparados', { ttlMs: 15000, cacheControl: 'private, max-age=10' });
 
 router.use(protect);
 
-router.get('/papelera', getInsumosPreparadosPapelera);
-router.get('/deleted', getInsumosPreparadosPapelera);
+router.get('/papelera', cachePreparados, getInsumosPreparadosPapelera);
+router.get('/deleted', cachePreparados, getInsumosPreparadosPapelera);
 
 router.route('/')
-  .get(getInsumosPreparados)
+  .get(cachePreparados, getInsumosPreparados)
   .post(requirePrivilege('Insumos', 'Crear'), createInsumoPreparado);
 
 router.route('/:id')

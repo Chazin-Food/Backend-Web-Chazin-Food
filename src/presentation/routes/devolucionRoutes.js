@@ -11,9 +11,13 @@ const {
   updateEstadoDevolucion
 } = require('../controllers/devolucionController');
 const { protect, optionalProtect, requirePrivilege } = require('../../infrastructure/middlewares/authMiddleware');
+const { cacheResponse } = require('../../infrastructure/utils/apiCache');
+
+const cacheDevoluciones = cacheResponse('devoluciones', { ttlMs: 15000, cacheControl: 'private, max-age=10' });
+const cachePoliticas = cacheResponse('devoluciones', { ttlMs: 60000, cacheControl: 'public, max-age=30, stale-while-revalidate=60' });
 
 // Consulta pública de políticas de devolución
-router.get('/politicas', getPoliticas);
+router.get('/politicas', cachePoliticas, getPoliticas);
 
 // Verificación de elegibilidad de una venta (para modal de devolución de cliente o cajero)
 router.get('/elegibilidad/:idVenta', optionalProtect, checkVentaElegibilidad);
@@ -25,11 +29,11 @@ router.use(protect);
 router.get('/mis-devoluciones', getMisDevoluciones);
 
 // Estadísticas para tarjetas KPI del módulo administrativo
-router.get('/stats', requirePrivilege(['Devoluciones', 'Gestión de Ventas', 'Ventas', 'Dashboard'], 'Ver'), getDevolucionesStats);
+router.get('/stats', requirePrivilege(['Devoluciones', 'Gestión de Ventas', 'Ventas', 'Dashboard'], 'Ver'), cacheDevoluciones, getDevolucionesStats);
 
 // Listar devoluciones y registrar nueva solicitud
 router.route('/')
-  .get(requirePrivilege(['Devoluciones', 'Gestión de Ventas', 'Ventas'], 'Ver'), getDevoluciones)
+  .get(requirePrivilege(['Devoluciones', 'Gestión de Ventas', 'Ventas'], 'Ver'), cacheDevoluciones, getDevoluciones)
   .post(createDevolucion); // Clientes y Administradores pueden crear solicitudes de devolución
 
 // Detalle de devolución

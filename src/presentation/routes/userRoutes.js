@@ -3,6 +3,9 @@ const router = express.Router();
 const { getUsers, getUserById, createUser, updateUser, changeUserPassword, toggleUserStatus, deleteUser } = require('../controllers/userController');
 const { registerUser, loginUser, forgotPassword, resetPassword, getUserProfile, updateUserProfile, googleAuth, verifyEmail, verifyActivation, activateAccount } = require('../controllers/authController');
 const { protect, requirePrivilege } = require('../../infrastructure/middlewares/authMiddleware');
+const { cacheResponse } = require('../../infrastructure/utils/apiCache');
+
+const cacheUsuarios = cacheResponse('usuarios', { ttlMs: 15000, cacheControl: 'private, max-age=10' });
 
 const allowSelfOrEditUsers = (req, res, next) => {
   if (req.user && String(req.user.id || req.user.idUsuario) === String(req.params.id)) {
@@ -31,7 +34,7 @@ router.route('/perfil')
   .put(protect, updateUserProfile);
 
 router.route('/')
-  .get(protect, getUsers)
+  .get(protect, cacheUsuarios, getUsers)
   .post(protect, requirePrivilege('Usuarios', 'Crear'), createUser);
 
 router.route('/:id')

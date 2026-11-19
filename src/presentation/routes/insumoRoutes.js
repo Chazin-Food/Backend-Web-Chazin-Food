@@ -14,15 +14,18 @@ const {
   deleteLotesVencidos,
 } = require('../controllers/insumoController');
 const { protect, requirePrivilege } = require('../../infrastructure/middlewares/authMiddleware');
+const { cacheResponse } = require('../../infrastructure/utils/apiCache');
+
+const cacheInsumos = cacheResponse('insumos', { ttlMs: 15000, cacheControl: 'private, max-age=10' });
 
 router.use(protect);
 
 router.get('/check-vencimientos', checkVencimientos);
-router.get('/papelera', getInsumosPapelera);
-router.get('/deleted', getInsumosPapelera);
+router.get('/papelera', cacheInsumos, getInsumosPapelera);
+router.get('/deleted', cacheInsumos, getInsumosPapelera);
 
 router.route('/')
-  .get(getInsumos)
+  .get(cacheInsumos, getInsumos)
   .post(requirePrivilege(['Insumos', 'Gestión de Compras'], 'Crear'), createInsumo);
 
 router.route('/:id')

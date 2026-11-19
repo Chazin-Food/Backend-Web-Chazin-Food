@@ -10,7 +10,11 @@ const {
   restoreEmpleado
 } = require('../controllers/empleadoController');
 
-router.get('/', getEmpleados);
+const { cacheResponse } = require('../../infrastructure/utils/apiCache');
+
+const cacheEmpleados = cacheResponse('empleados', { ttlMs: 20000, cacheControl: 'private, max-age=10' });
+
+router.get('/', cacheEmpleados, getEmpleados);
 router.post('/', createEmpleado);
 router.get('/:id', getEmpleadoById);
 router.put('/:id', updateEmpleado);

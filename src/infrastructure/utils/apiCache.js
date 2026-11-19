@@ -75,13 +75,17 @@ function storeEntry(namespace, key, payload, ttlMs) {
  * Middleware de caché en memoria con TTL corto, soporte ETag (304) y respuesta gzip precomputada.
  * Debe montarse DESPUÉS de middlewares de autenticación en rutas protegidas.
  */
-function cacheResponse(namespace, { ttlMs = 30000, cacheControl = 'public, max-age=15, stale-while-revalidate=30' } = {}) {
+function cacheResponse(namespace, { ttlMs = 30000, cacheControl = 'public, max-age=15, stale-while-revalidate=30', keyResolver = null } = {}) {
   return (req, res, next) => {
     if (req.method !== 'GET' || req.query?.refresh === 'true' || req.headers['cache-control'] === 'no-cache') {
       return next();
     }
 
-    const key = `${namespace}:${req.originalUrl}`;
+    const customScope = typeof keyResolver === 'function' ? keyResolver(req) : '';
+    if (customScope === false) {
+      return next();
+    }
+    const key = customScope ? `${namespace}:${customScope}:${req.originalUrl}` : `${namespace}:${req.originalUrl}`;
     const existing = store.get(key);
     if (existing && existing.expiresAt > Date.now()) {
       if (cacheControl) {
@@ -204,26 +208,28 @@ const MUTATION_INVALIDATION_MAP = [
   { prefix: '/api/categorias-insumos', namespaces: ['categorias-insumo', 'categories', 'insumos'] },
   { prefix: '/api/categorias', namespaces: ['categorias', 'productos', 'categories'] },
   { prefix: '/api/categories', namespaces: ['categories', 'categorias', 'categorias-insumo'] },
-  { prefix: '/api/roles', namespaces: ['roles'] },
-  { prefix: '/api/usuarios', namespaces: ['roles', 'dashboard'] },
-  { prefix: '/api/users', namespaces: ['roles', 'dashboard'] },
-  { prefix: '/api/autenticacion', namespaces: ['roles', 'dashboard'] },
-  { prefix: '/api/auth', namespaces: ['roles', 'dashboard'] },
+  { prefix: '/api/roles', namespaces: ['roles', 'usuarios'] },
+  { prefix: '/api/usuarios', namespaces: ['usuarios', 'roles', 'clientes', 'empleados', 'dashboard'] },
+  { prefix: '/api/users', namespaces: ['usuarios', 'roles', 'clientes', 'empleados', 'dashboard'] },
+  { prefix: '/api/autenticacion', namespaces: ['usuarios', 'roles', 'clientes', 'dashboard'] },
+  { prefix: '/api/auth', namespaces: ['usuarios', 'roles', 'clientes', 'dashboard'] },
   { prefix: '/api/adiciones', namespaces: ['adiciones', 'productos', 'insumos'] },
   { prefix: '/api/eventos', namespaces: ['eventos', 'productos', 'fichas', 'produccion'] },
   { prefix: '/api/fichas-tecnicas', namespaces: ['fichas', 'productos', 'produccion'] },
-  { prefix: '/api/insumos-preparados', namespaces: ['fichas', 'productos', 'insumos'] },
-  { prefix: '/api/insumos', namespaces: ['insumos', 'adiciones', 'productos', 'fichas', 'categorias-insumo', 'categories', 'dashboard'] },
-  { prefix: '/api/compras', namespaces: ['insumos', 'adiciones', 'productos', 'dashboard'] },
-  { prefix: '/api/ventas', namespaces: ['productos', 'adiciones', 'dashboard', 'produccion'] },
-  { prefix: '/api/pedidos', namespaces: ['productos', 'adiciones', 'dashboard', 'produccion'] },
-  { prefix: '/api/orders', namespaces: ['productos', 'adiciones', 'dashboard', 'produccion'] },
-  { prefix: '/api/produccion', namespaces: ['productos', 'insumos', 'dashboard', 'produccion'] },
-  { prefix: '/api/devoluciones', namespaces: ['productos', 'insumos', 'dashboard', 'produccion'] },
-  { prefix: '/api/clientes', namespaces: ['dashboard'] },
-  { prefix: '/api/empleados', namespaces: ['roles', 'dashboard'] },
-  { prefix: '/api/resenas', namespaces: ['productos', 'dashboard'] },
-  { prefix: '/api/wompi', namespaces: ['productos', 'adiciones', 'dashboard', 'produccion'] }
+  { prefix: '/api/insumos-preparados', namespaces: ['insumos-preparados', 'insumos', 'fichas', 'productos', 'trazabilidad'] },
+  { prefix: '/api/insumos', namespaces: ['insumos', 'insumos-preparados', 'adiciones', 'productos', 'fichas', 'categorias-insumo', 'categories', 'dashboard', 'trazabilidad'] },
+  { prefix: '/api/proveedores', namespaces: ['proveedores', 'compras', 'insumos', 'trazabilidad'] },
+  { prefix: '/api/compras', namespaces: ['compras', 'insumos', 'adiciones', 'productos', 'proveedores', 'dashboard', 'trazabilidad'] },
+  { prefix: '/api/ventas', namespaces: ['ventas', 'productos', 'adiciones', 'clientes', 'dashboard', 'produccion', 'devoluciones'] },
+  { prefix: '/api/pedidos', namespaces: ['ventas', 'productos', 'adiciones', 'clientes', 'dashboard', 'produccion', 'devoluciones'] },
+  { prefix: '/api/orders', namespaces: ['ventas', 'productos', 'adiciones', 'clientes', 'dashboard', 'produccion', 'devoluciones'] },
+  { prefix: '/api/produccion', namespaces: ['produccion', 'ventas', 'productos', 'insumos', 'dashboard'] },
+  { prefix: '/api/devoluciones', namespaces: ['devoluciones', 'ventas', 'productos', 'insumos', 'clientes', 'dashboard', 'produccion'] },
+  { prefix: '/api/clientes', namespaces: ['clientes', 'ventas', 'usuarios', 'dashboard'] },
+  { prefix: '/api/empleados', namespaces: ['empleados', 'roles', 'usuarios', 'dashboard'] },
+  { prefix: '/api/resenas', namespaces: ['resenas', 'productos', 'dashboard'] },
+  { prefix: '/api/trazabilidad', namespaces: ['trazabilidad', 'insumos', 'proveedores'] },
+  { prefix: '/api/wompi', namespaces: ['ventas', 'productos', 'adiciones', 'clientes', 'dashboard', 'produccion'] }
 ];
 
 function cacheInvalidationMiddleware(req, res, next) {

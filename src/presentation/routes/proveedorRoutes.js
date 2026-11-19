@@ -17,14 +17,17 @@ const {
   validateUpdateProveedor,
 } = require('../../infrastructure/middlewares/proveedorValidation');
 const { protect, requirePrivilege } = require('../../infrastructure/middlewares/authMiddleware');
+const { cacheResponse } = require('../../infrastructure/utils/apiCache');
+
+const cacheProveedores = cacheResponse('proveedores', { ttlMs: 20000, cacheControl: 'private, max-age=10' });
 
 router.use(protect);
 
-router.get('/tipos', getTiposProveedor);
-router.get('/papelera', requirePrivilege('Proveedores', 'Ver'), getPapeleraProveedores);
+router.get('/tipos', cacheProveedores, getTiposProveedor);
+router.get('/papelera', requirePrivilege('Proveedores', 'Ver'), cacheProveedores, getPapeleraProveedores);
 
 router.route('/')
-  .get(getProveedores)
+  .get(cacheProveedores, getProveedores)
   .post(requirePrivilege(['Proveedores', 'Gestión de Compras'], 'Crear'), validateCreateProveedor, createProveedor);
 
 router.route('/:id')

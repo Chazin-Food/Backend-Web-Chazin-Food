@@ -2,11 +2,14 @@ const express = require('express');
 const router = express.Router();
 const { getCompras, getCompraById, createCompra, updateCompra, cancelarCompra } = require('../controllers/compraController');
 const { protect, requirePrivilege } = require('../../infrastructure/middlewares/authMiddleware');
+const { cacheResponse } = require('../../infrastructure/utils/apiCache');
+
+const cacheCompras = cacheResponse('compras', { ttlMs: 15000, cacheControl: 'private, max-age=10' });
 
 router.use(protect);
 
 router.route('/')
-  .get(requirePrivilege(['Gestión de Compras', 'Insumos', 'Dashboard'], 'Ver'), getCompras)
+  .get(requirePrivilege(['Gestión de Compras', 'Insumos', 'Dashboard'], 'Ver'), cacheCompras, getCompras)
   .post(requirePrivilege('Gestión de Compras', 'Crear'), createCompra);
 
 router.route('/:id')

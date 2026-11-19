@@ -2,14 +2,18 @@ const express = require('express');
 const router = express.Router();
 const { getClientes, getClientesStats, getClienteById, createCliente, updateCliente, deleteCliente, getFidelidadCatalogo } = require('../controllers/clienteController');
 const { protect, requirePrivilege } = require('../../infrastructure/middlewares/authMiddleware');
+const { cacheResponse } = require('../../infrastructure/utils/apiCache');
 
-router.get('/fidelidad/catalogo', getFidelidadCatalogo);
+const cacheClientes = cacheResponse('clientes', { ttlMs: 15000, cacheControl: 'private, max-age=10' });
+const cacheFidelidad = cacheResponse('clientes', { ttlMs: 60000, cacheControl: 'public, max-age=30, stale-while-revalidate=60' });
+
+router.get('/fidelidad/catalogo', cacheFidelidad, getFidelidadCatalogo);
 
 router.route('/')
-  .get(protect, getClientes)
+  .get(protect, cacheClientes, getClientes)
   .post(protect, requirePrivilege(['Clientes', 'Gestión de Ventas'], 'Crear'), createCliente);
 
-router.get('/stats', protect, getClientesStats);
+router.get('/stats', protect, cacheClientes, getClientesStats);
 
 router.route('/:id')
   .get(protect, getClienteById)

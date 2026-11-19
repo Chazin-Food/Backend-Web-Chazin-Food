@@ -11,12 +11,15 @@ const {
   deleteResena
 } = require('../controllers/resenaController');
 const { protect } = require('../../infrastructure/middlewares/authMiddleware');
+const { cacheResponse } = require('../../infrastructure/utils/apiCache');
+
+const cacheResenas = cacheResponse('resenas', { ttlMs: 20000, cacheControl: 'public, max-age=15, stale-while-revalidate=30' });
 
 // Públicas
-router.get('/recientes', getRecentResenas);
-router.get('/producto/:idProducto', getProductResenas);
+router.get('/recientes', cacheResenas, getRecentResenas);
+router.get('/producto/:idProducto', cacheResenas, getProductResenas);
 router.get('/usuario/:idUsuario', getUserResenas);
-router.get('/ratings', getRatingsBulk); // ?ids=1,2,3
+router.get('/ratings', cacheResenas, getRatingsBulk); // ?ids=1,2,3
 
 // Protegidas (requieren sesión)
 router.get('/mia/:idProducto', protect, getMiResena);
