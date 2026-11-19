@@ -196,7 +196,7 @@ class ProduccionService {
               model: Evento,
               as: 'evento',
               required: false,
-              attributes: ['idEvento', 'nombreEvento', 'tipoEvento']
+              attributes: ['idEvento', 'nombreEvento', 'tipoEvento', 'descripcion', 'insumosAsociados']
             },
             {
               model: VarianteInsumo,
@@ -372,11 +372,16 @@ class ProduccionService {
             }
 
             // Match with obsObj.productos if available to retrieve full observations, exclusions, and variant metadata
+            const isEventCreatedVar = Boolean(d.variante?.creadaPorEvento || d.variante?.idEvento);
             const isBaseDummyVar = Boolean(
               !d.variante ||
-              !d.variante.nombre ||
-              String(d.variante.nombre).toLowerCase().includes('- base') ||
-              String(d.variante.nombre).toLowerCase() === String(prod?.nombre || '').toLowerCase()
+              (
+                !isEventCreatedVar && (
+                  !d.variante.nombre ||
+                  String(d.variante.nombre).toLowerCase().includes('- base') ||
+                  String(d.variante.nombre).toLowerCase() === String(prod?.nombre || '').toLowerCase()
+                )
+              )
             );
 
             const matchedObsProd = Array.isArray(obsObj.productos)
@@ -387,7 +392,7 @@ class ProduccionService {
                 ) || obsObj.productos[productosList.length]
               : null;
 
-            const esVarianteBaseFinal = Boolean(matchedObsProd?.esVarianteBase ?? isBaseDummyVar);
+            const esVarianteBaseFinal = isEventCreatedVar ? false : Boolean(matchedObsProd?.esVarianteBase ?? isBaseDummyVar);
             const rawVarNombreClean = (!esVarianteBaseFinal && d.variante?.nombre && !String(d.variante.nombre).toLowerCase().includes('- base'))
               ? d.variante.nombre
               : (!esVarianteBaseFinal ? (matchedObsProd?.varianteNombre || null) : null);
@@ -641,7 +646,13 @@ class ProduccionService {
 
               const combinedSpecsParts = [];
               if (!esVarianteBaseFinal) {
-                for (const sp of [matchedObsProd?.varianteEspecificaciones, variantFicha?.especificaciones, d.variante?.descripcion, matchedObsProd?.varianteDescripcion]) {
+                for (const sp of [
+                  matchedObsProd?.varianteEspecificaciones,
+                  variantFicha?.especificaciones,
+                  d.variante?.descripcion,
+                  matchedObsProd?.varianteDescripcion,
+                  d.variante?.evento?.descripcion
+                ]) {
                   if (sp && String(sp).trim() && !combinedSpecsParts.includes(String(sp).trim())) {
                     combinedSpecsParts.push(String(sp).trim());
                   }
@@ -735,7 +746,13 @@ class ProduccionService {
 
             const especProducto = [ft?.especificaciones, prod?.descripcion].find(s => s && String(s).trim()) || null;
             const especVariante = !esVarianteBaseFinal
-              ? ([matchedObsProd?.varianteEspecificaciones, variantFicha?.especificaciones, d.variante?.descripcion, matchedObsProd?.varianteDescripcion]
+              ? ([
+                  matchedObsProd?.varianteEspecificaciones,
+                  variantFicha?.especificaciones,
+                  d.variante?.descripcion,
+                  matchedObsProd?.varianteDescripcion,
+                  d.variante?.evento?.descripcion
+                ]
                   .filter(s => s && String(s).trim())
                   .filter((v, i, a) => a.indexOf(v) === i)
                   .join(' • ') || null)
