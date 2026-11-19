@@ -136,6 +136,8 @@ class ProduccionService {
   static async getAll() {
     try {
       await ensureVarianteEventoSchemaOnce();
+
+      // Paso 1: Consultar ventas y detalles/adiciones con separate: true (CERO producto cartesiano en SQL/RAM)
       const ventas = await Venta.findAll({
         where: {
           [Op.and]: [
@@ -163,67 +165,125 @@ class ProduccionService {
           {
             model: DetalleVentaProducto,
             as: 'detalles',
+            separate: true,
             include: [
-              {
-                model: Variante,
-                as: 'variante',
-                include: [
-                  {
-                    model: Evento,
-                    as: 'evento',
-                    required: false,
-                    attributes: ['idEvento', 'nombreEvento', 'tipoEvento']
-                  },
-                  {
-                    model: VarianteInsumo,
-                    as: 'insumosModificados',
-                    include: [
-                      { model: Insumo, as: 'insumo', attributes: ['idInsumo', 'nombre', 'unidadMedida'] },
-                      { model: Insumo, as: 'insumoReemplazado', attributes: ['idInsumo', 'nombre', 'unidadMedida'] }
-                    ]
-                  },
-                  {
-                    model: FichaTecnica,
-                    as: 'fichasTecnicas',
-                    required: false,
-                    where: { estado: 1, tipo: 'VARIANTE' },
-                    include: [
-                      {
-                        model: DetalleFichaInsumo,
-                        as: 'detalles',
-                        include: [{ model: Insumo, as: 'insumo', attributes: ['idInsumo', 'nombre', 'unidadMedida'] }]
-                      }
-                    ]
-                  },
-                  {
-                    model: Product,
-                    as: 'producto',
-                    include: [
-                      {
-                        model: FichaTecnica,
-                        as: 'fichaTecnica',
-                        include: [
-                          {
-                            model: DetalleFichaInsumo,
-                            as: 'detalles',
-                            include: [{ model: Insumo, as: 'insumo', attributes: ['idInsumo', 'nombre', 'unidadMedida'] }]
-                          }
-                        ]
-                      }
-                    ]
-                  }
-                ]
-              },
               {
                 model: DetalleVentaAdicion,
                 as: 'adiciones',
-                include: [{ model: Adicion, as: 'adicion' }]
+                separate: true,
+                include: [{ model: Adicion, as: 'adicion', attributes: ['idInsumo', 'nombre', 'precioAdicion'] }]
               }
             ]
           }
         ],
-        order: [['idVenta', 'DESC']]
+        order: [['idVenta', 'DESC']],
+        limit: 250
       });
+
+      // Paso 2: Hidratar variantes, productos, recetas y eventos UNA SOLA VEZ por ID único en paralelo
+      const uniqueVarianteIds = Array.from(
+        new Set(
+          ventas.flatMap((v) => (v.detalles || []).map((d) => Number(d.idVariante)).filter((id) => Number.isFinite(id) && id > 0))
+        )
+      );
+
+      const varianteById = new Map();
+      if (uniqueVarianteIds.length > 0) {
+        const variantesList = await Variante.findAll({
+          where: { idVariante: { [Op.in]: uniqueVarianteIds } },
+          include: [
+            {
+              model: Evento,
+              as: 'evento',
+              required: false,
+              attributes: ['idEvento', 'nombreEvento', 'tipoEvento']
+            },
+            {
+              model: VarianteInsumo,
+              as: 'insumosModificados',
+              separate: true,
+              include: [
+                { model: Insumo, as: 'insumo', attributes: ['idInsumo', 'nombre', 'unidadMedida'] },
+                { model: Insumo, as: 'insumoReemplazado', attributes: ['idInsumo', 'nombre', 'unidadMedida'] }
+              ]
+            },
+            {
+              model: FichaTecnica,
+              as: 'fichasTecnicas',
+              separate: true,
+              where: { estado: 1, tipo: 'VARIANTE' },
+              include: [
+                {
+                  model: DetalleFichaInsumo,
+                  as: 'detalles',
+                  separate: true,
+                  include: [{ model: Insumo, as: 'insumo', attributes: ['idInsumo', 'nombre', 'unidadMedida'] }]
+                }
+              ]
+            },
+            {
+              model: Product,
+              as: 'producto',
+              attributes: ['idProducto', 'nombre', 'descripcion', 'precio', 'categoria']
+            }
+          ]
+        });
+
+        const uniqueProductIds = Array.from(
+          new Set(variantesList.map((vr) => Number(vr.producto?.idProducto || vr.idProducto)).filter((id) => Number.isFinite(id) && id > 0))
+        );
+
+        const [baseFichas, activeEventos] = uniqueProductIds.length > 0
+          ? await Promise.all([
+              FichaTecnica.findAll({
+                where: { idProducto: { [Op.in]: uniqueProductIds }, estado: 1, tipo: 'PRODUCTO' },
+                include: [
+                  {
+                    model: DetalleFichaInsumo,
+                    as: 'detalles',
+                    separate: true,
+                    include: [{ model: Insumo, as: 'insumo', attributes: ['idInsumo', 'nombre', 'unidadMedida'] }]
+                  }
+                ]
+              }).catch(() => []),
+              Evento.findAll({
+                where: { idProducto: { [Op.in]: uniqueProductIds }, estado: 1 },
+                attributes: ['idEvento', 'idProducto', 'nombreEvento', 'tipoEvento', 'descripcion', 'estado']
+              }).catch(() => [])
+            ])
+          : [[], []];
+
+        const baseFichaByProd = new Map();
+        for (const f of baseFichas) {
+          if (f.idProducto && !baseFichaByProd.has(Number(f.idProducto))) {
+            baseFichaByProd.set(Number(f.idProducto), f);
+          }
+        }
+
+        const eventosByProd = new Map();
+        for (const ev of activeEventos) {
+          const pId = Number(ev.idProducto);
+          if (!eventosByProd.has(pId)) eventosByProd.set(pId, []);
+          eventosByProd.get(pId).push(ev);
+        }
+
+        for (const vr of variantesList) {
+          if (vr.producto) {
+            const pId = Number(vr.producto.idProducto);
+            vr.producto.fichaTecnica = baseFichaByProd.get(pId) || null;
+            vr.producto.eventos = eventosByProd.get(pId) || [];
+          }
+          varianteById.set(Number(vr.idVariante), vr);
+        }
+      }
+
+      for (const v of ventas) {
+        if (Array.isArray(v.detalles)) {
+          for (const d of v.detalles) {
+            d.variante = varianteById.get(Number(d.idVariante)) || null;
+          }
+        }
+      }
 
       const mappedOrders = ventas.map((v) => {
         let obsObj = {};

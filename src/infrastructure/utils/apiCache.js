@@ -2,19 +2,43 @@ const crypto = require('crypto');
 const zlib = require('zlib');
 
 const store = new Map();
-const MAX_CACHE_ENTRIES = 300;
+const MAX_CACHE_ENTRIES = 50;
+const MAX_CACHE_BYTES = 8 * 1024 * 1024; // 8 MB máximo total en RAM (seguro para contenedores 512 MB en Render)
+const MAX_ENTRY_BYTES = 1.5 * 1024 * 1024; // No cachear payloads individuales > 1.5 MB
+let currentCacheBytes = 0;
 
-function pruneStoreIfNeeded() {
-  if (store.size < MAX_CACHE_ENTRIES) return;
+function deleteCacheKey(key) {
+  const entry = store.get(key);
+  if (!entry) return;
+  currentCacheBytes = Math.max(0, currentCacheBytes - (entry.sizeBytes || 0));
+  store.delete(key);
+}
+
+function purgeExpiredEntries() {
   const now = Date.now();
   for (const [k, entry] of store.entries()) {
-    if (entry.expiresAt <= now) store.delete(k);
+    if (entry.expiresAt <= now) {
+      deleteCacheKey(k);
+    }
   }
-  while (store.size >= MAX_CACHE_ENTRIES) {
+}
+
+function pruneStoreIfNeeded(incomingBytes = 0) {
+  purgeExpiredEntries();
+  while (
+    (store.size >= MAX_CACHE_ENTRIES || currentCacheBytes + incomingBytes > MAX_CACHE_BYTES) &&
+    store.size > 0
+  ) {
     const oldestKey = store.keys().next().value;
     if (!oldestKey) break;
-    store.delete(oldestKey);
+    deleteCacheKey(oldestKey);
   }
+}
+
+// Limpieza periódica de entradas expiradas para mantener la RAM estable en Render
+const cacheSweepTimer = setInterval(purgeExpiredEntries, 60000);
+if (typeof cacheSweepTimer.unref === 'function') {
+  cacheSweepTimer.unref();
 }
 
 function buildEtag(rawBuffer) {
@@ -25,21 +49,33 @@ function buildEtag(rawBuffer) {
 function storeEntry(namespace, key, payload, ttlMs) {
   const jsonString = JSON.stringify(payload);
   const raw = Buffer.from(jsonString, 'utf-8');
+  if (raw.length > MAX_ENTRY_BYTES) {
+    return null;
+  }
+
+  deleteCacheKey(key);
+  pruneStoreIfNeeded(raw.length);
+
   const etag = buildEtag(raw);
   const entry = {
     namespace,
     raw,
     gzipped: null,
+    sizeBytes: raw.length,
     etag,
     expiresAt: Date.now() + ttlMs
   };
-  pruneStoreIfNeeded();
   store.set(key, entry);
+  currentCacheBytes += entry.sizeBytes;
 
-  if (raw.length > 1024) {
+  if (raw.length > 1024 && raw.length <= 512 * 1024) {
     zlib.gzip(raw, (err, compressed) => {
       if (!err && compressed && store.get(key) === entry) {
-        entry.gzipped = compressed;
+        if (currentCacheBytes + compressed.length <= MAX_CACHE_BYTES) {
+          entry.gzipped = compressed;
+          entry.sizeBytes += compressed.length;
+          currentCacheBytes += compressed.length;
+        }
       }
     });
   }
@@ -85,14 +121,14 @@ function cacheResponse(namespace, { ttlMs = 30000, cacheControl = 'public, max-a
     }
 
     if (existing) {
-      store.delete(key);
+      deleteCacheKey(key);
     }
 
     const originalJson = res.json.bind(res);
     res.json = function (obj) {
       if (res.statusCode >= 200 && res.statusCode < 300 && obj !== undefined) {
         const saved = storeEntry(namespace, key, obj, ttlMs);
-        if (!res.headersSent) {
+        if (saved && !res.headersSent) {
           if (cacheControl) {
             res.setHeader('Cache-Control', cacheControl);
           }
@@ -114,19 +150,20 @@ function invalidateNamespaces(namespaces = []) {
 
   if (targets.includes('*')) {
     store.clear();
+    currentCacheBytes = 0;
     return;
   }
 
   for (const [key, entry] of store.entries()) {
     if (targets.includes(entry.namespace)) {
-      store.delete(key);
+      deleteCacheKey(key);
     }
   }
 }
 
 const MUTATION_INVALIDATION_MAP = [
-  { prefix: '/api/productos', namespaces: ['productos', 'categorias', 'eventos', 'fichas', 'dashboard'] },
-  { prefix: '/api/products', namespaces: ['productos', 'categorias', 'eventos', 'fichas', 'dashboard'] },
+  { prefix: '/api/productos', namespaces: ['productos', 'categorias', 'eventos', 'fichas', 'dashboard', 'produccion'] },
+  { prefix: '/api/products', namespaces: ['productos', 'categorias', 'eventos', 'fichas', 'dashboard', 'produccion'] },
   { prefix: '/api/categorias-producto', namespaces: ['categorias', 'productos'] },
   { prefix: '/api/categorias-productos', namespaces: ['categorias', 'productos'] },
   { prefix: '/api/categorias-insumo', namespaces: ['categorias-insumo', 'categories', 'insumos'] },
@@ -139,20 +176,20 @@ const MUTATION_INVALIDATION_MAP = [
   { prefix: '/api/autenticacion', namespaces: ['roles', 'dashboard'] },
   { prefix: '/api/auth', namespaces: ['roles', 'dashboard'] },
   { prefix: '/api/adiciones', namespaces: ['adiciones', 'productos', 'insumos'] },
-  { prefix: '/api/eventos', namespaces: ['eventos', 'productos', 'fichas'] },
-  { prefix: '/api/fichas-tecnicas', namespaces: ['fichas', 'productos'] },
+  { prefix: '/api/eventos', namespaces: ['eventos', 'productos', 'fichas', 'produccion'] },
+  { prefix: '/api/fichas-tecnicas', namespaces: ['fichas', 'productos', 'produccion'] },
   { prefix: '/api/insumos-preparados', namespaces: ['fichas', 'productos', 'insumos'] },
   { prefix: '/api/insumos', namespaces: ['insumos', 'adiciones', 'productos', 'fichas', 'categorias-insumo', 'categories', 'dashboard'] },
   { prefix: '/api/compras', namespaces: ['insumos', 'adiciones', 'productos', 'dashboard'] },
-  { prefix: '/api/ventas', namespaces: ['productos', 'adiciones', 'dashboard'] },
-  { prefix: '/api/pedidos', namespaces: ['productos', 'adiciones', 'dashboard'] },
-  { prefix: '/api/orders', namespaces: ['productos', 'adiciones', 'dashboard'] },
-  { prefix: '/api/produccion', namespaces: ['productos', 'insumos', 'dashboard'] },
-  { prefix: '/api/devoluciones', namespaces: ['productos', 'insumos', 'dashboard'] },
+  { prefix: '/api/ventas', namespaces: ['productos', 'adiciones', 'dashboard', 'produccion'] },
+  { prefix: '/api/pedidos', namespaces: ['productos', 'adiciones', 'dashboard', 'produccion'] },
+  { prefix: '/api/orders', namespaces: ['productos', 'adiciones', 'dashboard', 'produccion'] },
+  { prefix: '/api/produccion', namespaces: ['productos', 'insumos', 'dashboard', 'produccion'] },
+  { prefix: '/api/devoluciones', namespaces: ['productos', 'insumos', 'dashboard', 'produccion'] },
   { prefix: '/api/clientes', namespaces: ['dashboard'] },
   { prefix: '/api/empleados', namespaces: ['roles', 'dashboard'] },
   { prefix: '/api/resenas', namespaces: ['productos', 'dashboard'] },
-  { prefix: '/api/wompi', namespaces: ['productos', 'adiciones', 'dashboard'] }
+  { prefix: '/api/wompi', namespaces: ['productos', 'adiciones', 'dashboard', 'produccion'] }
 ];
 
 function cacheInvalidationMiddleware(req, res, next) {

@@ -28,7 +28,7 @@ const allowedOrigins = [
   process.env.FRONTEND_URL
 ].filter(Boolean);
 
-app.use(cors({
+const corsOptions = {
   origin: function (origin, callback) {
     // Permitir peticiones sin origen (Postman, Swagger, health checks o servidor a servidor)
     if (!origin) return callback(null, true);
@@ -42,10 +42,13 @@ app.use(cors({
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
-}));
+};
+
+app.use(cors(corsOptions));
+app.options('*', cors(corsOptions));
 
 // Middlewares
-app.use(express.json());
+app.use(express.json({ limit: '5mb' }));
 
 // Compresión gzip asíncrona para no bloquear el Event Loop (optimización Lighthouse y latencia p95)
 const zlib = require('zlib');
@@ -55,11 +58,14 @@ app.use((req, res, next) => {
 
   const originalJson = res.json;
   res.json = function (obj) {
+    if (res.headersSent || res.getHeader('Content-Encoding')) {
+      return originalJson.call(this, obj);
+    }
     try {
       const jsonString = JSON.stringify(obj);
       if (jsonString.length > 1024) {
         return zlib.gzip(Buffer.from(jsonString, 'utf-8'), (err, compressed) => {
-          if (err || !compressed) {
+          if (err || !compressed || res.headersSent) {
             return originalJson.call(this, obj);
           }
           res.setHeader('Content-Encoding', 'gzip');
@@ -195,3 +201,9 @@ process.once('SIGUSR2', () => {
 });
 process.on('SIGINT', () => handleShutdown('SIGINT'));
 process.on('SIGTERM', () => handleShutdown('SIGTERM'));
+process.on('unhandledRejection', (reason) => {
+  console.error('❌ Unhandled Promise Rejection:', reason?.message || reason);
+});
+process.on('uncaughtException', (err) => {
+  console.error('❌ Uncaught Exception:', err?.stack || err?.message || err);
+});

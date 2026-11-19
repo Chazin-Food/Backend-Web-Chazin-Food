@@ -40,10 +40,10 @@ const sequelize = new Sequelize(
     },
     logging: process.env.NODE_ENV === 'development' ? console.log : false,
     pool: {
-      max: 10,
-      min: 2,
+      max: 6,
+      min: 1,
       acquire: 30000,
-      idle: 30000
+      idle: 15000
     },
     define: {
       timestamps: false,

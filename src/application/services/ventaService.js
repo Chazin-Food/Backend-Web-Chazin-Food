@@ -779,7 +779,7 @@ class VentaService {
       }
     }
 
-    const { Variante, Product, FichaTecnica, DetalleFichaInsumo, Insumo, DetalleVentaAdicion, Adicion } = require('../../persistence/models');
+    const { Variante, Product, DetalleVentaAdicion, Adicion } = require('../../persistence/models');
     const ventas = await Venta.findAll({
       where,
       include: [
@@ -797,34 +797,25 @@ class VentaService {
         { 
           model: DetalleVentaProducto, 
           as: 'detalles',
+          separate: true,
           include: [
             {
               model: Variante,
               as: 'variante',
+              attributes: ['idVariante', 'idProducto', 'nombre', 'descripcion', 'creadaPorEvento', 'idEvento'],
               include: [
                 {
                   model: Product,
                   as: 'producto',
-                  include: [
-                    {
-                      model: FichaTecnica,
-                      as: 'fichaTecnica',
-                      include: [
-                        {
-                          model: DetalleFichaInsumo,
-                          as: 'detalles',
-                          include: [{ model: Insumo, as: 'insumo', attributes: ['idInsumo', 'nombre', 'unidadMedida'] }]
-                        }
-                      ]
-                    }
-                  ]
+                  attributes: ['idProducto', 'nombre', 'precio', 'categoria']
                 }
               ]
             },
             {
               model: DetalleVentaAdicion,
               as: 'adiciones',
-              include: [{ model: Adicion, as: 'adicion' }]
+              separate: true,
+              include: [{ model: Adicion, as: 'adicion', attributes: ['idInsumo', 'nombre', 'precioAdicion'] }]
             }
           ]
         }
@@ -837,13 +828,88 @@ class VentaService {
 
   static async getStats(filter = {}) {
     const filterObj = typeof filter === 'string' ? { periodo: filter } : (filter || {});
-    const rawList = await this.getAll(filterObj);
-    const list = rawList.filter(v => !v.esDevolucion);
-    const totalVentasSum = list.reduce((acc, v) => acc + Number(v.total || 0), 0);
-    const pedidosCount = list.length;
+    const { periodo, estado } = filterObj;
+    const { Op } = require('sequelize');
+    const where = {};
+
+    const normalizedPeriod = String(periodo || '').toLowerCase().trim();
+    if (normalizedPeriod && !['todos', 'personalizado', 'all', ''].includes(normalizedPeriod)) {
+      const now = new Date();
+      if (normalizedPeriod === 'hoy') {
+        where.fechaVenta = { [Op.gte]: new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0) };
+      } else if (normalizedPeriod === '7dias' || normalizedPeriod === '7_dias' || normalizedPeriod === 'semana') {
+        where.fechaVenta = { [Op.gte]: new Date(now.getTime() - (7 * 24 * 60 * 60 * 1000)) };
+      } else if (normalizedPeriod === 'mes' || normalizedPeriod === 'este_mes' || normalizedPeriod === 'mes actual' || normalizedPeriod === 'mes_actual') {
+        where.fechaVenta = { [Op.gte]: new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0) };
+      } else if (normalizedPeriod === 'mes_anterior' || normalizedPeriod === 'mes anterior') {
+        where.fechaVenta = {
+          [Op.between]: [
+            new Date(now.getFullYear(), now.getMonth() - 1, 1, 0, 0, 0),
+            new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59)
+          ]
+        };
+      } else if (normalizedPeriod === '3_meses' || normalizedPeriod === 'ultimos_3_meses' || normalizedPeriod === 'últimos 3 meses' || normalizedPeriod === 'ultimos 3 meses') {
+        where.fechaVenta = { [Op.gte]: new Date(now.getFullYear(), now.getMonth() - 2, 1, 0, 0, 0) };
+      } else if (normalizedPeriod === '6_meses' || normalizedPeriod === 'ultimos_6_meses' || normalizedPeriod === 'últimos 6 meses' || normalizedPeriod === 'ultimos 6 meses') {
+        where.fechaVenta = { [Op.gte]: new Date(now.getFullYear(), now.getMonth() - 5, 1, 0, 0, 0) };
+      } else if (normalizedPeriod === 'ano' || normalizedPeriod === 'este_ano' || normalizedPeriod === 'año' || normalizedPeriod === 'año actual' || normalizedPeriod === 'ano actual') {
+        where.fechaVenta = { [Op.gte]: new Date(now.getFullYear(), 0, 1, 0, 0, 0) };
+      }
+    } else if (filterObj.fechaInicio || filterObj.fechaFin) {
+      const fechaFilter = {};
+      if (filterObj.fechaInicio) fechaFilter[Op.gte] = new Date(filterObj.fechaInicio);
+      if (filterObj.fechaFin) {
+        const endD = new Date(filterObj.fechaFin);
+        endD.setHours(23, 59, 59, 999);
+        fechaFilter[Op.lte] = endD;
+      }
+      where.fechaVenta = fechaFilter;
+    }
+
+    if (estado && estado !== 'Todos') {
+      if (estado === 'Pendiente') where.estadoEntrega = { [Op.in]: ['PENDIENTE', 'Pendiente'] };
+      else if (estado === 'En Preparación') where.estadoEntrega = { [Op.in]: ['PREPARANDO', 'En Preparación'] };
+      else if (estado === 'Completada') where.estadoEntrega = { [Op.in]: ['ENTREGADO', 'LISTO', 'Completada'] };
+      else if (estado === 'Anulada') where.estadoEntrega = { [Op.in]: ['CANCELADO', 'Anulada'] };
+    }
+
+    // Consulta ligera sin JOINs para estadísticas (evita consumo innecesario de RAM en Render)
+    const rows = await Venta.findAll({
+      where,
+      attributes: ['idVenta', 'idCliente', 'subtotal', 'total', 'descuentoAplicado', 'observaciones'],
+      raw: true
+    });
+
+    let totalVentasSum = 0;
+    let descOtorgadosSum = 0;
+    let pedidosCount = 0;
+    const uniqueClients = new Set();
+
+    for (const v of rows) {
+      let obsData = {};
+      if (v.observaciones && typeof v.observaciones === 'string' && v.observaciones.trim().startsWith('{')) {
+        try {
+          obsData = JSON.parse(v.observaciones);
+        } catch {
+          obsData = {};
+        }
+      }
+      if (obsData.esDevolucion) continue;
+
+      pedidosCount++;
+      const subtotal = parseFloat(v.subtotal || 0);
+      const total = parseFloat(v.total || 0);
+      let desc = parseFloat(v.descuentoAplicado || 0);
+      if (desc <= 0 && subtotal > total) desc = subtotal - total;
+
+      totalVentasSum += total;
+      descOtorgadosSum += Math.max(0, desc);
+      const clientKey = v.idCliente || obsData.clienteNombre;
+      if (clientKey) uniqueClients.add(String(clientKey));
+    }
+
     const ticketPromedioVal = pedidosCount > 0 ? Math.round(totalVentasSum / pedidosCount) : 0;
-    const descOtorgadosSum = list.reduce((acc, v) => acc + Number(v.montoDescuento || v.descuentoAplicado || 0), 0);
-    const uniqueClientsCount = new Set(list.map(v => v.idCliente || v.clienteNombre || v.cliente).filter(Boolean)).size || 1;
+    const uniqueClientsCount = uniqueClients.size || 1;
     const frecuenciaVal = pedidosCount > 0 ? parseFloat((pedidosCount / uniqueClientsCount).toFixed(1)) : 0.0;
     const tasaDescuentoVal = (totalVentasSum + descOtorgadosSum) > 0
       ? parseFloat(((descOtorgadosSum / (totalVentasSum + descOtorgadosSum)) * 100).toFixed(1))

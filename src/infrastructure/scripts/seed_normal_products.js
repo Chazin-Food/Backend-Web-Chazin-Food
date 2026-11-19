@@ -134,7 +134,7 @@ const normalProducts = [
     categoria: 'Perros Calientes',
     precio: 16500.00,
     descripcion: 'Pan suave americano con salchicha americana y salchicha suiza ahumada, lluvia de tocineta crocante, queso mozzarella gratinado al soplete y cremoso suero costeño artesanal.',
-    imagen: 'https://images.unsplash.com/photo-1619740455993-9e612b1af08a?w=600&auto=format&fit=crop&q=80',
+    imagen: 'https://res.cloudinary.com/dckwtknmq/image/upload/v1788993441/c9pne5jrmjv5po93xhhl.jpg',
     variantes: [
       { nombre: 'Perro Criollo Gourmet', precio: 16500.00 }
     ],

@@ -4,6 +4,18 @@ const FichaTecnicaService = require('./fichaTecnicaService');
 const EventoService = require('./eventoService');
 const { ensureVarianteEventoSchemaOnce } = require('../../infrastructure/utils/dbUtils');
 
+const BROKEN_IMAGE_REPLACEMENTS = {
+  'photo-1619740455993-9e612b1af08a': 'https://res.cloudinary.com/dckwtknmq/image/upload/v1788993441/c9pne5jrmjv5po93xhhl.jpg'
+};
+
+function sanitizeProductImageUrl(url) {
+  if (!url || typeof url !== 'string') return '';
+  for (const [brokenFragment, safeUrl] of Object.entries(BROKEN_IMAGE_REPLACEMENTS)) {
+    if (url.includes(brokenFragment)) return safeUrl;
+  }
+  return url;
+}
+
 function resolveVarianteEstadoValue(v, fallback = 1) {
   if (!v || (v.estado === undefined && v.activo === undefined)) return fallback;
   if (v.activo === false) return 0;
@@ -294,7 +306,8 @@ class ProductService {
         {
           model: Variante,
           as: 'variantes',
-          attributes: ['idVariante', 'nombre', 'descripcion', 'precio', 'imagen', 'estado', 'idEvento', 'creadaPorEvento'],
+          separate: true,
+          attributes: ['idVariante', 'idProducto', 'nombre', 'descripcion', 'precio', 'imagen', 'estado', 'idEvento', 'creadaPorEvento'],
           include: [
             {
               model: Evento,
@@ -305,6 +318,7 @@ class ProductService {
             {
               model: VarianteInsumo,
               as: 'insumosModificados',
+              separate: true,
               include: [
                 { model: Insumo, as: 'insumo', attributes: ['idInsumo', 'nombre', 'unidadMedida', 'stock'] },
                 { model: Insumo, as: 'insumoReemplazado', attributes: ['idInsumo', 'nombre', 'unidadMedida'] }
@@ -315,7 +329,7 @@ class ProductService {
         { 
           model: Evento, 
           as: 'eventos', 
-          required: false, 
+          separate: true,
           where: { 
             estado: 1,
             [Op.or]: [
@@ -327,7 +341,7 @@ class ProductService {
         {
           model: ComboProducto,
           as: 'itemsCombo',
-          required: false,
+          separate: true,
           include: [
             {
               model: Product,
@@ -666,7 +680,7 @@ class ProductService {
             idProducto: it.productoComponente.idProducto,
             nombre: it.productoComponente.nombre,
             precio: parseFloat(it.productoComponente.precio || 0),
-            imagen: it.productoComponente.imagen || '',
+            imagen: sanitizeProductImageUrl(it.productoComponente.imagen),
             estado: it.productoComponente.estado
           } : null
         }));
@@ -678,7 +692,7 @@ class ProductService {
           nombre: p.nombre,
           precio: realPrecio,
           descripcion: p.descripcion || '',
-          imagen: p.imagen || '',
+          imagen: sanitizeProductImageUrl(p.imagen),
           stock: stockDisponible,
           agotado: stockDisponible <= 0 || p.estado === 0,
           ventas: totalVentas,
