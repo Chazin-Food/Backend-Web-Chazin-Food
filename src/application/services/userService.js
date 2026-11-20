@@ -197,7 +197,8 @@ class UserService {
         email: user.email,
         nombre: user.nombre,
         apellidos: user.apellidos,
-        password: finalPassword
+        password: finalPassword,
+        usuario: user
       }).catch(err => console.error('Background welcome email error:', err.message));
     }
 
@@ -366,7 +367,8 @@ class UserService {
           email: user.email,
           nombre: user.nombre,
           apellidos: user.apellidos,
-          modifiedFields: modifiedList.join(', ')
+          modifiedFields: modifiedList.join(', '),
+          usuario: user
         }).catch(err => console.error('Background user update email error:', err.message));
       }
     }

@@ -303,30 +303,65 @@ class EmailService {
   }
 
   /**
+   * Determina los campos de perfil pendientes por registrar.
+   * Valida número de documento, teléfono, dirección y apellidos.
+   */
+  static getPendingProfileFields(userData = {}) {
+    const pending = [];
+    const doc = userData.numeroDocumento || userData.documento;
+    if (!doc || String(doc).trim() === '' || String(doc).trim().length < 5) {
+      pending.push('Número de Documento / Identificación');
+    }
+    const tel = userData.telefono;
+    if (!tel || String(tel).trim() === '' || String(tel).trim().length < 7) {
+      pending.push('Teléfono de Contacto');
+    }
+    const dir = userData.direccion;
+    if (!dir || String(dir).trim() === '') {
+      pending.push('Dirección de Residencia / Entrega');
+    }
+    const ape = userData.apellidos || userData.apellido;
+    if (!ape || String(ape).trim() === '') {
+      pending.push('Apellidos');
+    }
+    return pending;
+  }
+
+  /**
    * Envía correo de activación de cliente con diseño React Email.
    */
-  static async sendActivationEmail({ email, nombre, apellidos, password, activationLink }) {
+  static async sendActivationEmail({ email, nombre, apellidos, password, activationLink, usuario, camposPendientes }) {
     const userName = `${nombre} ${apellidos || ''}`.trim();
     const frontendUrl = this.resolveFrontendUrl();
     const targetLink = activationLink || `${frontendUrl}/login`;
+    const pending = Array.isArray(camposPendientes)
+      ? camposPendientes
+      : this.getPendingProfileFields(usuario || { nombre, apellidos });
+
+    const pendingText = pending.length > 0
+      ? `\n\n⚠️ Datos pendientes por registrar en tu perfil:\n- ${pending.join('\n- ')}\n\nTe invitamos a completar estos datos en tu cuenta para agilizar tus pedidos y entregas.`
+      : '';
 
     return this._deliverEmail({
       to: email,
       subject: '🍔 ¡Activa tu cuenta de cliente en Chazin Food! Credenciales de acceso',
-      text: `¡Bienvenido a Chazin Food, ${userName}!\n\nTu cuenta de cliente ha sido registrada. Para activarla ingresa con tus credenciales:\nUsuario: ${email}\nClave temporal: ${password}\nEnlace: ${targetLink}`,
+      text: `¡Bienvenido a Chazin Food, ${userName}!\n\nTu cuenta de cliente ha sido registrada. Para activarla ingresa con tus credenciales:\nUsuario: ${email}\nClave temporal: ${password}\nEnlace: ${targetLink}${pendingText}`,
       renderHtml: () =>
         renderActivationEmail({
           nombre,
           apellidos,
           email,
           password,
-          activationLink: targetLink
+          activationLink: targetLink,
+          camposPendientes: pending,
+          profileLink: `${frontendUrl}/perfil`
         }),
       label: 'activación de cliente',
       devLines: [
         `Para: ${userName} <${email}>`,
         `Enlace Activación: ${targetLink}`,
-        `Clave Temporal: ${password}`
+        `Clave Temporal: ${password}`,
+        ...(pending.length > 0 ? [`Campos Pendientes: ${pending.join(', ')}`] : [])
       ]
     });
   }
@@ -334,27 +369,37 @@ class EmailService {
   /**
    * Envía correo de bienvenida con diseño React Email.
    */
-  static async sendWelcomeEmail({ email, nombre, apellidos, password, loginLink }) {
+  static async sendWelcomeEmail({ email, nombre, apellidos, password, loginLink, usuario, camposPendientes }) {
     const userName = `${nombre} ${apellidos || ''}`.trim();
     const frontendUrl = this.resolveFrontendUrl();
     const targetLink = loginLink || `${frontendUrl}/login`;
+    const pending = Array.isArray(camposPendientes)
+      ? camposPendientes
+      : this.getPendingProfileFields(usuario || { nombre, apellidos });
+
+    const pendingText = pending.length > 0
+      ? `\n\n⚠️ Datos pendientes por registrar en tu perfil:\n- ${pending.join('\n- ')}\n\nTe sugerimos completar estos datos en tu perfil: ${frontendUrl}/perfil`
+      : '';
 
     return this._deliverEmail({
       to: email,
       subject: '🎉 ¡Bienvenido a Chazin Food! Credenciales de acceso',
-      text: `¡Bienvenido a Chazin Food, ${userName}!\n\nTu cuenta ha sido creada exitosamente:\nUsuario: ${email}${password ? `\nContraseña: ${password}` : ''}\nEnlace de acceso: ${targetLink}`,
+      text: `¡Bienvenido a Chazin Food, ${userName}!\n\nTu cuenta ha sido creada exitosamente:\nUsuario: ${email}${password ? `\nContraseña: ${password}` : ''}\nEnlace de acceso: ${targetLink}${pendingText}`,
       renderHtml: () =>
         renderWelcomeEmail({
           nombre,
           apellidos,
           email,
           password,
-          loginLink: targetLink
+          loginLink: targetLink,
+          camposPendientes: pending,
+          profileLink: `${frontendUrl}/perfil`
         }),
       label: 'bienvenida',
       devLines: [
         `Para: ${userName} <${email}>`,
-        `Clave: ${password || '(OAuth / sin clave temporal)'}`
+        `Clave: ${password || '(OAuth / sin clave temporal)'}`,
+        ...(pending.length > 0 ? [`Campos Pendientes: ${pending.join(', ')}`] : [])
       ]
     });
   }
@@ -414,25 +459,35 @@ class EmailService {
   /**
    * Envía notificación de datos de cuenta actualizados con diseño React Email.
    */
-  static async sendUserUpdatedEmail({ email, nombre, apellidos, modifiedFields, portalLink }) {
+  static async sendUserUpdatedEmail({ email, nombre, apellidos, modifiedFields, portalLink, usuario, camposPendientes }) {
     const userName = `${nombre} ${apellidos || ''}`.trim();
     const frontendUrl = this.resolveFrontendUrl();
+    const targetLink = portalLink || `${frontendUrl}/perfil`;
+    const pending = Array.isArray(camposPendientes)
+      ? camposPendientes
+      : this.getPendingProfileFields(usuario || { nombre, apellidos });
+
+    const pendingText = pending.length > 0
+      ? `\n\n⚠️ Recordatorio: Aún tienes campos pendientes por registrar en tu perfil:\n- ${pending.join('\n- ')}\n\nPuedes completarlos ingresando a: ${targetLink}`
+      : '';
 
     return this._deliverEmail({
       to: email,
       subject: '✏️ Tus datos de usuario han sido actualizados - Chazin Food',
-      text: `Hola ${userName},\n\nTe informamos que los datos de tu cuenta en Chazin Food han sido actualizados.\nModificaciones: ${modifiedFields || 'Perfil actualizado'}`,
+      text: `Hola ${userName},\n\nTe informamos que los datos de tu cuenta en Chazin Food han sido actualizados.\nModificaciones: ${modifiedFields || 'Perfil actualizado'}${pendingText}`,
       renderHtml: () =>
         renderUserUpdatedEmail({
           nombre,
           apellidos,
           modifiedFields,
-          portalLink: portalLink || `${frontendUrl}/perfil`
+          portalLink: targetLink,
+          camposPendientes: pending
         }),
       label: 'actualización de perfil',
       devLines: [
         `Para: ${userName} <${email}>`,
-        `Cambios: ${modifiedFields || 'Perfil actualizado'}`
+        `Cambios: ${modifiedFields || 'Perfil actualizado'}`,
+        ...(pending.length > 0 ? [`Campos Pendientes: ${pending.join(', ')}`] : [])
       ]
     });
   }

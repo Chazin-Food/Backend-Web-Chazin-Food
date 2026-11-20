@@ -140,7 +140,8 @@ class AuthService {
       email: user.email,
       nombre: user.nombre,
       apellidos: user.apellidos,
-      password: finalPassword
+      password: finalPassword,
+      usuario: user
     }).catch(err => console.error('Background welcome email error in register:', err.message));
 
     const role = await Role.findByPk(user.idRol);
@@ -876,7 +877,8 @@ class AuthService {
         email: user.email,
         nombre: user.nombre,
         apellidos: user.apellidos,
-        password: '(Autenticado con Google)'
+        password: '(Autenticado con Google)',
+        usuario: user
       }).catch(err => console.error('Background welcome email error in googleLogin:', err.message));
     }
 

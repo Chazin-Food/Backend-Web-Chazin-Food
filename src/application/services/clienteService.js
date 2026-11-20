@@ -359,7 +359,8 @@ class ClienteService {
             nombre: cleanNom,
             apellidos: cleanApe,
             password: '', // Sin contraseña en texto claro
-            activationLink
+            activationLink,
+            usuario: user
           });
         } catch (mailErr) {
           console.error('Error enviando correo de activación:', mailErr.message);
@@ -563,7 +564,8 @@ class ClienteService {
           email: c.usuario.email,
           nombre: c.usuario.nombre,
           apellidos: c.usuario.apellidos,
-          modifiedFields: nameChanged ? 'Nombre / Apellidos' : 'Información de cuenta'
+          modifiedFields: nameChanged ? 'Nombre / Apellidos' : 'Información de cuenta',
+          usuario: c.usuario
         }).catch(err => console.error('Background email notification error in cliente update:', err.message));
       }
     }

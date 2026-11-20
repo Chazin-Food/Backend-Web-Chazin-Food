@@ -20,7 +20,8 @@ function UserUpdatedEmail({
   nombre = 'Usuario',
   apellidos = '',
   modifiedFields = 'Perfil actualizado',
-  portalLink = 'http://localhost:5173/perfil'
+  portalLink = 'http://localhost:5173/perfil',
+  camposPendientes = []
 }) {
   const fullName = `${nombre} ${apellidos}`.trim() || 'Usuario';
   const updateDate = new Date().toLocaleString('es-CO', {
@@ -163,6 +164,75 @@ function UserUpdatedEmail({
               )
             )
           ),
+          // Alerta de campos pendientes por registrar (si aplica)
+          camposPendientes && camposPendientes.length > 0
+            ? e(
+                Section,
+                {
+                  style: {
+                    backgroundColor: '#FFFBEB',
+                    border: '1px solid #FDE68A',
+                    borderRadius: '12px',
+                    padding: '16px 20px',
+                    marginBottom: '22px'
+                  }
+                },
+                e(
+                  'div',
+                  {
+                    style: {
+                      color: '#B45309',
+                      fontSize: '12px',
+                      fontWeight: '700',
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.5px',
+                      marginBottom: '6px'
+                    }
+                  },
+                  '⚠️ Datos pendientes por registrar en tu perfil'
+                ),
+                e(
+                  Text,
+                  {
+                    style: {
+                      color: '#92400E',
+                      fontSize: '13px',
+                      lineHeight: '1.5',
+                      margin: '0 0 10px 0'
+                    }
+                  },
+                  'Tu perfil aún tiene información pendiente por registrar. Te sugerimos completarla para agilizar tus trámites y pedidos:'
+                ),
+                e(
+                  'ul',
+                  { style: { color: '#78350F', fontSize: '13px', margin: '0 0 12px 18px', padding: 0 } },
+                  camposPendientes.map((campo, idx) =>
+                    e('li', { key: idx, style: { marginBottom: '4px', fontWeight: '600' } }, campo)
+                  )
+                ),
+                e(
+                  'div',
+                  { style: { textAlign: 'center', marginTop: '10px' } },
+                  e(
+                    Button,
+                    {
+                      href: portalLink,
+                      style: {
+                        backgroundColor: '#F59E0B',
+                        color: '#FFFFFF',
+                        padding: '9px 20px',
+                        borderRadius: '8px',
+                        fontSize: '12.5px',
+                        fontWeight: '700',
+                        textDecoration: 'none',
+                        display: 'inline-block'
+                      }
+                    },
+                    'Completar datos pendientes'
+                  )
+                )
+              )
+            : null,
           // CTA
           e(
             Section,

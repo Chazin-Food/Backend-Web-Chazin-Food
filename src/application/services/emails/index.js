@@ -95,8 +95,22 @@ async function renderActivationEmail(props) {
     return await render(e(ActivationEmail, props));
   } catch (err) {
     console.warn('Fallback a plantilla estática para ActivationEmail:', err.message);
-    const { nombre = 'Cliente', apellidos = '', email = '', password = '', activationLink = 'http://localhost:5173/login' } = props;
+    const { nombre = 'Cliente', apellidos = '', email = '', password = '', activationLink = 'http://localhost:5173/login', camposPendientes = [], profileLink = 'http://localhost:5173/perfil' } = props;
     const fullName = `${nombre} ${apellidos}`.trim() || 'Estimado(a) Cliente';
+    const pendingHtml = Array.isArray(camposPendientes) && camposPendientes.length > 0
+      ? `
+        <div style="background-color:#FFFBEB;border:1px solid #FDE68A;border-radius:12px;padding:16px 20px;margin-bottom:24px;text-align:left;">
+          <div style="color:#B45309;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px;">⚠️ Datos pendientes por registrar en tu perfil</div>
+          <p style="color:#92400E;font-size:13px;line-height:1.5;margin:0 0 10px 0;">Para habilitar el envío a domicilio y la facturación de tus compras, completa los siguientes datos en tu cuenta:</p>
+          <ul style="color:#78350F;font-size:13px;margin:0 0 12px 18px;padding:0;">
+            ${camposPendientes.map(c => `<li style="margin-bottom:4px;font-weight:600;">${c}</li>`).join('')}
+          </ul>
+          <div style="text-align:center;">
+            <a href="${profileLink || activationLink}" style="display:inline-block;background-color:#F59E0B;color:#FFFFFF;padding:9px 20px;border-radius:8px;font-size:12.5px;font-weight:700;text-decoration:none;">Completar mi perfil</a>
+          </div>
+        </div>
+      `
+      : '';
     return wrapEmailContainer(`
       <div style="text-align:center;margin-bottom:20px;">
         <span style="display:inline-block;background-color:${colors.emeraldLight};border:1px solid ${colors.emeraldBorder};color:${colors.emeraldText};padding:5px 14px;border-radius:9999px;font-size:11px;font-weight:700;text-transform:uppercase;">Registro Exitoso</span>
@@ -108,6 +122,7 @@ async function renderActivationEmail(props) {
         <div style="margin-bottom:6px;"><span style="color:${colors.textMuted};font-size:13px;">Usuario / Correo:</span> <strong style="color:${colors.textTitle};font-size:13.5px;margin-left:4px;">${email}</strong></div>
         ${password ? `<div><span style="color:${colors.textMuted};font-size:13px;">Clave de acceso:</span> <code style="background:${colors.crimsonLight};color:${colors.crimson};border:1px solid ${colors.crimsonBorder};padding:4px 10px;border-radius:6px;font-size:13.5px;font-weight:700;margin-left:4px;">${password}</code></div>` : ''}
       </div>
+      ${pendingHtml}
       <div style="text-align:center;margin:24px 0 28px;">
         <a href="${activationLink}" style="background:${colors.flameGradient};color:#FFFFFF;padding:15px 36px;border-radius:12px;font-size:15px;font-weight:700;text-decoration:none;display:inline-block;box-shadow:0 6px 18px -2px rgba(220, 38, 38, 0.35);">Activar Cuenta e Iniciar Sesión</a>
       </div>
@@ -123,8 +138,22 @@ async function renderWelcomeEmail(props) {
     return await render(e(WelcomeEmail, props));
   } catch (err) {
     console.warn('Fallback a plantilla estática para WelcomeEmail:', err.message);
-    const { nombre = 'Usuario', apellidos = '', email = '', password = '', loginLink = 'http://localhost:5173/login' } = props;
+    const { nombre = 'Usuario', apellidos = '', email = '', password = '', loginLink = 'http://localhost:5173/login', camposPendientes = [], profileLink = 'http://localhost:5173/perfil' } = props;
     const fullName = `${nombre} ${apellidos}`.trim() || 'Estimado(a) Colaborador(a)';
+    const pendingHtml = Array.isArray(camposPendientes) && camposPendientes.length > 0
+      ? `
+        <div style="background-color:#FFFBEB;border:1px solid #FDE68A;border-radius:12px;padding:16px 20px;margin-bottom:24px;text-align:left;">
+          <div style="color:#B45309;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px;">⚠️ Datos pendientes por registrar en tu perfil</div>
+          <p style="color:#92400E;font-size:13px;line-height:1.5;margin:0 0 10px 0;">Para habilitar todas las funciones de tu cuenta (facturación electrónica, pedidos y entregas sin retrasos), te invitamos a registrar los siguientes datos:</p>
+          <ul style="color:#78350F;font-size:13px;margin:0 0 12px 18px;padding:0;">
+            ${camposPendientes.map(c => `<li style="margin-bottom:4px;font-weight:600;">${c}</li>`).join('')}
+          </ul>
+          <div style="text-align:center;">
+            <a href="${profileLink || loginLink}" style="display:inline-block;background-color:#F59E0B;color:#FFFFFF;padding:9px 20px;border-radius:8px;font-size:12.5px;font-weight:700;text-decoration:none;">Completar mi perfil</a>
+          </div>
+        </div>
+      `
+      : '';
     return wrapEmailContainer(`
       <div style="text-align:center;margin-bottom:20px;">
         <span style="display:inline-block;background-color:${colors.emeraldLight};border:1px solid ${colors.emeraldBorder};color:${colors.emeraldText};padding:5px 14px;border-radius:9999px;font-size:11px;font-weight:700;text-transform:uppercase;">Acceso Habilitado</span>
@@ -136,6 +165,7 @@ async function renderWelcomeEmail(props) {
         <div style="margin-bottom:6px;"><span style="color:${colors.textMuted};font-size:13px;">Correo Registrado:</span> <strong style="color:${colors.textTitle};font-size:13.5px;margin-left:4px;">${email}</strong></div>
         ${password ? `<div><span style="color:${colors.textMuted};font-size:13px;">Contraseña:</span> <code style="background:${colors.crimsonLight};color:${colors.crimson};border:1px solid ${colors.crimsonBorder};padding:4px 10px;border-radius:6px;font-size:13.5px;font-weight:700;margin-left:4px;">${password}</code></div>` : ''}
       </div>
+      ${pendingHtml}
       <div style="text-align:center;margin:24px 0 28px;">
         <a href="${loginLink}" style="background:${colors.flameGradient};color:#FFFFFF;padding:15px 36px;border-radius:12px;font-size:15px;font-weight:700;text-decoration:none;display:inline-block;box-shadow:0 6px 18px -2px rgba(220, 38, 38, 0.35);">Ingresar al Portal Chazin Food</a>
       </div>
@@ -200,14 +230,29 @@ async function renderUserUpdatedEmail(props) {
     return await render(e(UserUpdatedEmail, props));
   } catch (err) {
     console.warn('Fallback a plantilla estática para UserUpdatedEmail:', err.message);
-    const { nombre = 'Usuario', apellidos = '', modifiedFields = 'Perfil actualizado', portalLink = 'http://localhost:5173/perfil' } = props;
+    const { nombre = 'Usuario', apellidos = '', modifiedFields = 'Perfil actualizado', portalLink = 'http://localhost:5173/perfil', camposPendientes = [] } = props;
     const fullName = `${nombre} ${apellidos}`.trim() || 'Usuario';
+    const pendingHtml = Array.isArray(camposPendientes) && camposPendientes.length > 0
+      ? `
+        <div style="background-color:#FFFBEB;border:1px solid #FDE68A;border-radius:12px;padding:16px 20px;margin-bottom:22px;text-align:left;">
+          <div style="color:#B45309;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px;">⚠️ Datos pendientes por registrar en tu perfil</div>
+          <p style="color:#92400E;font-size:13px;line-height:1.5;margin:0 0 10px 0;">Tu perfil aún tiene información pendiente por registrar. Te sugerimos completarla para agilizar tus trámites y pedidos:</p>
+          <ul style="color:#78350F;font-size:13px;margin:0 0 12px 18px;padding:0;">
+            ${camposPendientes.map(c => `<li style="margin-bottom:4px;font-weight:600;">${c}</li>`).join('')}
+          </ul>
+          <div style="text-align:center;">
+            <a href="${portalLink}" style="display:inline-block;background-color:#F59E0B;color:#FFFFFF;padding:9px 20px;border-radius:8px;font-size:12.5px;font-weight:700;text-decoration:none;">Completar datos pendientes</a>
+          </div>
+        </div>
+      `
+      : '';
     return wrapEmailContainer(`
       <div style="text-align:center;margin-bottom:20px;">
         <span style="display:inline-block;background-color:${colors.emeraldLight};border:1px solid ${colors.emeraldBorder};color:${colors.emeraldText};padding:5px 14px;border-radius:9999px;font-size:11px;font-weight:700;text-transform:uppercase;">Perfil Actualizado</span>
         <h2 style="color:${colors.textTitle};font-size:22px;font-weight:800;margin:14px 0 8px;">Datos actualizados, ${fullName}</h2>
         <p style="color:${colors.textBody};font-size:14.5px;line-height:1.6;margin:0;">Se ha actualizado correctamente la información de tu perfil en Chazin Food: <strong>${modifiedFields}</strong>.</p>
       </div>
+      ${pendingHtml}
       <div style="text-align:center;margin:22px 0 26px;">
         <a href="${portalLink}" style="background:${colors.flameGradient};color:#FFFFFF;padding:15px 36px;border-radius:12px;font-size:15px;font-weight:700;text-decoration:none;display:inline-block;box-shadow:0 6px 18px -2px rgba(220, 38, 38, 0.35);">Ver Mi Perfil</a>
       </div>

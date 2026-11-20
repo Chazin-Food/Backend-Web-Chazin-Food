@@ -21,7 +21,9 @@ function WelcomeEmail({
   apellidos = '',
   email = '',
   password = '',
-  loginLink = 'http://localhost:5173/login'
+  loginLink = 'http://localhost:5173/login',
+  camposPendientes = [],
+  profileLink = 'http://localhost:5173/perfil'
 }) {
   const fullName = `${nombre} ${apellidos}`.trim() || 'Estimado(a) Colaborador(a)';
 
@@ -231,6 +233,75 @@ function WelcomeEmail({
               )
             )
           ),
+          // Alerta de campos pendientes por registrar (si aplica)
+          camposPendientes && camposPendientes.length > 0
+            ? e(
+                Section,
+                {
+                  style: {
+                    backgroundColor: '#FFFBEB',
+                    border: '1px solid #FDE68A',
+                    borderRadius: '12px',
+                    padding: '16px 20px',
+                    marginBottom: '24px'
+                  }
+                },
+                e(
+                  'div',
+                  {
+                    style: {
+                      color: '#B45309',
+                      fontSize: '12px',
+                      fontWeight: '700',
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.5px',
+                      marginBottom: '6px'
+                    }
+                  },
+                  '⚠️ Datos pendientes por registrar en tu perfil'
+                ),
+                e(
+                  Text,
+                  {
+                    style: {
+                      color: '#92400E',
+                      fontSize: '13px',
+                      lineHeight: '1.5',
+                      margin: '0 0 10px 0'
+                    }
+                  },
+                  'Para habilitar todas las funciones de tu cuenta (facturación electrónica, pedidos y entregas sin retrasos), te invitamos a registrar los siguientes datos:'
+                ),
+                e(
+                  'ul',
+                  { style: { color: '#78350F', fontSize: '13px', margin: '0 0 12px 18px', padding: 0 } },
+                  camposPendientes.map((campo, idx) =>
+                    e('li', { key: idx, style: { marginBottom: '4px', fontWeight: '600' } }, campo)
+                  )
+                ),
+                e(
+                  'div',
+                  { style: { textAlign: 'center', marginTop: '10px' } },
+                  e(
+                    Button,
+                    {
+                      href: profileLink || loginLink,
+                      style: {
+                        backgroundColor: '#F59E0B',
+                        color: '#FFFFFF',
+                        padding: '9px 20px',
+                        borderRadius: '8px',
+                        fontSize: '12.5px',
+                        fontWeight: '700',
+                        textDecoration: 'none',
+                        display: 'inline-block'
+                      }
+                    },
+                    'Completar mi perfil'
+                  )
+                )
+              )
+            : null,
           // Botón Principal CTA
           e(
             Section,
