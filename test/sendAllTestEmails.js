@@ -26,7 +26,7 @@ async function runAllEmailTests() {
   console.log(`🌐 URL Base en enlaces: ${BASE_URL}`);
   console.log('====================================================\n');
 
-  // 1. Correo de Bienvenida (con 1 dato pendiente para verificar el botón "Completar mi perfil" -> /perfil?tab=editar)
+  // 1. Correo de Bienvenida (con 1 dato pendiente para verificar el botón "Completar mi perfil" -> /perfil?tab=editar&cuenta=...)
   console.log('1️⃣ Enviando Correo de Bienvenida...');
   const res1 = await EmailService.sendWelcomeEmail({
     email: TARGET_EMAIL,
@@ -34,7 +34,6 @@ async function runAllEmailTests() {
     apellidos: USER_LASTNAME,
     password: '',
     esGoogle: true,
-    loginLink: `${BASE_URL}/login`,
     usuario: {
       idRol: 4,
       nombre: USER_NAME,
@@ -83,8 +82,7 @@ async function runAllEmailTests() {
   const res4 = await EmailService.sendPasswordChangedEmail({
     email: TARGET_EMAIL,
     nombre: USER_NAME,
-    apellidos: USER_LASTNAME,
-    supportLink: `${BASE_URL}/login`
+    apellidos: USER_LASTNAME
   });
   console.log(res4 ? '   ✅ Correo 4 (Contraseña Modificada) enviado con éxito.' : '   ❌ Error al enviar Correo 4.');
   await sleep(1500);
@@ -96,7 +94,6 @@ async function runAllEmailTests() {
     nombre: USER_NAME,
     apellidos: USER_LASTNAME,
     modifiedFields: 'Teléfono',
-    portalLink: `${BASE_URL}/perfil`,
     usuario: {
       idRol: 4,
       nombre: USER_NAME,

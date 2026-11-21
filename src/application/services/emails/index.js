@@ -50,15 +50,18 @@ function getEmailHeader(subtitle = 'Comidas Rápidas Artesanales') {
 }
 
 // Generador de pie de página HTML estático
-function getEmailFooter(frontendUrl = '') {
+function getEmailFooter(frontendUrl = '', recipientEmail = '') {
   const currentYear = getColombiaYear();
   const baseUrl = normalizeEmailBaseUrl(frontendUrl);
+  const accountUrl = recipientEmail
+    ? `${baseUrl}/perfil?cuenta=${encodeURIComponent(String(recipientEmail).trim().toLowerCase())}`
+    : `${baseUrl}/perfil`;
 
   return `
     <div style="background-color:#FAFAF9;padding:28px 24px 30px;text-align:center;border-bottom-left-radius:16px;border-bottom-right-radius:16px;border-top:1px solid ${colors.borderLight};">
       <div style="margin-bottom:18px;">
         <a href="${baseUrl}/menu" style="background-color:#FFFFFF;border:1px solid ${colors.borderLight};border-radius:8px;color:${colors.textTitle};font-size:12px;font-weight:600;text-decoration:none;padding:7px 14px;margin:0 4px;display:inline-block;">Explorar Menú</a>
-        <a href="${baseUrl}/perfil" style="background-color:#FFFFFF;border:1px solid ${colors.borderLight};border-radius:8px;color:${colors.textTitle};font-size:12px;font-weight:600;text-decoration:none;padding:7px 14px;margin:0 4px;display:inline-block;">Mi Cuenta</a>
+        <a href="${accountUrl}" style="background-color:#FFFFFF;border:1px solid ${colors.borderLight};border-radius:8px;color:${colors.textTitle};font-size:12px;font-weight:600;text-decoration:none;padding:7px 14px;margin:0 4px;display:inline-block;">Mi Cuenta</a>
         <a href="${WHATSAPP_SUPPORT_URL}" style="background-color:#FFFFFF;border:1px solid ${colors.borderLight};border-radius:8px;color:${colors.emeraldText};font-size:12px;font-weight:600;text-decoration:none;padding:7px 14px;margin:0 4px;display:inline-block;">WhatsApp Soporte</a>
       </div>
       <p style="color:${colors.textBody};font-size:12px;font-weight:700;margin:0 0 4px 0;">Chazin Food · Hamburguesería & Sabor Artesanal</p>
@@ -74,7 +77,7 @@ function getEmailFooter(frontendUrl = '') {
   `;
 }
 
-function wrapEmailContainer(content, subtitle = '', frontendUrl = '') {
+function wrapEmailContainer(content, subtitle = '', frontendUrl = '', recipientEmail = '') {
   return `<!DOCTYPE html>
 <html lang="es">
 <head>
@@ -88,7 +91,7 @@ function wrapEmailContainer(content, subtitle = '', frontendUrl = '') {
     <div style="padding:36px 32px 28px;">
       ${content}
     </div>
-    ${getEmailFooter(frontendUrl)}
+    ${getEmailFooter(frontendUrl, recipientEmail)}
   </div>
 </body>
 </html>`;
@@ -135,7 +138,7 @@ async function renderActivationEmail(props) {
       <div style="text-align:center;margin:24px 0 28px;">
         <a href="${activationLink}" style="background:${colors.flameGradient};color:#FFFFFF;padding:15px 36px;border-radius:12px;font-size:15px;font-weight:700;text-decoration:none;display:inline-block;box-shadow:0 6px 18px -2px rgba(220, 38, 38, 0.35);">Activar Cuenta e Iniciar Sesión</a>
       </div>
-    `, 'Activación de Cuenta de Cliente', baseUrl);
+    `, 'Activación de Cuenta de Cliente', baseUrl, email);
   }
 }
 
@@ -182,7 +185,7 @@ async function renderWelcomeEmail(props) {
       <div style="text-align:center;margin:24px 0 28px;">
         <a href="${loginLink}" style="background:${colors.flameGradient};color:#FFFFFF;padding:15px 36px;border-radius:12px;font-size:15px;font-weight:700;text-decoration:none;display:inline-block;box-shadow:0 6px 18px -2px rgba(220, 38, 38, 0.35);">Ingresar al Portal Chazin Food</a>
       </div>
-    `, 'Bienvenida y Acceso al Sistema', baseUrl);
+    `, 'Bienvenida y Acceso al Sistema', baseUrl, email);
   }
 }
 
@@ -209,7 +212,7 @@ async function renderPasswordResetEmail(props) {
       <div style="background-color:${colors.briocheAmberLight};border:1px solid ${colors.briocheAmberBorder};border-radius:10px;padding:12px 14px;text-align:center;">
         <p style="color:${colors.amberText};font-size:12px;line-height:1.5;margin:0;">Este enlace es válido durante 60 minutos por motivos de seguridad. Si necesitas ayuda, escríbenos por <a href="${WHATSAPP_SECURITY_URL}" style="color:${colors.amberText};font-weight:700;">WhatsApp</a>.</p>
       </div>
-    `, 'Seguridad y Protección de Cuenta', baseUrl);
+    `, 'Seguridad y Protección de Cuenta', baseUrl, props?.email || '');
   }
 }
 
@@ -236,7 +239,7 @@ async function renderPasswordChangedEmail(props) {
       <div style="background-color:${colors.crimsonLight};border:1px solid ${colors.crimsonBorder};border-radius:10px;padding:12px 14px;">
         <p style="color:${colors.crimson};font-size:12px;line-height:1.5;margin:0;"><strong>¿No reconoces esta actividad?</strong> Si no realizaste este cambio, comunícate de inmediato con nosotros por <a href="${WHATSAPP_SECURITY_URL}" style="color:${colors.crimson};font-weight:700;">WhatsApp</a> para proteger tu cuenta.</p>
       </div>
-    `, 'Seguridad y Notificaciones', baseUrl);
+    `, 'Seguridad y Notificaciones', baseUrl, props?.email || '');
   }
 }
 
@@ -278,7 +281,7 @@ async function renderUserUpdatedEmail(props) {
       <div style="background-color:${colors.cardSubtle};border:1px solid ${colors.borderLight};border-radius:10px;padding:12px 14px;">
         <p style="color:${colors.textMuted};font-size:12px;line-height:1.5;margin:0;"><strong>Protección de datos:</strong> Si no autorizaste esta modificación, ingresa inmediatamente a <a href="${portalLink}" style="color:${colors.crimson};font-weight:600;">tu perfil</a> o comunícate con nosotros por <a href="${WHATSAPP_SECURITY_URL}" style="color:${colors.emeraldText};font-weight:700;">WhatsApp</a> para verificar la seguridad de tu cuenta.</p>
       </div>
-    `, 'Actualización de Perfil', baseUrl);
+    `, 'Actualización de Perfil', baseUrl, props?.email || '');
   }
 }
 

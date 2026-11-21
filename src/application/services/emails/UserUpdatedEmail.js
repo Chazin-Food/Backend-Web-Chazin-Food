@@ -25,6 +25,7 @@ const e = React.createElement;
 function UserUpdatedEmail({
   nombre = 'Usuario',
   apellidos = '',
+  email = '',
   modifiedFields = 'Perfil actualizado',
   portalLink = '',
   editProfileLink = '',
@@ -301,7 +302,7 @@ function UserUpdatedEmail({
             )
           )
         ),
-        e(EmailFooter, { frontendUrl: baseUrl })
+        e(EmailFooter, { frontendUrl: baseUrl, recipientEmail: email })
       )
     )
   );

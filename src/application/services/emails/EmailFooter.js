@@ -5,9 +5,12 @@ const { getColombiaYear } = require('../../../infrastructure/utils/colombiaDateU
 
 const e = React.createElement;
 
-function EmailFooter({ frontendUrl = '' } = {}) {
+function EmailFooter({ frontendUrl = '', recipientEmail = '' } = {}) {
   const currentYear = getColombiaYear();
   const baseUrl = normalizeEmailBaseUrl(frontendUrl);
+  const accountUrl = recipientEmail
+    ? `${baseUrl}/perfil?cuenta=${encodeURIComponent(String(recipientEmail).trim().toLowerCase())}`
+    : `${baseUrl}/perfil`;
 
   return e(
     Section,
@@ -47,7 +50,7 @@ function EmailFooter({ frontendUrl = '' } = {}) {
       e(
         Link,
         {
-          href: `${baseUrl}/perfil`,
+          href: accountUrl,
           style: {
             backgroundColor: '#FFFFFF',
             border: `1px solid ${colors.borderLight}`,

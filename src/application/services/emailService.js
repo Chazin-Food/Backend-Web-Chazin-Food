@@ -403,14 +403,17 @@ class EmailService {
    */
   static async sendActivationEmail({ email, nombre, apellidos, password, activationLink, usuario, camposPendientes, requestOrigin }) {
     const userName = `${nombre} ${apellidos || ''}`.trim();
+    const cleanEmail = String(email || '').trim().toLowerCase();
     const frontendUrl = this.resolveFrontendUrl(requestOrigin);
-    const targetLink = activationLink || `${frontendUrl}/login`;
+    const emailQuery = cleanEmail ? `?email=${encodeURIComponent(cleanEmail)}` : '';
+    const cuentaQuery = cleanEmail ? `&cuenta=${encodeURIComponent(cleanEmail)}` : '';
+    const targetLink = activationLink || `${frontendUrl}/login${emailQuery}`;
     const pending = Array.isArray(camposPendientes)
       ? camposPendientes
       : this.getPendingProfileFields(usuario || { nombre, apellidos });
 
     const pendingText = pending.length > 0
-      ? `\n\n⚠️ Datos pendientes por registrar en tu perfil:\n- ${pending.join('\n- ')}\n\nUna vez actives tu cuenta podrás completar estos datos en: ${frontendUrl}/perfil?tab=editar`
+      ? `\n\n⚠️ Datos pendientes por registrar en tu perfil:\n- ${pending.join('\n- ')}\n\nUna vez actives tu cuenta podrás completar estos datos en: ${frontendUrl}/perfil?tab=editar${cuentaQuery}`
       : '';
 
     return this._deliverEmail({
@@ -421,7 +424,7 @@ class EmailService {
         renderActivationEmail({
           nombre,
           apellidos,
-          email,
+          email: cleanEmail || email,
           password,
           activationLink: targetLink,
           camposPendientes: pending,
@@ -442,9 +445,12 @@ class EmailService {
    */
   static async sendWelcomeEmail({ email, nombre, apellidos, password, loginLink, usuario, camposPendientes, esGoogle = false, requestOrigin }) {
     const userName = `${nombre} ${apellidos || ''}`.trim();
+    const cleanEmail = String(email || '').trim().toLowerCase();
     const frontendUrl = this.resolveFrontendUrl(requestOrigin);
-    const targetLink = loginLink || `${frontendUrl}/login`;
-    const editProfileLink = `${frontendUrl}/perfil?tab=editar`;
+    const emailQuery = cleanEmail ? `?email=${encodeURIComponent(cleanEmail)}` : '';
+    const cuentaQuery = cleanEmail ? `&cuenta=${encodeURIComponent(cleanEmail)}` : '';
+    const targetLink = loginLink || `${frontendUrl}/login${emailQuery}`;
+    const editProfileLink = `${frontendUrl}/perfil?tab=editar${cuentaQuery}`;
     const pending = Array.isArray(camposPendientes)
       ? camposPendientes
       : this.getPendingProfileFields(usuario || { nombre, apellidos });
@@ -461,7 +467,7 @@ class EmailService {
         renderWelcomeEmail({
           nombre,
           apellidos,
-          email,
+          email: cleanEmail || email,
           password,
           esGoogle: Boolean(esGoogle),
           loginLink: targetLink,
@@ -482,6 +488,7 @@ class EmailService {
    */
   static async sendPasswordResetEmail({ email, nombre, apellidos, resetLink, requestOrigin }) {
     const userName = `${nombre} ${apellidos || ''}`.trim();
+    const cleanEmail = String(email || '').trim().toLowerCase();
     const frontendUrl = this.resolveFrontendUrl(requestOrigin);
 
     return this._deliverEmail({
@@ -492,6 +499,7 @@ class EmailService {
         renderPasswordResetEmail({
           nombre,
           apellidos,
+          email: cleanEmail || email,
           resetLink,
           frontendUrl
         }),
@@ -508,8 +516,10 @@ class EmailService {
    */
   static async sendPasswordChangedEmail({ email, nombre, apellidos, supportLink, requestOrigin }) {
     const userName = `${nombre} ${apellidos || ''}`.trim();
+    const cleanEmail = String(email || '').trim().toLowerCase();
     const frontendUrl = this.resolveFrontendUrl(requestOrigin);
-    const portalLink = supportLink || `${frontendUrl}/login`;
+    const emailQuery = cleanEmail ? `?email=${encodeURIComponent(cleanEmail)}` : '';
+    const portalLink = supportLink || `${frontendUrl}/login${emailQuery}`;
 
     return this._deliverEmail({
       to: email,
@@ -519,6 +529,7 @@ class EmailService {
         renderPasswordChangedEmail({
           nombre,
           apellidos,
+          email: cleanEmail || email,
           nuevaContrasena: '',
           password: '',
           supportLink: portalLink,
@@ -536,9 +547,12 @@ class EmailService {
    */
   static async sendUserUpdatedEmail({ email, nombre, apellidos, modifiedFields, portalLink, usuario, camposPendientes, requestOrigin }) {
     const userName = `${nombre} ${apellidos || ''}`.trim();
+    const cleanEmail = String(email || '').trim().toLowerCase();
     const frontendUrl = this.resolveFrontendUrl(requestOrigin);
-    const targetLink = portalLink || `${frontendUrl}/perfil`;
-    const editProfileLink = `${frontendUrl}/perfil?tab=editar`;
+    const cuentaOnlyQuery = cleanEmail ? `?cuenta=${encodeURIComponent(cleanEmail)}` : '';
+    const cuentaAmpQuery = cleanEmail ? `&cuenta=${encodeURIComponent(cleanEmail)}` : '';
+    const targetLink = portalLink || `${frontendUrl}/perfil${cuentaOnlyQuery}`;
+    const editProfileLink = `${frontendUrl}/perfil?tab=editar${cuentaAmpQuery}`;
     const pending = Array.isArray(camposPendientes)
       ? camposPendientes
       : this.getPendingProfileFields(usuario || { nombre, apellidos });
@@ -555,6 +569,7 @@ class EmailService {
         renderUserUpdatedEmail({
           nombre,
           apellidos,
+          email: cleanEmail || email,
           modifiedFields,
           portalLink: targetLink,
           editProfileLink,

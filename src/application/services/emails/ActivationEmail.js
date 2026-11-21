@@ -398,7 +398,7 @@ function ActivationEmail({
             )
           )
         ),
-        e(EmailFooter, { frontendUrl: baseUrl })
+        e(EmailFooter, { frontendUrl: baseUrl, recipientEmail: email })
       )
     )
   );

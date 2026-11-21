@@ -117,6 +117,7 @@ test('Los 5 tipos de correo renderizan links funcionales al dominio oficial, foo
     const resetHtml = await renderPasswordResetEmail({
       nombre: 'Laura',
       apellidos: 'Gómez',
+      email: 'laura@test.com',
       resetLink: `${base}/reset-password?token=xyz&email=laura%40test.com`,
       frontendUrl: base
     });
@@ -124,16 +125,18 @@ test('Los 5 tipos de correo renderizan links funcionales al dominio oficial, foo
     const changedHtml = await renderPasswordChangedEmail({
       nombre: 'Laura',
       apellidos: 'Gómez',
-      supportLink: `${base}/login`,
+      email: 'laura@test.com',
+      supportLink: `${base}/login?email=laura%40test.com`,
       frontendUrl: base
     });
 
     const updatedNoPendingHtml = await renderUserUpdatedEmail({
       nombre: 'Samuel',
       apellidos: 'Gutiérrez Franco',
+      email: 'samuel@test.com',
       modifiedFields: 'Teléfono',
-      portalLink: `${base}/perfil`,
-      editProfileLink: `${base}/perfil?tab=editar`,
+      portalLink: `${base}/perfil?cuenta=samuel%40test.com`,
+      editProfileLink: `${base}/perfil?tab=editar&cuenta=samuel%40test.com`,
       camposPendientes: [],
       frontendUrl: base
     });
@@ -141,9 +144,10 @@ test('Los 5 tipos de correo renderizan links funcionales al dominio oficial, foo
     const updatedWithPendingHtml = await renderUserUpdatedEmail({
       nombre: 'Samuel',
       apellidos: 'Gutiérrez Franco',
+      email: 'samuel@test.com',
       modifiedFields: 'Teléfono',
-      portalLink: `${base}/perfil`,
-      editProfileLink: `${base}/perfil?tab=editar`,
+      portalLink: `${base}/perfil?cuenta=samuel%40test.com`,
+      editProfileLink: `${base}/perfil?tab=editar&cuenta=samuel%40test.com`,
       camposPendientes: ['Dirección de Residencia / Entrega'],
       frontendUrl: base
     });
@@ -163,7 +167,7 @@ test('Los 5 tipos de correo renderizan links funcionales al dominio oficial, foo
       assert.equal(html.includes('573000000000'), false, 'No debe contener el número WhatsApp falso');
       assert.equal(html.includes('localhost:5173'), false, 'No debe contener localhost en producción');
       assert.ok(html.includes(`${base}/menu`), 'Footer debe enlazar Explorar Menú a /menu');
-      assert.ok(html.includes(`${base}/perfil`), 'Footer debe enlazar Mi Cuenta a /perfil');
+      assert.ok(html.includes(`${base}/perfil?cuenta=`), 'Footer debe enlazar Mi Cuenta a /perfil?cuenta=<destinatario>');
       assert.ok(html.includes(WHATSAPP_SUPPORT_URL), 'Footer debe enlazar WhatsApp Soporte real');
     }
 
@@ -175,7 +179,7 @@ test('Los 5 tipos de correo renderizan links funcionales al dominio oficial, foo
 
     // Validaciones específicas de UserUpdatedEmail CON datos pendientes
     assert.ok(updatedWithPendingHtml.includes('Datos pendientes por registrar'));
-    assert.ok(updatedWithPendingHtml.includes(`${base}/perfil?tab=editar`));
+    assert.ok(updatedWithPendingHtml.includes(`${base}/perfil?tab=editar&amp;cuenta=samuel%40test.com`) || updatedWithPendingHtml.includes(`${base}/perfil?tab=editar&cuenta=samuel%40test.com`));
 
     // Validaciones de WelcomeEmail Google vs Registro normal
     assert.ok(welcomeHtml.includes('Configurada en tu registro'));
@@ -183,7 +187,7 @@ test('Los 5 tipos de correo renderizan links funcionales al dominio oficial, foo
     assert.ok(welcomeGoogleHtml.includes(`${base}/perfil?tab=editar`));
 
     // Validaciones de PasswordChangedEmail
-    assert.ok(changedHtml.includes(`${base}/login`));
+    assert.ok(changedHtml.includes(`${base}/login?email=laura%40test.com`));
     assert.ok(changedHtml.includes('WhatsApp'));
 
     // Verificar también el árbol React de los 5 componentes + EmailFooter directamente (render en producción)
@@ -214,43 +218,45 @@ test('Los 5 tipos de correo renderizan links funcionales al dominio oficial, foo
       return acc;
     };
 
-    const footerScan = collectHrefsAndText(EmailFooter({ frontendUrl: base }));
-    assert.deepEqual(footerScan.hrefs, [`${base}/menu`, `${base}/perfil`, WHATSAPP_SUPPORT_URL]);
+    const footerScan = collectHrefsAndText(EmailFooter({ frontendUrl: base, recipientEmail: 'samu36669@gmail.com' }));
+    assert.deepEqual(footerScan.hrefs, [`${base}/menu`, `${base}/perfil?cuenta=samu36669%40gmail.com`, WHATSAPP_SUPPORT_URL]);
 
     const updatedReactNoPending = collectHrefsAndText(UserUpdatedEmail({
       nombre: 'Samuel',
       apellidos: 'Gutiérrez',
+      email: 'samuel@test.com',
       modifiedFields: 'Teléfono',
-      portalLink: `${base}/perfil`,
-      editProfileLink: `${base}/perfil?tab=editar`,
+      portalLink: `${base}/perfil?cuenta=samuel%40test.com`,
+      editProfileLink: `${base}/perfil?tab=editar&cuenta=samuel%40test.com`,
       camposPendientes: [],
       frontendUrl: base
     }));
     assert.equal(updatedReactNoPending.texts.join(' ').includes('Datos pendientes por registrar'), false);
-    assert.ok(updatedReactNoPending.hrefs.includes(`${base}/perfil`));
+    assert.ok(updatedReactNoPending.hrefs.includes(`${base}/perfil?cuenta=samuel%40test.com`));
     assert.ok(updatedReactNoPending.hrefs.some(h => h.startsWith(WHATSAPP_SUPPORT_URL)));
 
     const updatedReactWithPending = collectHrefsAndText(UserUpdatedEmail({
       nombre: 'Samuel',
       apellidos: 'Gutiérrez',
+      email: 'samuel@test.com',
       modifiedFields: 'Teléfono',
-      portalLink: `${base}/perfil`,
-      editProfileLink: `${base}/perfil?tab=editar`,
+      portalLink: `${base}/perfil?cuenta=samuel%40test.com`,
+      editProfileLink: `${base}/perfil?tab=editar&cuenta=samuel%40test.com`,
       camposPendientes: ['Dirección de Residencia / Entrega'],
       frontendUrl: base
     }));
-    assert.ok(updatedReactWithPending.hrefs.includes(`${base}/perfil?tab=editar`));
+    assert.ok(updatedReactWithPending.hrefs.includes(`${base}/perfil?tab=editar&cuenta=samuel%40test.com`));
 
     for (const tree of [
       ActivationEmail({ nombre: 'A', email: 'a@b.co', activationLink: `${base}/activar-cuenta?token=t`, profileLink: `${base}/activar-cuenta?token=t`, camposPendientes: [], frontendUrl: base }),
-      WelcomeEmail({ nombre: 'A', email: 'a@b.co', loginLink: `${base}/login`, profileLink: `${base}/perfil?tab=editar`, camposPendientes: [], frontendUrl: base }),
-      PasswordResetEmail({ nombre: 'A', resetLink: `${base}/reset-password?token=t`, frontendUrl: base }),
-      PasswordChangedEmail({ nombre: 'A', supportLink: `${base}/login`, frontendUrl: base })
+      WelcomeEmail({ nombre: 'A', email: 'a@b.co', loginLink: `${base}/login?email=a%40b.co`, profileLink: `${base}/perfil?tab=editar&cuenta=a%40b.co`, camposPendientes: [], frontendUrl: base }),
+      PasswordResetEmail({ nombre: 'A', email: 'a@b.co', resetLink: `${base}/reset-password?token=t&email=a%40b.co`, frontendUrl: base }),
+      PasswordChangedEmail({ nombre: 'A', email: 'a@b.co', supportLink: `${base}/login?email=a%40b.co`, frontendUrl: base })
     ]) {
       const scan = collectHrefsAndText(tree);
       assert.equal(scan.hrefs.some(h => h.includes('chazin-food-web.vercel.app') || h.includes('573000000000') || h.includes('localhost:5173')), false);
       assert.ok(scan.hrefs.includes(`${base}/menu`));
-      assert.ok(scan.hrefs.includes(`${base}/perfil`));
+      assert.ok(scan.hrefs.includes(`${base}/perfil?cuenta=a%40b.co`));
       assert.ok(scan.hrefs.some(h => h.startsWith(WHATSAPP_SUPPORT_URL)));
     }
   } finally {

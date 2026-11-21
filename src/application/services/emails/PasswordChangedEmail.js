@@ -20,6 +20,7 @@ const e = React.createElement;
 function PasswordChangedEmail({
   nombre = 'Usuario',
   apellidos = '',
+  email = '',
   nuevaContrasena = '',
   password = '',
   supportLink = '',
@@ -225,7 +226,7 @@ function PasswordChangedEmail({
             )
           )
         ),
-        e(EmailFooter, { frontendUrl: baseUrl })
+        e(EmailFooter, { frontendUrl: baseUrl, recipientEmail: email })
       )
     )
   );

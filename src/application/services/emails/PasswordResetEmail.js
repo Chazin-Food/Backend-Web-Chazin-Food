@@ -20,6 +20,7 @@ const e = React.createElement;
 function PasswordResetEmail({
   nombre = 'Usuario',
   apellidos = '',
+  email = '',
   resetLink = '',
   frontendUrl = ''
 }) {
@@ -207,7 +208,7 @@ function PasswordResetEmail({
             )
           )
         ),
-        e(EmailFooter, { frontendUrl: baseUrl })
+        e(EmailFooter, { frontendUrl: baseUrl, recipientEmail: email })
       )
     )
   );
