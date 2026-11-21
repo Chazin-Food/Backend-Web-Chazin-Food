@@ -1,4 +1,4 @@
-const { Venta, Insumo, Cliente, User, Product, Compra, Resena, DetalleVentaProducto, Variante, sequelize } = require('../../persistence/models');
+const { Venta, Insumo, Cliente, User, Product, Compra, Resena, DetalleVentaProducto, Variante, Devolucion, sequelize } = require('../../persistence/models');
 const { Op } = require('sequelize');
 const {
   COLOMBIA_OFFSET,
@@ -870,6 +870,149 @@ class DashboardService {
         resenas: [],
         observaciones: []
       };
+    }
+  }
+
+  static async getDevolucionesPendientes() {
+    try {
+      const rows = await Devolucion.findAll({
+        where: {
+          estado: { [Op.in]: ['PENDIENTE', 'Pendiente', 'pendiente'] }
+        },
+        attributes: [
+          'idDevolucion',
+          'idVenta',
+          'idCliente',
+          'motivo',
+          'tipoResolucion',
+          'productosDevueltos',
+          'valorDevuelto',
+          'descripcion',
+          'fecha',
+          'estado'
+        ],
+        include: [
+          {
+            model: Cliente,
+            as: 'cliente',
+            attributes: ['idCliente', 'idUsuario'],
+            required: false,
+            include: [
+              {
+                model: User,
+                as: 'usuario',
+                attributes: ['idUsuario', 'nombre', 'apellidos'],
+                required: false
+              }
+            ]
+          },
+          {
+            model: Venta,
+            as: 'venta',
+            attributes: ['idVenta', 'observaciones', 'tipoVenta', 'total'],
+            required: false,
+            include: [
+              {
+                model: Cliente,
+                as: 'cliente',
+                attributes: ['idCliente', 'idUsuario'],
+                required: false,
+                include: [
+                  {
+                    model: User,
+                    as: 'usuario',
+                    attributes: ['idUsuario', 'nombre', 'apellidos'],
+                    required: false
+                  }
+                ]
+              },
+              {
+                model: User,
+                as: 'usuario',
+                attributes: ['idUsuario', 'nombre', 'apellidos'],
+                required: false
+              }
+            ]
+          }
+        ],
+        order: [['fecha', 'DESC'], ['idDevolucion', 'DESC']],
+        limit: 20
+      }).catch(() => []);
+
+      return (rows || []).map((row) => {
+        const plain = typeof row.get === 'function' ? row.get({ plain: true }) : row;
+
+        let obsClienteNombre = '';
+        if (plain.venta?.observaciones) {
+          try {
+            const parsedObs = typeof plain.venta.observaciones === 'string'
+              ? JSON.parse(plain.venta.observaciones)
+              : plain.venta.observaciones;
+            if (parsedObs && typeof parsedObs === 'object' && parsedObs.clienteNombre) {
+              obsClienteNombre = String(parsedObs.clienteNombre).trim();
+            }
+          } catch (_) {
+            // observaciones en texto plano
+          }
+        }
+
+        const userObj =
+          plain.cliente?.usuario ||
+          plain.venta?.cliente?.usuario ||
+          plain.venta?.usuario ||
+          null;
+        const nombreDesdeUsuario = userObj
+          ? `${userObj.nombre || ''} ${userObj.apellidos || ''}`.trim()
+          : '';
+        const clienteNombre = obsClienteNombre || nombreDesdeUsuario || 'Cliente General';
+
+        let productos = [];
+        if (plain.productosDevueltos) {
+          try {
+            const parsed = typeof plain.productosDevueltos === 'string'
+              ? JSON.parse(plain.productosDevueltos)
+              : plain.productosDevueltos;
+            if (Array.isArray(parsed)) productos = parsed;
+          } catch (_) {
+            productos = [];
+          }
+        }
+
+        const cantidadProductos = productos.reduce((acc, p) => acc + Math.max(1, Number(p?.cantidad || 1)), 0);
+        let productosResumen = '';
+        if (productos.length > 0) {
+          const first = productos[0];
+          const firstName = String(first?.nombre || first?.nombreProducto || 'Producto').trim();
+          const firstQty = Math.max(1, Number(first?.cantidad || 1));
+          productosResumen = productos.length > 1
+            ? `${firstName} (x${firstQty}) +${productos.length - 1} más`
+            : `${firstName} (x${firstQty})`;
+        }
+
+        const idDev = plain.idDevolucion;
+        const idVen = plain.idVenta;
+
+        return {
+          id: idDev,
+          idDevolucion: idDev,
+          codigoDevolucion: `DEV-${String(idDev || 0).padStart(4, '0')}`,
+          idVenta: idVen,
+          codigoVenta: idVen ? `VEN-${String(idVen).padStart(4, '0')}` : '',
+          clienteNombre,
+          motivo: plain.motivo || 'Sin motivo especificado',
+          tipoResolucion: plain.tipoResolucion || 'Cambio de producto',
+          valorDevuelto: Number(plain.valorDevuelto || 0),
+          descripcion: plain.descripcion || '',
+          fecha: plain.fecha,
+          fechaFormatted: plain.fecha ? formatColombiaDateES(plain.fecha) : '',
+          estado: 'PENDIENTE',
+          cantidadProductos,
+          productosResumen
+        };
+      });
+    } catch (error) {
+      console.error('Error in getDevolucionesPendientes:', error);
+      return [];
     }
   }
 }

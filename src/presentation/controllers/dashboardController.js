@@ -63,6 +63,15 @@ const getComentariosObservaciones = async (req, res, next) => {
   }
 };
 
+const getDevolucionesPendientes = async (req, res, next) => {
+  try {
+    const data = await DashboardService.getDevolucionesPendientes(req.query);
+    res.json(data);
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   getStats,
   getVentasChart,
@@ -70,5 +79,6 @@ module.exports = {
   getProductosFavoritos,
   getAlertasStock,
   getVentasRecientes,
-  getComentariosObservaciones
+  getComentariosObservaciones,
+  getDevolucionesPendientes
 };

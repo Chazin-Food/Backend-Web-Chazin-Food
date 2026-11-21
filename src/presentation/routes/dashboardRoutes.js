@@ -1,6 +1,15 @@
 const express = require('express');
 const router = express.Router();
-const { getStats, getVentasChart, getProductosPopulares, getProductosFavoritos, getAlertasStock, getVentasRecientes, getComentariosObservaciones } = require('../controllers/dashboardController');
+const {
+  getStats,
+  getVentasChart,
+  getProductosPopulares,
+  getProductosFavoritos,
+  getAlertasStock,
+  getVentasRecientes,
+  getComentariosObservaciones,
+  getDevolucionesPendientes
+} = require('../controllers/dashboardController');
 const { protect, requirePrivilege } = require('../../infrastructure/middlewares/authMiddleware');
 
 router.use(protect, requirePrivilege('Dashboard', 'Ver'));
@@ -14,5 +23,6 @@ router.get('/productos-favoritos', cacheDashboard, getProductosFavoritos);
 router.get('/alertas-stock', cacheDashboard, getAlertasStock);
 router.get('/ventas-recientes', cacheDashboard, getVentasRecientes);
 router.get('/comentarios-observaciones', cacheDashboard, getComentariosObservaciones);
+router.get('/devoluciones-pendientes', cacheDashboard, getDevolucionesPendientes);
 
 module.exports = router;
