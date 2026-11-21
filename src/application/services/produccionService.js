@@ -1,6 +1,11 @@
 const { Venta, DetalleVentaProducto, DetalleVentaAdicion, Adicion, Variante, VarianteInsumo, Product, FichaTecnica, DetalleFichaInsumo, Insumo, Cliente, User, Evento } = require('../../persistence/models');
 const { ensureVarianteEventoSchemaOnce } = require('../../infrastructure/utils/dbUtils');
 const {
+  parsePaginationParams,
+  buildPaginatedResponse,
+  sanitizeShortName
+} = require('../../infrastructure/utils/paginationUtils');
+const {
   getColombiaDateISO,
   formatColombiaTime12: formatColombiaTime,
   formatColombiaTimeWithSeconds12: formatColombiaTimeWithSeconds
@@ -106,28 +111,58 @@ function calculateOrderPrepTime(productosList = []) {
 }
 
 class ProduccionService {
-  static async getAll() {
+  static async getAll(filterObj = {}) {
     try {
       await ensureVarianteEventoSchemaOnce();
 
-      // Paso 1: Consultar ventas y detalles/adiciones con separate: true (CERO producto cartesiano en SQL/RAM)
-      const ventas = await Venta.findAll({
-        where: {
-          [Op.and]: [
+      const { isPaginated, page, limit, offset } = parsePaginationParams(filterObj, { defaultLimit: 10, maxLimit: 100 });
+      const andFilters = [
+        {
+          [Op.or]: [
+            { estadoAprobacion: 'APROBADO' },
             {
-              [Op.or]: [
-                { estadoAprobacion: 'APROBADO' },
-                {
-                  estadoAprobacion: null,
-                  estadoEntrega: { [Op.in]: ['PREPARANDO', 'LISTO', 'ENTREGADO', 'DESPACHADO'] }
-                }
-              ]
-            },
-            {
-              estadoEntrega: { [Op.ne]: 'CANCELADO' }
+              estadoAprobacion: null,
+              estadoEntrega: { [Op.in]: ['PREPARANDO', 'LISTO', 'ENTREGADO', 'DESPACHADO'] }
             }
           ]
         },
+        {
+          estadoEntrega: { [Op.ne]: 'CANCELADO' }
+        }
+      ];
+
+      if (filterObj.estado && filterObj.estado !== 'Todos') {
+        const eNorm = String(filterObj.estado).toLowerCase().trim();
+        if (eNorm === 'en cola' || eNorm === 'pendiente') {
+          andFilters.push({ estadoEntrega: { [Op.in]: ['PENDIENTE', 'Pendiente'] } });
+        } else if (eNorm === 'en preparación' || eNorm === 'en preparacion' || eNorm === 'preparando') {
+          andFilters.push({ estadoEntrega: { [Op.in]: ['PREPARANDO', 'En Preparación'] } });
+        } else if (eNorm === 'listo' || eNorm === 'listos') {
+          andFilters.push({ estadoEntrega: { [Op.in]: ['LISTO', 'Listo', 'Listos'] } });
+        } else if (eNorm === 'despachado') {
+          andFilters.push({ estadoEntrega: { [Op.in]: ['DESPACHADO', 'Despachado'] } });
+        } else if (eNorm === 'entregado' || eNorm === 'completado') {
+          andFilters.push({ estadoEntrega: { [Op.in]: ['ENTREGADO', 'Entregado'] } });
+        }
+      }
+
+      if (filterObj.search && String(filterObj.search).trim()) {
+        const q = String(filterObj.search).trim();
+        const digitsOnly = q.replace(/\D/g, '');
+        const searchOr = [
+          { observaciones: { [Op.like]: `%${q}%` } },
+          { '$cliente.usuario.nombre$': { [Op.like]: `%${q}%` } },
+          { '$cliente.usuario.apellidos$': { [Op.like]: `%${q}%` } },
+          { '$usuario.nombre$': { [Op.like]: `%${q}%` } }
+        ];
+        if (digitsOnly && /^\d+$/.test(digitsOnly)) {
+          searchOr.push({ idVenta: Number(digitsOnly) });
+        }
+        andFilters.push({ [Op.or]: searchOr });
+      }
+
+      const queryOptions = {
+        where: { [Op.and]: andFilters },
         include: [
           {
             model: Cliente,
@@ -150,8 +185,58 @@ class ProduccionService {
           }
         ],
         order: [['idVenta', 'DESC']],
-        limit: 120
-      });
+        subQuery: false
+      };
+
+      let ventas;
+      let totalCount = null;
+      let summary = null;
+      if (isPaginated) {
+        const baseActiveWhere = {
+          [Op.and]: [
+            {
+              [Op.or]: [
+                { estadoAprobacion: 'APROBADO' },
+                {
+                  estadoAprobacion: null,
+                  estadoEntrega: { [Op.in]: ['PREPARANDO', 'LISTO', 'ENTREGADO', 'DESPACHADO'] }
+                }
+              ]
+            },
+            { estadoEntrega: { [Op.ne]: 'CANCELADO' } }
+          ]
+        };
+        const [paged, statusRows] = await Promise.all([
+          Venta.findAndCountAll({
+            ...queryOptions,
+            limit,
+            offset,
+            distinct: true
+          }),
+          Venta.findAll({
+            where: baseActiveWhere,
+            attributes: ['estadoEntrega'],
+            raw: true
+          }).catch(() => [])
+        ]);
+        ventas = paged.rows;
+        totalCount = paged.count;
+        let enCola = 0;
+        let enPreparacion = 0;
+        let listos = 0;
+        for (const r of statusRows) {
+          const st = String(r.estadoEntrega || '').toUpperCase();
+          if (st === 'PREPARANDO') enPreparacion++;
+          else if (st === 'LISTO' || st === 'DESPACHADO' || st === 'ENTREGADO') listos++;
+          else enCola++;
+        }
+        summary = { total: statusRows.length, enCola, enPreparacion, listos };
+      } else {
+        ventas = await Venta.findAll({
+          ...queryOptions,
+          limit: 120
+        });
+      }
 
       // Paso 2: Hidratar variantes, productos, recetas y eventos UNA SOLA VEZ por ID único en paralelo
       const uniqueVarianteIds = Array.from(
@@ -1195,7 +1280,7 @@ class ProduccionService {
         priorityMap.set(order.id, index + 1);
       });
 
-      return mappedOrders.map(o => {
+      const finalOrders = mappedOrders.map(o => {
         const seqPrioridad = priorityMap.get(o.id) || null;
         return {
           ...o,
@@ -1203,9 +1288,18 @@ class ProduccionService {
           turno: seqPrioridad || null
         };
       });
+
+      if (isPaginated) {
+        const resp = buildPaginatedResponse(finalOrders, totalCount ?? finalOrders.length, page, limit);
+        if (summary) resp.summary = summary;
+        return resp;
+      }
+      return finalOrders;
     } catch (err) {
       console.error('Error al cargar órdenes en ProduccionService.getAll:', err);
-      return [];
+      return filterObj && (filterObj.page !== undefined || filterObj.limit !== undefined)
+        ? buildPaginatedResponse([], 0, 1, 10)
+        : [];
     }
   }
 
@@ -1439,10 +1533,13 @@ class ProduccionService {
       v.tiempoEstimadoEntrega = 'Entregado';
     }
 
-    // Guardar nombre del cocinero / responsable de cocina en turno (Requisito 9)
+    // Guardar nombre del cocinero / responsable de cocina en turno (Requisito 9, acotado a 80 chars)
     if (extraData?.cocinero || extraData?.responsable || extraData?.usuarioNombre) {
-      obsObj.cocinero = extraData.cocinero || extraData.responsable || extraData.usuarioNombre;
-      obsObj.responsableCocina = obsObj.cocinero;
+      const cleanCook = sanitizeShortName(extraData.cocinero || extraData.responsable || extraData.usuarioNombre, 80);
+      if (cleanCook) {
+        obsObj.cocinero = cleanCook;
+        obsObj.responsableCocina = cleanCook;
+      }
     }
 
     // Persist kitchen preparation verification checklist if provided

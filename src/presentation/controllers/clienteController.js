@@ -3,7 +3,13 @@ const { userHasPrivilege } = require('../../infrastructure/middlewares/authMiddl
 
 const getClientes = async (req, res, next) => {
   try {
-    const clientes = await ClienteService.getAll();
+    const clientes = await ClienteService.getAll({
+      page: req.query.page,
+      limit: req.query.limit,
+      search: req.query.search,
+      estado: req.query.estado,
+      tipo: req.query.tipo
+    });
     res.json(clientes);
   } catch (error) {
     next(error);

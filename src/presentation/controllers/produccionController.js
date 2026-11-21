@@ -2,7 +2,12 @@ const ProduccionService = require('../../application/services/produccionService'
 
 const getOrdenes = async (req, res, next) => {
   try {
-    const ordenes = await ProduccionService.getAll();
+    const ordenes = await ProduccionService.getAll({
+      page: req.query.page,
+      limit: req.query.limit,
+      estado: req.query.estado,
+      search: req.query.search
+    });
     res.json(ordenes);
   } catch (error) {
     next(error);

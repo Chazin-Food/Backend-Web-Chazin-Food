@@ -1,5 +1,10 @@
 const { Venta, DetalleVentaProducto, Cliente, User, Role, Variante, Product } = require('../../persistence/models');
 const {
+  parsePaginationParams,
+  buildPaginatedResponse,
+  sanitizeShortName
+} = require('../../infrastructure/utils/paginationUtils');
+const {
   getColombiaDateISO,
   extractDateOnlyISO,
   getColombiaPeriodRange,
@@ -738,15 +743,86 @@ class VentaService {
     }
 
     if (estado && estado !== 'Todos') {
-      if (estado === 'Pendiente') {
+      const eNorm = String(estado).toLowerCase().trim();
+      if (eNorm === 'pendiente' || eNorm === 'pendientes') {
         where.estadoEntrega = { [Op.in]: ['PENDIENTE', 'Pendiente'] };
-      } else if (estado === 'En Preparación') {
+      } else if (eNorm === 'en preparación' || eNorm === 'en preparacion' || eNorm === 'en cocina' || eNorm === 'preparando') {
         where.estadoEntrega = { [Op.in]: ['PREPARANDO', 'En Preparación'] };
-      } else if (estado === 'Completada') {
+      } else if (eNorm === 'listo' || eNorm === 'listos') {
+        where.estadoEntrega = { [Op.in]: ['LISTO', 'Listo', 'Listos'] };
+      } else if (eNorm === 'completada' || eNorm === 'completadas' || eNorm === 'entregado') {
         where.estadoEntrega = { [Op.in]: ['ENTREGADO', 'LISTO', 'Completada'] };
-      } else if (estado === 'Anulada') {
+      } else if (eNorm === 'anulada' || eNorm === 'cancelada') {
         where.estadoEntrega = { [Op.in]: ['CANCELADO', 'Anulada'] };
       }
+    }
+
+    const andClauses = [];
+    if (filterObj.scopeClienteId) {
+      andClauses.push({ idCliente: Number(filterObj.scopeClienteId) });
+    } else if (filterObj.scopeUsuarioId) {
+      andClauses.push({ idUsuario: Number(filterObj.scopeUsuarioId) });
+    }
+
+    if (filterObj.origen && filterObj.origen !== 'Todos') {
+      const oNorm = String(filterObj.origen).toUpperCase().trim();
+      if (oNorm === 'ONLINE' || oNorm.includes('ONLINE')) {
+        andClauses.push({
+          [Op.or]: [
+            { tipoVenta: 'DOMICILIO' },
+            { observaciones: { [Op.like]: '%"origen":"ONLINE"%' } }
+          ]
+        });
+      } else if (oNorm === 'POS' || oNorm.includes('FISIC') || oNorm.includes('FÍSIC')) {
+        andClauses.push({
+          tipoVenta: { [Op.ne]: 'DOMICILIO' },
+          [Op.or]: [
+            { observaciones: null },
+            { observaciones: { [Op.notLike]: '%"origen":"ONLINE"%' } }
+          ]
+        });
+      }
+    }
+
+    if (filterObj.tipoEntrega && filterObj.tipoEntrega !== 'Todos') {
+      const teNorm = String(filterObj.tipoEntrega).toLowerCase().trim();
+      if (teNorm.includes('domicilio')) {
+        andClauses.push({
+          [Op.or]: [
+            { tipoVenta: 'DOMICILIO' },
+            { observaciones: { [Op.like]: '%Domicilio%' } }
+          ]
+        });
+      } else if (teNorm.includes('mesa') || teNorm.includes('local') || teNorm.includes('recoger')) {
+        andClauses.push({
+          tipoVenta: { [Op.ne]: 'DOMICILIO' }
+        });
+      }
+    }
+
+    if (filterObj.metodoPago && filterObj.metodoPago !== 'Todos') {
+      const mpNorm = String(filterObj.metodoPago).trim();
+      andClauses.push({ observaciones: { [Op.like]: `%${mpNorm}%` } });
+    }
+
+    if (filterObj.search && String(filterObj.search).trim()) {
+      const q = String(filterObj.search).trim();
+      const digitsOnly = q.replace(/\D/g, '');
+      const searchOr = [
+        { observaciones: { [Op.like]: `%${q}%` } },
+        { '$cliente.usuario.nombre$': { [Op.like]: `%${q}%` } },
+        { '$cliente.usuario.apellidos$': { [Op.like]: `%${q}%` } },
+        { '$cliente.usuario.numeroDocumento$': { [Op.like]: `%${q}%` } },
+        { '$usuario.nombre$': { [Op.like]: `%${q}%` } }
+      ];
+      if (digitsOnly && /^\d+$/.test(digitsOnly)) {
+        searchOr.push({ idVenta: Number(digitsOnly) });
+      }
+      andClauses.push({ [Op.or]: searchOr });
+    }
+
+    if (andClauses.length > 0) {
+      where[Op.and] = [...(where[Op.and] || []), ...andClauses];
     }
   }
 
@@ -755,53 +831,70 @@ class VentaService {
     this.expirarVentasWompiAbandonadas().catch(() => {});
 
     const filterObj = typeof filter === 'string' ? { periodo: filter } : (filter || {});
-    const { search } = filterObj;
+    const { isPaginated, page, limit, offset } = parsePaginationParams(filterObj, { defaultLimit: 10, maxLimit: 100 });
     const { Op } = require('sequelize');
     const where = {};
     this._applyFilters(where, filterObj, Op);
 
     const { Variante, Product, DetalleVentaAdicion, Adicion } = require('../../persistence/models');
+    const include = [
+      { 
+        model: Cliente, 
+        as: 'cliente',
+        include: [{ model: User, as: 'usuario', attributes: ['idUsuario', 'nombre', 'apellidos', 'numeroDocumento'] }]
+      },
+      { 
+        model: User, 
+        as: 'usuario', 
+        attributes: ['idUsuario', 'nombre', 'apellidos', 'email', 'estado', 'idRol'],
+        include: [{ model: Role, as: 'rolInfo', attributes: ['idRol', 'nombre'] }]
+      },
+      { 
+        model: DetalleVentaProducto, 
+        as: 'detalles',
+        separate: true,
+        include: [
+          {
+            model: Variante,
+            as: 'variante',
+            attributes: ['idVariante', 'idProducto', 'nombre', 'descripcion', 'creadaPorEvento', 'idEvento'],
+            include: [
+              {
+                model: Product,
+                as: 'producto',
+                attributes: ['idProducto', 'nombre', 'precio', 'categoria']
+              }
+            ]
+          },
+          {
+            model: DetalleVentaAdicion,
+            as: 'adiciones',
+            separate: true,
+            include: [{ model: Adicion, as: 'adicion', attributes: ['idInsumo', 'nombre', 'precioAdicion'] }]
+          }
+        ]
+      }
+    ];
+
+    if (isPaginated) {
+      const { count, rows } = await Venta.findAndCountAll({
+        where,
+        include,
+        order: [['idVenta', 'DESC']],
+        limit,
+        offset,
+        distinct: true,
+        subQuery: false
+      });
+      const formatted = rows.map(v => this.formatVenta(v));
+      return buildPaginatedResponse(formatted, count, page, limit);
+    }
+
     const ventas = await Venta.findAll({
       where,
-      include: [
-        { 
-          model: Cliente, 
-          as: 'cliente',
-          include: [{ model: User, as: 'usuario', attributes: ['idUsuario', 'nombre', 'apellidos'] }]
-        },
-        { 
-          model: User, 
-          as: 'usuario', 
-          attributes: ['idUsuario', 'nombre', 'apellidos', 'email', 'estado', 'idRol'],
-          include: [{ model: Role, as: 'rolInfo', attributes: ['idRol', 'nombre'] }]
-        },
-        { 
-          model: DetalleVentaProducto, 
-          as: 'detalles',
-          separate: true,
-          include: [
-            {
-              model: Variante,
-              as: 'variante',
-              attributes: ['idVariante', 'idProducto', 'nombre', 'descripcion', 'creadaPorEvento', 'idEvento'],
-              include: [
-                {
-                  model: Product,
-                  as: 'producto',
-                  attributes: ['idProducto', 'nombre', 'precio', 'categoria']
-                }
-              ]
-            },
-            {
-              model: DetalleVentaAdicion,
-              as: 'adiciones',
-              separate: true,
-              include: [{ model: Adicion, as: 'adicion', attributes: ['idInsumo', 'nombre', 'precioAdicion'] }]
-            }
-          ]
-        }
-      ],
-      order: [['idVenta', 'DESC']]
+      include,
+      order: [['idVenta', 'DESC']],
+      subQuery: false
     });
 
     return ventas.map(v => this.formatVenta(v));
@@ -1347,7 +1440,7 @@ class VentaService {
       direccion: data.direccion || parsedObs.direccion || "Recoger en Local",
       estadoPago: data.estadoPago || parsedObs.estadoPago || "Pagado",
       codigoPedido: data.codigoPedido || parsedObs.codigoPedido || (esDevolucion ? undefined : `VEN-${String(Date.now()).slice(-4)}`),
-      clienteNombre: data.clienteNombre || parsedObs.clienteNombre || `${userObj.nombre} ${userObj.apellidos || ''}`.trim(),
+      clienteNombre: sanitizeShortName(data.clienteNombre || parsedObs.clienteNombre || `${userObj.nombre} ${userObj.apellidos || ''}`.trim(), 80),
       productos: (Array.isArray(data.productos) && data.productos.length > 0)
         ? data.productos
         : (Array.isArray(parsedObs.productos) && parsedObs.productos.length > 0)

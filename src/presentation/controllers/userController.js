@@ -6,7 +6,13 @@ const SELF_EDIT_ALLOWLIST = ['nombre', 'apellidos', 'apellido', 'telefono', 'dir
 
 const getUsers = async (req, res, next) => {
   try {
-    const users = await UserService.getAllUsers();
+    const users = await UserService.getAllUsers({
+      page: req.query.page,
+      limit: req.query.limit,
+      search: req.query.search,
+      rol: req.query.rol,
+      estado: req.query.estado
+    });
     res.json(users);
   } catch (error) {
     if (error.statusCode) res.status(error.statusCode);

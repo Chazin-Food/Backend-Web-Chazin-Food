@@ -1,5 +1,7 @@
+const { Op } = require('sequelize');
 const { Insumo, CategoriaInsumo, Proveedor, FichaTecnica, DetalleFichaInsumo, Trazabilidad, DetalleInsumoPreparadoInsumo, LoteInsumo, DetalleCompraInsumo } = require('../../persistence/models');
 const database = require('../../persistence/config/db');
+const { parsePaginationParams, buildPaginatedResponse } = require('../../infrastructure/utils/paginationUtils');
 const {
   getColombiaDateISO,
   extractDateOnlyISO,
@@ -224,21 +226,71 @@ class InsumoService {
     }
   }
 
-  static async getAll() {
+  static async getAll(filterObj = {}) {
     const nowTs = Date.now();
     if (!this._lastVencimientoCheckAt || nowTs - this._lastVencimientoCheckAt >= 3 * 60 * 1000) {
       await this.checkVencimientos();
       this._lastVencimientoCheckAt = Date.now();
     }
+
+    const { isPaginated, page, limit, offset } = parsePaginationParams(filterObj, { defaultLimit: 10, maxLimit: 100 });
+    const where = { eliminado: 0 };
+
+    if (filterObj.estado && filterObj.estado !== 'Todos') {
+      const eNorm = String(filterObj.estado).toLowerCase().trim();
+      if (eNorm === 'activo' || eNorm === '1') where.estado = 1;
+      else if (eNorm === 'inactivo' || eNorm === '0') where.estado = 0;
+    }
+
+    if (filterObj.categoria && filterObj.categoria !== 'Todas' && filterObj.categoria !== 'Todos') {
+      if (/^\d+$/.test(String(filterObj.categoria).trim())) {
+        where.idCategoriaInsumo = Number(filterObj.categoria);
+      } else {
+        where['$categoria.nombre$'] = { [Op.like]: `%${String(filterObj.categoria).trim()}%` };
+      }
+    }
+
+    if (filterObj.search && String(filterObj.search).trim()) {
+      const q = String(filterObj.search).trim();
+      const digits = q.replace(/\D/g, '');
+      const searchOr = [
+        { nombre: { [Op.like]: `%${q}%` } },
+        { descripcion: { [Op.like]: `%${q}%` } },
+        { '$categoria.nombre$': { [Op.like]: `%${q}%` } }
+      ];
+      if (digits && /^\d+$/.test(digits)) {
+        searchOr.push({ idInsumo: Number(digits) });
+      }
+      where[Op.or] = searchOr;
+    }
+
+    const queryOptions = {
+      where,
+      include: [
+        { model: CategoriaInsumo, as: 'categoria', required: false },
+        { model: Proveedor, as: 'proveedor', required: false },
+        { model: LoteInsumo, as: 'lotes', separate: true, required: false }
+      ],
+      order: [['idInsumo', 'DESC']],
+      subQuery: false
+    };
+
+    if (isPaginated) {
+      const [paged, comprasMap] = await Promise.all([
+        Insumo.findAndCountAll({
+          ...queryOptions,
+          limit,
+          offset,
+          distinct: true
+        }),
+        this.getComprasMap()
+      ]);
+      const formatted = paged.rows.map(i => formatInsumo(i, { comprasMap }));
+      return buildPaginatedResponse(formatted, paged.count, page, limit);
+    }
+
     const [insumos, comprasMap] = await Promise.all([
-      Insumo.findAll({
-        where: { eliminado: 0 },
-        include: [
-          { model: CategoriaInsumo, as: 'categoria', required: false },
-          { model: Proveedor, as: 'proveedor', required: false },
-          { model: LoteInsumo, as: 'lotes', required: false }
-        ]
-      }),
+      Insumo.findAll(queryOptions),
       this.getComprasMap()
     ]);
 

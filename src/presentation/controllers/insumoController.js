@@ -2,7 +2,13 @@ const InsumoService = require('../../application/services/insumoService');
 
 const getInsumos = async (req, res, next) => {
   try {
-    const insumos = await InsumoService.getAll();
+    const insumos = await InsumoService.getAll({
+      page: req.query.page,
+      limit: req.query.limit,
+      search: req.query.search,
+      estado: req.query.estado,
+      categoria: req.query.categoria
+    });
     res.json(insumos);
   } catch (error) {
     if (error.statusCode) res.status(error.statusCode);

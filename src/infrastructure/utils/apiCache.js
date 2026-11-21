@@ -208,8 +208,8 @@ function invalidateNamespaces(namespaces = []) {
 }
 
 const MUTATION_INVALIDATION_MAP = [
-  { prefix: '/api/productos', namespaces: ['productos', 'categorias', 'eventos', 'fichas', 'dashboard', 'produccion'] },
-  { prefix: '/api/products', namespaces: ['productos', 'categorias', 'eventos', 'fichas', 'dashboard', 'produccion'] },
+  { prefix: '/api/productos', namespaces: ['productos', 'categorias', 'eventos', 'fichas', 'dashboard', 'produccion', 'ventas'] },
+  { prefix: '/api/products', namespaces: ['productos', 'categorias', 'eventos', 'fichas', 'dashboard', 'produccion', 'ventas'] },
   { prefix: '/api/categorias-producto', namespaces: ['categorias', 'productos'] },
   { prefix: '/api/categorias-productos', namespaces: ['categorias', 'productos'] },
   { prefix: '/api/categorias-insumo', namespaces: ['categorias-insumo', 'categories', 'insumos'] },

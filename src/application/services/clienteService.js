@@ -7,6 +7,7 @@ const EmailService = require('./emailService');
 const FidelidadService = require('./fidelidadService');
 const AuthService = require('./authService');
 const { formatColombiaDateES } = require('../../infrastructure/utils/colombiaDateUtils');
+const { parsePaginationParams, buildPaginatedResponse } = require('../../infrastructure/utils/paginationUtils');
 
 class ClienteService {
   static async formatCliente(c, preloadedVentas = null) {
@@ -192,7 +193,8 @@ class ClienteService {
     };
   }
 
-  static async getAll() {
+  static async getAll(filterObj = {}) {
+    const { isPaginated, page, limit, offset } = parsePaginationParams(filterObj, { defaultLimit: 10, maxLimit: 100 });
     const [clientes, allVentas] = await Promise.all([
       Cliente.findAll({
         order: [['idCliente', 'ASC']],
@@ -266,6 +268,31 @@ class ClienteService {
 
       result.push(await this.formatCliente(c, mergedVentas));
     }
+
+    if (isPaginated) {
+      let filtered = result;
+      if (filterObj.estado && filterObj.estado !== 'Todos') {
+        const eNorm = String(filterObj.estado).toLowerCase().trim();
+        filtered = filtered.filter((c) => String(c.estado || '').toLowerCase().trim() === eNorm);
+      }
+      if (filterObj.tipo && filterObj.tipo !== 'Todos') {
+        const tNorm = String(filterObj.tipo).toLowerCase().trim();
+        filtered = filtered.filter((c) => String(c.tipo || '').toLowerCase().trim() === tNorm);
+      }
+      if (filterObj.search && String(filterObj.search).trim()) {
+        const q = String(filterObj.search).toLowerCase().trim();
+        filtered = filtered.filter((c) => {
+          const haystack = [c.nombre, c.apellidos, c.email, c.telefono, c.numeroDocumento, c.documento, c.direccion, c.tipo]
+            .filter(Boolean)
+            .join(' ')
+            .toLowerCase();
+          return haystack.includes(q);
+        });
+      }
+      const total = filtered.length;
+      return buildPaginatedResponse(filtered.slice(offset, offset + limit), total, page, limit);
+    }
+
     return result;
   }
 

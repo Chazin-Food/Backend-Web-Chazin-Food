@@ -1,5 +1,7 @@
+const { Op } = require('sequelize');
 const { Compra, DetalleCompraInsumo, Proveedor, Insumo, LoteInsumo, User, sequelize } = require('../../persistence/models');
 const TrazabilidadService = require('./trazabilidadService');
+const { parsePaginationParams, buildPaginatedResponse } = require('../../infrastructure/utils/paginationUtils');
 
 const ESTADO_RECIBIDA = 'RECIBIDA';
 const ESTADO_PENDIENTE = 'PENDIENTE';
@@ -33,20 +35,83 @@ function esEstadoCancelada(estado) {
 }
 
 class CompraService {
-  static async getAll() {
-    const compras = await Compra.findAll({
+  static async getAll(filterObj = {}) {
+    const { isPaginated, page, limit, offset } = parsePaginationParams(filterObj, { defaultLimit: 10, maxLimit: 100 });
+    const where = {};
+    const andClauses = [];
+
+    if (filterObj.estado && filterObj.estado !== 'Todos') {
+      const eNorm = normalizarEstado(filterObj.estado);
+      andClauses.push({ estado: eNorm });
+    }
+
+    if (filterObj.search && String(filterObj.search).trim()) {
+      const q = String(filterObj.search).trim();
+      const digits = q.replace(/\D/g, '');
+      const searchOr = [
+        { numeroFactura: { [Op.like]: `%${q}%` } },
+        { '$proveedor.nombre$': { [Op.like]: `%${q}%` } }
+      ];
+      if (digits && /^\d+$/.test(digits)) {
+        searchOr.push({ idCompra: Number(digits) });
+      }
+      andClauses.push({ [Op.or]: searchOr });
+    }
+
+    if (andClauses.length > 0) {
+      where[Op.and] = andClauses;
+    }
+
+    const queryOptions = {
+      where,
       include: [
         { model: Proveedor, as: 'proveedor', attributes: ['idProveedor', 'nombre', 'nombreContacto', 'telefono', 'correo'] },
         { model: User, as: 'usuarioCancelacion', attributes: ['idUsuario', 'nombre', 'apellidos'], required: false },
         {
-          model: DetalleCompraInsumo, as: 'detalles',
+          model: DetalleCompraInsumo,
+          as: 'detalles',
+          separate: true,
           include: [{ model: Insumo, as: 'insumo', attributes: ['idInsumo', 'nombre', 'unidadMedida'] }]
         },
-        { model: LoteInsumo, as: 'lotes', required: false }
+        { model: LoteInsumo, as: 'lotes', separate: true, required: false }
       ],
-      order: [['idCompra', 'DESC']]
-    });
-    return compras.map(c => {
+      order: [['idCompra', 'DESC']],
+      subQuery: false
+    };
+
+    let compras;
+    let totalCount = null;
+    let summary = null;
+    if (isPaginated) {
+      const [paged, allStatusRows] = await Promise.all([
+        Compra.findAndCountAll({
+          ...queryOptions,
+          limit,
+          offset,
+          distinct: true
+        }),
+        Compra.findAll({
+          attributes: ['estado', 'total'],
+          raw: true
+        }).catch(() => [])
+      ]);
+      compras = paged.rows;
+      totalCount = paged.count;
+      let completadas = 0;
+      let anuladas = 0;
+      let montoTotal = 0;
+      for (const r of allStatusRows) {
+        const e = String(r.estado || '').toUpperCase();
+        if (e === 'COMPLETADA' || e === 'RECIBIDA') completadas++;
+        if (e === 'ANULADA' || e === 'CANCELADA') anuladas++;
+        else montoTotal += parseFloat(r.total) || 0;
+      }
+      summary = { total: allStatusRows.length, completadas, anuladas, montoTotal };
+    } else {
+      compras = await Compra.findAll(queryOptions);
+    }
+
+    const formatted = compras.map(c => {
       let detCanc = null;
       if (c.detallesCancelacion) {
         try {
@@ -114,6 +179,13 @@ class CompraService {
         })
       };
     });
+
+    if (isPaginated) {
+      const resp = buildPaginatedResponse(formatted, totalCount ?? formatted.length, page, limit);
+      if (summary) resp.summary = summary;
+      return resp;
+    }
+    return formatted;
   }
 
   static async getById(id) {

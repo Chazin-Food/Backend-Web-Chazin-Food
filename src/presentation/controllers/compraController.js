@@ -2,7 +2,12 @@ const CompraService = require('../../application/services/compraService');
 
 const getCompras = async (req, res, next) => {
   try {
-    const compras = await CompraService.getAll();
+    const compras = await CompraService.getAll({
+      page: req.query.page,
+      limit: req.query.limit,
+      search: req.query.search,
+      estado: req.query.estado
+    });
     res.json(compras);
   } catch (error) {
     next(error);

@@ -5,6 +5,7 @@ const { User, Role, Cliente, Permiso } = require('../../persistence/models');
 const { sanitizeTelefono, sanitizeDocumento, cleanNameAndLastName, formatNombreCompleto, isValidEmailStrict, isValidPersonName } = require('../../infrastructure/utils/validationUtils');
 const EmailService = require('./emailService');
 const { revokeAllUserTokens } = require('../../infrastructure/config/jwtConfig');
+const { parsePaginationParams, buildPaginatedResponse } = require('../../infrastructure/utils/paginationUtils');
 
 function getCleanDireccion(raw) {
   if (!raw) return '';
@@ -20,13 +21,58 @@ function getCleanDireccion(raw) {
 }
 
 class UserService {
-  static async getAllUsers() {
-    const users = await User.findAll({
-      include: [{ model: Role, as: 'rolInfo' }, { model: Cliente, as: 'clienteInfo' }],
-      order: [['fechaRegistro', 'DESC']]
-    });
+  static async getAllUsers(filterObj = {}) {
+    const { isPaginated, page, limit, offset } = parsePaginationParams(filterObj, { defaultLimit: 10, maxLimit: 100 });
+    const where = {};
+    const andClauses = [];
 
-    return users.map(user => {
+    if (filterObj.estado && filterObj.estado !== 'Todos') {
+      const eNorm = String(filterObj.estado).toLowerCase().trim();
+      if (eNorm === 'activo' || eNorm === '1') {
+        andClauses.push({ estado: { [Op.in]: ['ACTIVO', 'Activo', '1', 1] } });
+      } else if (eNorm === 'inactivo' || eNorm === '0') {
+        andClauses.push({ estado: { [Op.in]: ['INACTIVO', 'Inactivo', '0', 0] } });
+      }
+    }
+
+    if (filterObj.rol && filterObj.rol !== 'Todos') {
+      const rVal = String(filterObj.rol).trim();
+      if (/^\d+$/.test(rVal)) {
+        andClauses.push({ idRol: Number(rVal) });
+      } else {
+        andClauses.push({ '$rolInfo.nombre$': { [Op.like]: `%${rVal}%` } });
+      }
+    }
+
+    if (filterObj.search && String(filterObj.search).trim()) {
+      const q = String(filterObj.search).trim();
+      const digits = q.replace(/\D/g, '');
+      const searchOr = [
+        { nombre: { [Op.like]: `%${q}%` } },
+        { apellidos: { [Op.like]: `%${q}%` } },
+        { email: { [Op.like]: `%${q}%` } },
+        { numeroDocumento: { [Op.like]: `%${q}%` } },
+        { telefono: { [Op.like]: `%${q}%` } },
+        { '$rolInfo.nombre$': { [Op.like]: `%${q}%` } }
+      ];
+      if (digits && /^\d+$/.test(digits)) {
+        searchOr.push({ idUsuario: Number(digits) });
+      }
+      andClauses.push({ [Op.or]: searchOr });
+    }
+
+    if (andClauses.length > 0) {
+      where[Op.and] = andClauses;
+    }
+
+    const queryOptions = {
+      where,
+      include: [{ model: Role, as: 'rolInfo' }, { model: Cliente, as: 'clienteInfo' }],
+      order: [['fechaRegistro', 'DESC']],
+      subQuery: false
+    };
+
+    const formatUserRow = (user) => {
       const { nombre: cleanNom, apellidos: cleanApe } = cleanNameAndLastName(user.nombre, user.apellidos);
       const cleanTel = sanitizeTelefono(user.telefono);
       const docVal = (user.numeroDocumento && String(user.numeroDocumento).trim().length >= 6) ? String(user.numeroDocumento).trim() : '';
@@ -49,7 +95,20 @@ class UserService {
         direccion: getCleanDireccion(user.clienteInfo ? user.clienteInfo.direccion : ''),
         fechaRegistro: user.fechaRegistro
       };
-    });
+    };
+
+    if (isPaginated) {
+      const { count, rows } = await User.findAndCountAll({
+        ...queryOptions,
+        limit,
+        offset,
+        distinct: true
+      });
+      return buildPaginatedResponse(rows.map(formatUserRow), count, page, limit);
+    }
+
+    const users = await User.findAll(queryOptions);
+    return users.map(formatUserRow);
   }
 
   static async getUserById(id) {

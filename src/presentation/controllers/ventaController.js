@@ -33,17 +33,23 @@ const getVentas = async (req, res, next) => {
       estado: req.query.estado,
       search: req.query.search,
       fechaInicio: req.query.fechaInicio,
-      fechaFin: req.query.fechaFin
+      fechaFin: req.query.fechaFin,
+      origen: req.query.origen,
+      tipoEntrega: req.query.tipoEntrega,
+      metodoPago: req.query.metodoPago,
+      page: req.query.page,
+      limit: req.query.limit
     };
-    const ventas = await VentaService.getAll(filter);
 
-    // Los clientes solo pueden consultar sus propios pedidos ("Mis Pedidos")
+    // Los clientes solo pueden consultar sus propios pedidos ("Mis Pedidos") — filtrado directo en SQL
     if (!canViewAll) {
       const idUsuario = req.user.idUsuario || req.user.id;
       const idCliente = await getClienteIdDeUsuario(idUsuario);
-      return res.json(ventas.filter(v => ventaPerteneceAlCliente(v, idUsuario, idCliente)));
+      filter.scopeClienteId = idCliente;
+      filter.scopeUsuarioId = idUsuario;
     }
 
+    const ventas = await VentaService.getAll(filter);
     res.json(ventas);
   } catch (error) {
     next(error);
