@@ -233,7 +233,7 @@ class InsumoService {
       this._lastVencimientoCheckAt = Date.now();
     }
 
-    const { isPaginated, page, limit, offset } = parsePaginationParams(filterObj, { defaultLimit: 10, maxLimit: 100 });
+    const { isPaginated, page, limit, offset } = parsePaginationParams(filterObj, { defaultLimit: 5, maxLimit: 100 });
     const where = { eliminado: 0 };
 
     if (filterObj.estado && filterObj.estado !== 'Todos') {

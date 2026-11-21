@@ -47,6 +47,8 @@ const envFrontendOrigins = String(process.env.FRONTEND_URL || '')
 
 const allowedOrigins = new Set([
   'https://frontend-web-chazin-food.vercel.app',
+  'https://chazin-food-web.vercel.app',
+  'https://chazin-food.vercel.app',
   ...envFrontendOrigins,
   ...(!isProduction
     ? [
@@ -63,8 +65,8 @@ const allowedOrigins = new Set([
 ]);
 
 // Permitir únicamente URLs del propio proyecto/equipo Vercel `chazin-food`
-// (alias de equipo, alias de rama git-main y despliegues inmutables; bloquea cualquier otro *.vercel.app externo — AUD-019)
-const CHAZIN_VERCEL_TEAM_DEPLOY_RE = /^https:\/\/frontend-web-chazin-food(?:-(?:[a-z0-9]{6,20}|git-[a-z0-9-]+))?-chazin-food\.vercel\.app$/i;
+// (frontend-web-chazin-food, chazin-food-web, alias de equipo, alias de rama git-main y despliegues inmutables; bloquea cualquier otro *.vercel.app externo — AUD-019)
+const CHAZIN_VERCEL_TEAM_DEPLOY_RE = /^https:\/\/(?:frontend-web-chazin-food|chazin-food-web)(?:-(?:[a-z0-9]{6,20}|git-[a-z0-9-]+))?(?:-chazin-food)?\.vercel\.app$/i;
 
 const corsOptions = {
   origin: function (origin, callback) {

@@ -36,7 +36,7 @@ function esEstadoCancelada(estado) {
 
 class CompraService {
   static async getAll(filterObj = {}) {
-    const { isPaginated, page, limit, offset } = parsePaginationParams(filterObj, { defaultLimit: 10, maxLimit: 100 });
+    const { isPaginated, page, limit, offset } = parsePaginationParams(filterObj, { defaultLimit: 5, maxLimit: 100 });
     const where = {};
     const andClauses = [];
 

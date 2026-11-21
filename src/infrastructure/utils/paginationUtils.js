@@ -6,7 +6,7 @@
  * - Si el cliente omite ambos (`page` y `limit`) -> responde el arreglo plano `[...]` para mantener 100% compatibilidad con exportaciones, selects y clientes existentes.
  */
 
-function parsePaginationParams(query = {}, { defaultLimit = 10, maxLimit = 100 } = {}) {
+function parsePaginationParams(query = {}, { defaultLimit = 5, maxLimit = 100 } = {}) {
   const hasPage = query.page !== undefined && query.page !== null && String(query.page).trim() !== '';
   const hasLimit = query.limit !== undefined && query.limit !== null && String(query.limit).trim() !== '';
   const isPaginated = hasPage || hasLimit;
@@ -23,9 +23,9 @@ function parsePaginationParams(query = {}, { defaultLimit = 10, maxLimit = 100 }
   return { isPaginated, page, limit, offset };
 }
 
-function buildPaginatedResponse(data = [], total = 0, page = 1, limit = 10) {
+function buildPaginatedResponse(data = [], total = 0, page = 1, limit = 5) {
   const safeTotal = Math.max(0, Number(total) || 0);
-  const safeLimit = Math.max(1, Number(limit) || 10);
+  const safeLimit = Math.max(1, Number(limit) || 5);
   const totalPages = Math.max(1, Math.ceil(safeTotal / safeLimit));
   const safePage = Math.min(Math.max(1, Number(page) || 1), totalPages);
 
