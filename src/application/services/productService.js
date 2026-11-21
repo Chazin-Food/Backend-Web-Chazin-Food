@@ -626,7 +626,7 @@ class ProductService {
                 nombre: v.nombre,
                 descripcion: v.descripcion || '',
                 precio: ProductService.resolveVariantPrice(v.precio, realPrecio),
-                imagen: v.imagen || '',
+                imagen: sanitizeProductImageUrl(typeof v.imagen === 'string' ? v.imagen.trim() : ''),
                 estado: varEstado,
                 activo: varEstado !== 0,
                 idEvento: v.idEvento ? Number(v.idEvento) : null,
@@ -661,7 +661,7 @@ class ProductService {
           ? formatFichaForProductResponse(baseFichaProd, p, null, baseMappedDetalles, null, isDrinkProd)
           : null;
 
-        const idVariantePrincipal = realActiveVars[0]?.idVariante || baseVarRow?.idVariante || rawVars[0]?.idVariante || p.idProducto;
+        const idVariantePrincipal = baseVarRow?.idVariante || realActiveVars[0]?.idVariante || rawVars[0]?.idVariante || p.idProducto;
         const idVarianteBase = baseVarRow?.idVariante || null;
 
         // Calcular número total de ventas históricas del producto (Ítem #104)
@@ -861,7 +861,7 @@ class ProductService {
           nombre: v.nombre.trim(),
           descripcion: v.descripcion || null,
           precio: ProductService.resolveVariantPrice(v.precio, finalPrecio),
-          imagen: v.imagen || null,
+          imagen: typeof v.imagen === 'string' && v.imagen.trim() ? v.imagen.trim() : null,
           estado: resolveVarianteEstadoValue(v, normalizedEstado),
           idEvento: v.idEvento ? Number(v.idEvento) : null,
           creadaPorEvento: v.creadaPorEvento || v.idEvento ? 1 : 0
@@ -986,14 +986,18 @@ class ProductService {
           const vNombre = v.nombre.trim();
           const vDesc = v.descripcion || null;
           const vPrecio = ProductService.resolveVariantPrice(v.precio, basePrice);
-          const vImagen = v.imagen || null;
+          const hasImagenField = Object.prototype.hasOwnProperty.call(v, 'imagen') && v.imagen !== undefined;
+          const vImagen = hasImagenField
+            ? (typeof v.imagen === 'string' && v.imagen.trim() ? v.imagen.trim() : null)
+            : undefined;
           let currentVarId = null;
 
           if (v.idVariante && existingIds.includes(Number(v.idVariante))) {
             currentVarId = Number(v.idVariante);
             const prevRow = existingByIdMap.get(currentVarId);
             const nextEstado = resolveVarianteEstadoValue(v, prevRow?.estado !== undefined ? Number(prevRow.estado) : p.estado);
-            const updatePayload = { nombre: vNombre, descripcion: vDesc, precio: vPrecio, imagen: vImagen, estado: nextEstado };
+            const resolvedImagen = hasImagenField ? vImagen : (prevRow?.imagen || null);
+            const updatePayload = { nombre: vNombre, descripcion: vDesc, precio: vPrecio, imagen: resolvedImagen, estado: nextEstado };
             if (v.idEvento !== undefined) updatePayload.idEvento = v.idEvento ? Number(v.idEvento) : null;
             if (v.creadaPorEvento !== undefined) updatePayload.creadaPorEvento = v.creadaPorEvento || v.idEvento ? 1 : 0;
             await Variante.update(updatePayload, { where: { idVariante: currentVarId } });
@@ -1010,7 +1014,7 @@ class ProductService {
                   nombre: vNombre,
                   descripcion: vDesc,
                   precio: vPrecio,
-                  imagen: vImagen,
+                  imagen: vImagen ?? null,
                   estado: nextEstado,
                   idEvento: v.idEvento ? Number(v.idEvento) : null,
                   creadaPorEvento: v.creadaPorEvento || v.idEvento ? 1 : 0
@@ -1023,7 +1027,7 @@ class ProductService {
                 nombre: vNombre,
                 descripcion: vDesc,
                 precio: vPrecio,
-                imagen: vImagen,
+                imagen: vImagen ?? null,
                 estado: nextEstado,
                 idEvento: v.idEvento ? Number(v.idEvento) : null,
                 creadaPorEvento: v.creadaPorEvento || v.idEvento ? 1 : 0

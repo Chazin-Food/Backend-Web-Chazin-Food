@@ -199,7 +199,7 @@ class EventoService {
           nombre: v.nombre,
           descripcion: v.descripcion || '',
           precio: Number(v.precio || 0),
-          imagen: v.imagen || '',
+          imagen: typeof v.imagen === 'string' ? v.imagen.trim() : '',
           estado: v.estado !== undefined && v.estado !== null ? Number(v.estado) : 1,
           activo: Number(v.estado ?? 1) !== 0,
           fichaTecnica: vf ? {
