@@ -1,5 +1,17 @@
 const { Venta, Insumo, Cliente, User, Product, Compra, Resena, DetalleVentaProducto, Variante, Devolucion, sequelize } = require('../../persistence/models');
 const { Op } = require('sequelize');
+const { ensureDevolucionSchema } = require('../../infrastructure/utils/dbUtils');
+
+let _devolucionSchemaReadyPromise = null;
+function ensureDevolucionSchemaOnce() {
+  if (!_devolucionSchemaReadyPromise) {
+    _devolucionSchemaReadyPromise = ensureDevolucionSchema().catch((err) => {
+      console.warn('[DashboardService] Advertencia verificando esquema devolucion:', err?.message);
+      _devolucionSchemaReadyPromise = null;
+    });
+  }
+  return _devolucionSchemaReadyPromise;
+}
 const {
   COLOMBIA_OFFSET,
   getColombiaDateISO,
@@ -875,9 +887,10 @@ class DashboardService {
 
   static async getDevolucionesPendientes() {
     try {
+      await ensureDevolucionSchemaOnce();
       const rows = await Devolucion.findAll({
         where: {
-          estado: { [Op.in]: ['PENDIENTE', 'Pendiente', 'pendiente'] }
+          estado: { [Op.like]: '%PENDIENTE%' }
         },
         attributes: [
           'idDevolucion',
