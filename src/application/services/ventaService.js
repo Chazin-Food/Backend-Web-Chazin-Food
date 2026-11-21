@@ -12,9 +12,16 @@ const {
   formatColombiaTime12,
   formatColombiaTimeWithSeconds12
 } = require('../../infrastructure/utils/colombiaDateUtils');
-
-const NO_STOCK_TAG = '[SIN_CONTROL_STOCK]';
-const isInsumoNoStockControl = (insumo) => Boolean(insumo && String(insumo.descripcion || '').includes(NO_STOCK_TAG));
+const {
+  NO_STOCK_TAG,
+  EPSILON,
+  roundQty,
+  isInsumoNoStockControl,
+  computeInsumoStockBreakdown,
+  deductInsumoFefo,
+  restoreInsumoFefo
+} = require('../../infrastructure/utils/stockFefoUtils');
+const { invalidateNamespaces } = require('../../infrastructure/utils/apiCache');
 
 let lastWompiExpirationSweepMs = 0;
 const WOMPI_SWEEP_INTERVAL_MS = 5 * 60 * 1000;
@@ -28,14 +35,19 @@ function convertUnits(amount, fromUnit, toUnit) {
 
   if (from === to) return Number(amount);
 
-  const isKg = (u) => u.includes('kg') || u.includes('kilo');
-  const isGr = (u) => u.includes('gr') || u.includes('gram');
-  const isMg = (u) => u.includes('mg') || u.includes('miligram');
-  const isLt = (u) => u.includes('lt') || u.includes('litro');
-  const isMl = (u) => u.includes('ml') || u.includes('mililitro') || u.includes('cc');
+  const isKg = (u) => u === 'kg' || u.includes('kg') || u.includes('kilo');
+  const isGr = (u) => u === 'g' || u === 'gr' || u.includes('gr') || u.includes('gram');
+  const isMg = (u) => u === 'mg' || u.includes('mg') || u.includes('miligram');
+  const isLb = (u) => u === 'lb' || u.includes('libra');
+  const isLt = (u) => u === 'l' || u === 'lt' || u.includes('lt') || u.includes('litro');
+  const isMl = (u) => u === 'ml' || u.includes('ml') || u.includes('mililitro') || u.includes('cc');
 
   if (isKg(from) && isGr(to)) return Number(amount) * 1000;
   if (isGr(from) && isKg(to)) return Number(amount) / 1000;
+  if (isGr(from) && isLb(to)) return Number(amount) / 500;
+  if (isLb(from) && isGr(to)) return Number(amount) * 500;
+  if (isKg(from) && isLb(to)) return Number(amount) * 2;
+  if (isLb(from) && isKg(to)) return Number(amount) / 2;
   if (isKg(from) && isMg(to)) return Number(amount) * 1000000;
   if (isMg(from) && isKg(to)) return Number(amount) / 1000000;
   if (isGr(from) && isMg(to)) return Number(amount) * 1000;
@@ -1577,23 +1589,20 @@ class VentaService {
 
     const obsStr = JSON.stringify(obsObj);
 
-    const venta = await Venta.create({
-      idCliente: finalClienteId,
-      idUsuario: responsibleUserId,
-      idDescuento: data.idDescuento || null,
-      tipoVenta: resolvedTipoVenta,
-      subtotal: finalSubtotal,
-      descuentoAplicado: finalDescuento,
-      total: finalTotal,
-      estadoEntrega: finalEstadoEntrega,
-      observaciones: obsStr,
-      estadoAprobacion: finalEstadoAprobacion,
-      origen: origenVenta,
-      tiempoEstimadoEntrega: upperEstadoEntrega === 'ENTREGADO' ? 'Entregado' : tiempoEstimadoEntregaVenta
-    });
+    const {
+      sequelize,
+      DetalleVentaAdicion,
+      LoteInsumo,
+      Trazabilidad,
+      ComboProducto: CPModel
+    } = require('../../persistence/models');
+    const { Op } = require('sequelize');
 
-    if (rawDetails.length > 0) {
-      const { sequelize, DetalleVentaAdicion } = require('../../persistence/models');
+    // Transacción atómica: valida disponibilidad con stock vigente (FEFO) bajo bloqueo de filas,
+    // rechaza con 409 Conflict si falta stock o algún insumo está inactivo/vencido, y descuenta FEFO en la misma transacción.
+    const venta = await sequelize.transaction(async (t) => {
+      const preparedDetails = [];
+      const allDemands = [];
 
       for (let detailIdx = 0; detailIdx < rawDetails.length; detailIdx++) {
         const d = rawDetails[detailIdx];
@@ -1608,7 +1617,7 @@ class VentaService {
           try {
             const [matchById] = await sequelize.query(
               'SELECT idVariante, idProducto FROM variante WHERE idVariante = :id LIMIT 1',
-              { replacements: { id: d.idVariante } }
+              { replacements: { id: d.idVariante }, transaction: t }
             );
             if (matchById && matchById.length > 0) {
               const rowProdId = Number(matchById[0].idProducto);
@@ -1628,25 +1637,27 @@ class VentaService {
             try {
               const [baseDummy] = await sequelize.query(
                 "SELECT idVariante FROM variante WHERE idProducto = :id AND LOWER(nombre) LIKE '%- base%' ORDER BY idVariante ASC LIMIT 1",
-                { replacements: { id: lookupProdId } }
+                { replacements: { id: lookupProdId }, transaction: t }
               );
               if (baseDummy && baseDummy.length > 0) {
                 chosenVarianteId = baseDummy[0].idVariante;
               } else if (isBaseSelection) {
-                // Crear fila oculta `- base` para no asignar una variante distinta al producto base
                 const [prodInfo] = await sequelize.query(
                   'SELECT idProducto, nombre, precio FROM producto WHERE idProducto = :id LIMIT 1',
-                  { replacements: { id: lookupProdId } }
+                  { replacements: { id: lookupProdId }, transaction: t }
                 );
                 if (prodInfo && prodInfo.length > 0) {
                   const dummyName = `${String(prodInfo[0].nombre || 'Producto').slice(0, 68)} - base`;
                   await sequelize.query(
                     'INSERT INTO variante (idProducto, nombre, precio, estado) VALUES (:idProducto, :nombre, :precio, 1)',
-                    { replacements: { idProducto: prodInfo[0].idProducto, nombre: dummyName, precio: Number(prodInfo[0].precio || 0) } }
+                    {
+                      replacements: { idProducto: prodInfo[0].idProducto, nombre: dummyName, precio: Number(prodInfo[0].precio || 0) },
+                      transaction: t
+                    }
                   );
                   const [insertedDummy] = await sequelize.query(
                     'SELECT idVariante FROM variante WHERE idProducto = :id ORDER BY idVariante DESC LIMIT 1',
-                    { replacements: { id: prodInfo[0].idProducto } }
+                    { replacements: { id: prodInfo[0].idProducto }, transaction: t }
                   );
                   if (insertedDummy && insertedDummy.length > 0) {
                     chosenVarianteId = insertedDummy[0].idVariante;
@@ -1657,7 +1668,7 @@ class VentaService {
               if (!chosenVarianteId) {
                 const [matchByProd] = await sequelize.query(
                   "SELECT idVariante FROM variante WHERE idProducto = :id ORDER BY CASE WHEN LOWER(nombre) LIKE '%- base%' THEN 0 ELSE 1 END, estado DESC, idVariante ASC LIMIT 1",
-                  { replacements: { id: lookupProdId } }
+                  { replacements: { id: lookupProdId }, transaction: t }
                 );
                 if (matchByProd && matchByProd.length > 0) {
                   chosenVarianteId = matchByProd[0].idVariante;
@@ -1672,7 +1683,7 @@ class VentaService {
         // 3. Si no hay coincidencia, tomar cualquier variante existente en la base de datos
         if (!chosenVarianteId) {
           try {
-            const [anyVar] = await sequelize.query('SELECT idVariante FROM variante LIMIT 1');
+            const [anyVar] = await sequelize.query('SELECT idVariante FROM variante LIMIT 1', { transaction: t });
             if (anyVar && anyVar.length > 0) {
               chosenVarianteId = anyVar[0].idVariante;
             }
@@ -1687,7 +1698,7 @@ class VentaService {
             const targetProdId = d.idProducto || d.idVariante || 1;
             const [prodCheck] = await sequelize.query(
               'SELECT idProducto, nombre, precio FROM producto WHERE idProducto = :id LIMIT 1',
-              { replacements: { id: targetProdId } }
+              { replacements: { id: targetProdId }, transaction: t }
             );
 
             let finalProdId = targetProdId;
@@ -1695,7 +1706,7 @@ class VentaService {
             let varPrecio = d.precioUnitario || d.precio || 0;
 
             if (!prodCheck || prodCheck.length === 0) {
-              const [firstProd] = await sequelize.query('SELECT idProducto, nombre, precio FROM producto LIMIT 1');
+              const [firstProd] = await sequelize.query('SELECT idProducto, nombre, precio FROM producto LIMIT 1', { transaction: t });
               if (firstProd && firstProd.length > 0) {
                 finalProdId = firstProd[0].idProducto;
                 varNombre = firstProd[0].nombre;
@@ -1708,12 +1719,12 @@ class VentaService {
 
             await sequelize.query(
               'INSERT INTO variante (idProducto, nombre, precio, estado) VALUES (:idProducto, :nombre, :precio, 1)',
-              { replacements: { idProducto: finalProdId, nombre: String(varNombre).slice(0, 80), precio: varPrecio } }
+              { replacements: { idProducto: finalProdId, nombre: String(varNombre).slice(0, 80), precio: varPrecio }, transaction: t }
             );
 
             const [newVarRow] = await sequelize.query(
               'SELECT idVariante FROM variante WHERE idProducto = :idProducto ORDER BY idVariante DESC LIMIT 1',
-              { replacements: { idProducto: finalProdId } }
+              { replacements: { idProducto: finalProdId }, transaction: t }
             );
             if (newVarRow && newVarRow.length > 0) {
               chosenVarianteId = newVarRow[0].idVariante;
@@ -1723,261 +1734,492 @@ class VentaService {
           }
         }
 
+        let targetProductId = d.idProducto || obsProdItem?.idProducto || null;
+        let selectedVarRow = null;
         if (chosenVarianteId) {
-          const prodDisplayName = String(d.nombre || obsProdItem?.nombre || '').trim();
-          const obsCandidates = [
-            d.observacion,
-            obsProdItem?.observacion,
-            obsProdItem?.observaciones,
-            d.observaciones
-          ]
-            .map(v => (typeof v === 'string' ? v.trim() : ''))
-            .filter(Boolean);
-          const customNote = obsCandidates.find(
-            c => c.toLowerCase() !== prodDisplayName.toLowerCase()
-          ) || obsCandidates[0] || prodDisplayName || null;
+          selectedVarRow = await Variante.findByPk(chosenVarianteId, { transaction: t }).catch(() => null);
+          if (!targetProductId && selectedVarRow?.idProducto) targetProductId = selectedVarRow.idProducto;
+        }
+        if (!targetProductId && d.idVariante) {
+          const fallbackVar = await Variante.findByPk(d.idVariante, { transaction: t }).catch(() => null);
+          if (fallbackVar?.idProducto) targetProductId = fallbackVar.idProducto;
+        }
 
-          const pricedDetail = serverPricedMap.get(d);
-          const safeDetalleQty = pricedDetail ? pricedDetail.cantidad : Math.max(1, Math.floor(Number(d.cantidad || 1)));
-          const safeDetalleUnit = esDevolucion ? 0 : (pricedDetail ? pricedDetail.precioUnitario : 0);
-          const safeDetalleSub = esDevolucion ? 0 : Math.round(safeDetalleUnit * safeDetalleQty);
+        const prodRow = targetProductId
+          ? await Product.findByPk(targetProductId, { transaction: t }).catch(() => null)
+          : null;
+        const prodDisplayName = String(prodRow?.nombre || d.nombre || obsProdItem?.nombre || 'Producto').trim();
+        const pricedDetail = serverPricedMap.get(d);
+        const safeDetalleQty = pricedDetail ? pricedDetail.cantidad : Math.max(1, Math.floor(Number(d.cantidad || 1)));
 
-          const createdDetalle = await DetalleVentaProducto.create({
-            idVenta: venta.idVenta,
-            idVariante: chosenVarianteId,
-            cantidad: safeDetalleQty,
-            precioUnitario: safeDetalleUnit,
-            subtotal: safeDetalleSub,
-            observaciones: customNote
-          });
-
-          // Descuento Automático de Insumos según Ficha Técnica del Producto o Variante específica
-          try {
-            const { Insumo, Variante, Trazabilidad } = require('../../persistence/models');
-            let targetProductId = d.idProducto;
-            if (!targetProductId && chosenVarianteId) {
-              const varRow = await Variante.findByPk(chosenVarianteId);
-              if (varRow && varRow.idProducto) targetProductId = varRow.idProducto;
-            }
-            if (!targetProductId && d.idVariante) {
-              const varRow = await Variante.findByPk(d.idVariante);
-              if (varRow && varRow.idProducto) targetProductId = varRow.idProducto;
-            }
-
-            const recipeResult = await VentaService.resolveRecipeOrInsumoForDetail(d, chosenVarianteId, targetProductId);
-            const itemQty = Number(d.cantidad || 1);
-
-            // Detección de Combo para descuento automático de productos vinculados
-            let comboItems = [];
-            let prodRow = null;
-            if (targetProductId) {
-              const { Product: ProdModel, ComboProducto: CPModel } = require('../../persistence/models');
-              try {
-                prodRow = await ProdModel.findByPk(targetProductId);
-                if (prodRow) {
-                  let cfg = prodRow.configuracionCombo;
-                  if (typeof cfg === 'string') {
-                    try { cfg = JSON.parse(cfg); } catch (e) { cfg = null; }
-                  }
-                  if (cfg && cfg.esCombo) {
-                    if (Array.isArray(cfg.productosAsociados) && cfg.productosAsociados.length > 0) {
-                      comboItems = cfg.productosAsociados;
-                    } else if (Array.isArray(cfg.itemsCombo) && cfg.itemsCombo.length > 0) {
-                      comboItems = cfg.itemsCombo;
-                    }
-                  }
-                  if (comboItems.length === 0) {
-                    const dbComboItems = await CPModel.findAll({ where: { idCombo: targetProductId } });
-                    if (dbComboItems && dbComboItems.length > 0) {
-                      comboItems = dbComboItems.map(ci => ({ idProducto: ci.idProducto, cantidad: ci.cantidad }));
-                    }
-                  }
-                }
-              } catch (comboLookupErr) {
-                console.warn('Error identificando productos de combo para inventario:', comboLookupErr.message);
-              }
-            }
-
-            if (recipeResult.directInsumoId) {
-              const insumo = await Insumo.findByPk(recipeResult.directInsumoId);
-              if (insumo && !isInsumoNoStockControl(insumo) && !isInsumoRemovedByMiseEnPlace(insumo, d, obsProdItem)) {
-                const totalADescontar = itemQty;
-                const stockActual = Number(insumo.stock || 0);
-                const nuevoStock = Math.max(0, stockActual - totalADescontar);
-                insumo.stock = nuevoStock;
-                await insumo.save();
-
-                try {
-                  await Trazabilidad.create({
-                    tipo: 'CONSUMO_VENTA',
-                    entidadNombre: insumo.nombre,
-                    detalle: `Consumo de ${totalADescontar.toFixed(2)} und por Venta #${venta.idVenta} (${itemQty}x ${insumo.nombre})`,
-                    idInsumo: insumo.idInsumo,
-                    tipoMovimiento: 'SALIDA',
-                    cantidad: totalADescontar,
-                    motivo: `Venta #${venta.idVenta}`,
-                    usuarioId: responsibleUserId || targetUserId || null
-                  });
-                } catch (tzErr) {
-                  console.warn('Error registrando trazabilidad de insumo:', tzErr.message);
-                }
-              }
-            } else if (comboItems.length > 0) {
-              // Descuento automático de inventario para cada producto individual que compone el combo
-              for (const ci of comboItems) {
-                const childProdId = ci.idProducto || ci.id;
-                const childQty = (Number(ci.cantidad || 1)) * itemQty;
-                if (childProdId && childQty > 0) {
-                  try {
-                    const childRecipe = await VentaService.resolveRecipeOrInsumoForDetail({ idProducto: childProdId, cantidad: childQty }, null, childProdId);
-                    if (childRecipe.directInsumoId) {
-                      const insumoChild = await Insumo.findByPk(childRecipe.directInsumoId);
-                      if (insumoChild && !isInsumoNoStockControl(insumoChild)) {
-                        const stockAct = Number(insumoChild.stock || 0);
-                        insumoChild.stock = Math.max(0, stockAct - childQty);
-                        await insumoChild.save();
-                        try {
-                          await Trazabilidad.create({
-                            tipo: 'CONSUMO_VENTA',
-                            entidadNombre: insumoChild.nombre,
-                            detalle: `Consumo de ${childQty} und por Venta #${venta.idVenta} (Combo: ${prodRow?.nombre || targetProductId} -> ${insumoChild.nombre})`,
-                            idInsumo: insumoChild.idInsumo,
-                            tipoMovimiento: 'SALIDA',
-                            cantidad: childQty,
-                            motivo: `Venta #${venta.idVenta}`,
-                            usuarioId: responsibleUserId || targetUserId || null
-                          });
-                        } catch (e) {}
-                      }
-                    } else if (childRecipe.ficha && Array.isArray(childRecipe.ficha.detalles)) {
-                      for (const det of childRecipe.ficha.detalles) {
-                        const cantPorPlato = Number(det.cantidad || 0);
-                        const recipeUnit = det.unidadMedida || 'und';
-                        if (cantPorPlato > 0 && det.idInsumo) {
-                          const insumo = await Insumo.findByPk(det.idInsumo);
-                          if (insumo && !isInsumoNoStockControl(insumo)) {
-                            const insumoUnit = insumo.unidadMedida || recipeUnit;
-                            const cantConvertida = convertUnits(cantPorPlato, recipeUnit, insumoUnit);
-                            const totalADescontar = cantConvertida * childQty;
-                            const stockActual = Number(insumo.stock || 0);
-                            insumo.stock = Math.max(0, stockActual - totalADescontar);
-                            await insumo.save();
-                            try {
-                              await Trazabilidad.create({
-                                tipo: 'CONSUMO_VENTA',
-                                entidadNombre: insumo.nombre,
-                                detalle: `Consumo de ${totalADescontar.toFixed(2)} ${insumoUnit} por Venta #${venta.idVenta} (Combo: ${prodRow?.nombre || targetProductId} -> Prod #${childProdId})`,
-                                idInsumo: insumo.idInsumo,
-                                tipoMovimiento: 'SALIDA',
-                                cantidad: totalADescontar,
-                                motivo: `Venta #${venta.idVenta}`,
-                                usuarioId: responsibleUserId || targetUserId || null
-                              });
-                            } catch (tzErr) {}
-                          }
-                        }
-                      }
-                    }
-                  } catch (childErr) {
-                    console.warn(`Error descontando producto #${childProdId} de combo:`, childErr.message);
-                  }
-                }
-              }
-            } else if (recipeResult.ficha && Array.isArray(recipeResult.ficha.detalles)) {
-              for (const det of recipeResult.ficha.detalles) {
-                const cantPorPlato = Number(det.cantidad || 0);
-                const recipeUnit = det.unidadMedida || 'und';
-                if (cantPorPlato > 0 && det.idInsumo) {
-                  const insumo = await Insumo.findByPk(det.idInsumo);
-                  if (insumo && !isInsumoNoStockControl(insumo)) {
-                    // Respetar Mise & Place: si el cliente quitó este ingrediente ("Sin ..."), no se descuenta de inventario
-                    if (isInsumoRemovedByMiseEnPlace(insumo, d, obsProdItem)) {
-                      continue;
-                    }
-                    const insumoUnit = insumo.unidadMedida || recipeUnit;
-                    const cantConvertida = convertUnits(cantPorPlato, recipeUnit, insumoUnit);
-                    const totalADescontar = cantConvertida * itemQty;
-                    const stockActual = Number(insumo.stock || 0);
-                    const nuevoStock = Math.max(0, stockActual - totalADescontar);
-                    insumo.stock = nuevoStock;
-                    await insumo.save();
-
-                    try {
-                      await Trazabilidad.create({
-                        tipo: 'CONSUMO_VENTA',
-                        entidadNombre: insumo.nombre,
-                        detalle: `Consumo de ${totalADescontar.toFixed(2)} ${insumoUnit} por Venta #${venta.idVenta} (${itemQty}x Prod #${recipeResult.targetProductId || targetProductId})`,
-                        idInsumo: insumo.idInsumo,
-                        tipoMovimiento: 'SALIDA',
-                        cantidad: totalADescontar,
-                        motivo: `Venta #${venta.idVenta}`,
-                        usuarioId: responsibleUserId || targetUserId || null
-                      });
-                    } catch (tzErr) {
-                      console.warn('Error registrando trazabilidad de insumo:', tzErr.message);
-                    }
-                  }
-                }
-              }
-            }
-          } catch (mrpErr) {
-            console.warn('Error descontando insumos de receta:', mrpErr.message);
+        if (!esDevolucion) {
+          if (prodRow && (Number(prodRow.eliminado) === 1 || Number(prodRow.estado) === 0)) {
+            const err = new Error(`No se puede completar la venta: el producto "${prodDisplayName}" no está disponible en este momento.`);
+            err.statusCode = 409;
+            err.code = 'PRODUCT_UNAVAILABLE';
+            err.productosAgotados = [{ idProducto: prodRow.idProducto, nombre: prodDisplayName, motivo: 'PRODUCTO_INACTIVO' }];
+            throw err;
           }
+          if (
+            !isBaseSelection &&
+            selectedVarRow &&
+            !String(selectedVarRow.nombre || '').toLowerCase().includes('- base') &&
+            Number(selectedVarRow.estado) === 0
+          ) {
+            const err = new Error(`La variante "${selectedVarRow.nombre}" del producto "${prodDisplayName}" está inactiva y no se puede vender en este momento.`);
+            err.statusCode = 409;
+            err.code = 'VARIANT_UNAVAILABLE';
+            err.productosAgotados = [{ idProducto: targetProductId, idVariante: selectedVarRow.idVariante, nombre: `${prodDisplayName} (${selectedVarRow.nombre})`, motivo: 'VARIANTE_INACTIVA' }];
+            throw err;
+          }
+        }
 
-          // Guardar adiciones si fueron enviadas y descontar su insumo de inventario
-          const adicList = d.idAdiciones || d.adiciones || [];
-          if (Array.isArray(adicList) && adicList.length > 0) {
-            const { Insumo, Trazabilidad } = require('../../persistence/models');
-            for (const adItem of adicList) {
-              const adId = typeof adItem === 'object' ? (adItem.id || adItem.idAdicion || adItem.idInsumo) : adItem;
-              const adCantidad = typeof adItem === 'object' ? Math.max(1, Math.floor(Number(adItem.cantidad) || 1)) : 1;
-              if (adId) {
-                try {
-                  const insumoAd = await Insumo.findByPk(adId);
-                  // Seguridad (AUD-004): usar SIEMPRE el precio oficial de la adición en BD (nunca el enviado por el cliente)
-                  const adPrecio = esDevolucion ? 0 : Math.max(0, Number(insumoAd?.precioAdicion || 0));
-
-                  await DetalleVentaAdicion.create({
-                    idDetalleVenta: createdDetalle.idDetalleVenta,
-                    idAdicion: adId,
-                    cantidad: adCantidad,
-                    precio: adPrecio,
-                    subtotal: adPrecio * adCantidad
-                  });
-
-                  // Descontar inventario del insumo vinculado a la adición (si controla stock)
-                  if (insumoAd && !isInsumoNoStockControl(insumoAd)) {
-                    const itemQty = Number(d.cantidad || 1);
-                    const totalAdDescontar = adCantidad * itemQty;
-                    const stockActual = Number(insumoAd.stock || 0);
-                    const nuevoStock = Math.max(0, stockActual - totalAdDescontar);
-                    insumoAd.stock = nuevoStock;
-                    await insumoAd.save();
-
-                    try {
-                      await Trazabilidad.create({
-                        tipo: 'CONSUMO_ADICION',
-                        entidadNombre: insumoAd.nombre,
-                        detalle: `Adición ${insumoAd.nombre} (${totalAdDescontar} ${insumoAd.unidadMedida || 'und'}) en Venta #${venta.idVenta}`,
-                        idInsumo: insumoAd.idInsumo,
-                        tipoMovimiento: 'SALIDA',
-                        cantidad: totalAdDescontar,
-                        motivo: `Venta #${venta.idVenta} (Adición)`,
-                        usuarioId: responsibleUserId || targetUserId || null
-                      });
-                    } catch (tzAdErr) {
-                      console.warn('Error registrando trazabilidad de adición:', tzAdErr.message);
-                    }
-                  }
-                } catch (errAd) {
-                  console.warn('Error guardando DetalleVentaAdicion o descontando stock:', errAd.message);
-                }
-              }
+        // Detectar componentes de combo si existen
+        let comboItems = [];
+        if (prodRow) {
+          let cfg = prodRow.configuracionCombo;
+          if (typeof cfg === 'string') {
+            try { cfg = JSON.parse(cfg); } catch (_) { cfg = null; }
+          }
+          if (cfg && cfg.esCombo) {
+            if (Array.isArray(cfg.productosAsociados) && cfg.productosAsociados.length > 0) {
+              comboItems = cfg.productosAsociados;
+            } else if (Array.isArray(cfg.itemsCombo) && cfg.itemsCombo.length > 0) {
+              comboItems = cfg.itemsCombo;
+            }
+          }
+          if (comboItems.length === 0 && targetProductId) {
+            const dbComboItems = await CPModel.findAll({ where: { idCombo: targetProductId }, transaction: t }).catch(() => []);
+            if (dbComboItems && dbComboItems.length > 0) {
+              comboItems = dbComboItems.map(ci => ({ idProducto: ci.idProducto, cantidad: ci.cantidad }));
             }
           }
         }
+
+        const recipeResult = await VentaService.resolveRecipeOrInsumoForDetail(
+          d,
+          chosenVarianteId,
+          targetProductId,
+          { transaction: t, skipNameFallback: comboItems.length > 0 }
+        );
+
+        let itemHasInventorySource = false;
+
+        if (recipeResult.directInsumoId) {
+          itemHasInventorySource = true;
+          allDemands.push({
+            idInsumo: Number(recipeResult.directInsumoId),
+            rawCantidad: 1,
+            recipeUnit: 'und',
+            multiplierQty: safeDetalleQty,
+            sourceType: 'PRODUCTO_DIRECTO',
+            productName: prodDisplayName,
+            productId: targetProductId,
+            detailItem: d,
+            obsProdItem,
+            checkMiseEnPlace: true,
+            trazabilidadTipo: 'CONSUMO_VENTA',
+            trazabilidadDetalleFn: (qtyDesc, unit, insName, ventaId) =>
+              `Consumo de ${qtyDesc.toFixed(2)} ${unit} por Venta #${ventaId} (${safeDetalleQty}x ${insName})`
+          });
+        } else if (comboItems.length > 0) {
+          itemHasInventorySource = true;
+          for (const ci of comboItems) {
+            const childProdId = Number(ci.idProducto || ci.id);
+            const childQty = Math.max(1, Number(ci.cantidad || 1)) * safeDetalleQty;
+            if (!childProdId || !(childQty > 0)) continue;
+
+            const childProd = await Product.findByPk(childProdId, { transaction: t }).catch(() => null);
+            if (!esDevolucion && childProd && (Number(childProd.eliminado) === 1 || Number(childProd.estado) === 0)) {
+              const err = new Error(`No se puede completar la venta: el combo "${prodDisplayName}" incluye "${childProd.nombre}", que no está disponible.`);
+              err.statusCode = 409;
+              err.code = 'PRODUCT_UNAVAILABLE';
+              err.productosAgotados = [{ idProducto: targetProductId, nombre: prodDisplayName, motivo: 'COMPONENTE_COMBO_INACTIVO' }];
+              throw err;
+            }
+
+            const childRecipe = await VentaService.resolveRecipeOrInsumoForDetail(
+              { idProducto: childProdId, cantidad: childQty, nombre: childProd?.nombre },
+              null,
+              childProdId,
+              { transaction: t }
+            );
+
+            if (childRecipe.directInsumoId) {
+              allDemands.push({
+                idInsumo: Number(childRecipe.directInsumoId),
+                rawCantidad: 1,
+                recipeUnit: 'und',
+                multiplierQty: childQty,
+                sourceType: 'COMBO_DIRECTO',
+                productName: prodDisplayName,
+                productId: targetProductId,
+                detailItem: d,
+                obsProdItem,
+                checkMiseEnPlace: false,
+                trazabilidadTipo: 'CONSUMO_VENTA',
+                trazabilidadDetalleFn: (qtyDesc, unit, insName, ventaId) =>
+                  `Consumo de ${qtyDesc.toFixed(2)} ${unit} por Venta #${ventaId} (Combo: ${prodDisplayName} -> ${insName})`
+              });
+            } else if (childRecipe.ficha && Array.isArray(childRecipe.ficha.detalles)) {
+              for (const det of childRecipe.ficha.detalles) {
+                const cantPorPlato = Number(det.cantidad || 0);
+                if (cantPorPlato > 0 && det.idInsumo) {
+                  allDemands.push({
+                    idInsumo: Number(det.idInsumo),
+                    rawCantidad: cantPorPlato,
+                    recipeUnit: det.unidadMedida || 'und',
+                    multiplierQty: childQty,
+                    sourceType: 'COMBO_RECETA',
+                    productName: prodDisplayName,
+                    productId: targetProductId,
+                    detailItem: d,
+                    obsProdItem,
+                    checkMiseEnPlace: false,
+                    trazabilidadTipo: 'CONSUMO_VENTA',
+                    trazabilidadDetalleFn: (qtyDesc, unit, _insName, ventaId) =>
+                      `Consumo de ${qtyDesc.toFixed(2)} ${unit} por Venta #${ventaId} (Combo: ${prodDisplayName} -> Prod #${childProdId})`
+                  });
+                }
+              }
+            }
+          }
+        } else if (recipeResult.ficha && Array.isArray(recipeResult.ficha.detalles) && recipeResult.ficha.detalles.length > 0) {
+          itemHasInventorySource = true;
+          for (const det of recipeResult.ficha.detalles) {
+            const cantPorPlato = Number(det.cantidad || 0);
+            if (cantPorPlato > 0 && det.idInsumo) {
+              allDemands.push({
+                idInsumo: Number(det.idInsumo),
+                rawCantidad: cantPorPlato,
+                recipeUnit: det.unidadMedida || 'und',
+                multiplierQty: safeDetalleQty,
+                sourceType: 'RECETA',
+                productName: prodDisplayName,
+                productId: recipeResult.targetProductId || targetProductId,
+                detailItem: d,
+                obsProdItem,
+                checkMiseEnPlace: true,
+                trazabilidadTipo: 'CONSUMO_VENTA',
+                trazabilidadDetalleFn: (qtyDesc, unit, _insName, ventaId) =>
+                  `Consumo de ${qtyDesc.toFixed(2)} ${unit} por Venta #${ventaId} (${safeDetalleQty}x Prod #${recipeResult.targetProductId || targetProductId})`
+              });
+            }
+          }
+        }
+
+        if (!esDevolucion && !itemHasInventorySource) {
+          const err = new Error(`No se puede completar la venta: el producto "${prodDisplayName}" está agotado (sin stock disponible).`);
+          err.statusCode = 409;
+          err.code = 'INSUFFICIENT_STOCK';
+          err.productosAgotados = [{ idProducto: targetProductId, nombre: prodDisplayName, motivo: 'SIN_RECETA_O_STOCK' }];
+          throw err;
+        }
+
+        // Recolectar adiciones solicitadas para este detalle
+        const adicList = d.idAdiciones || d.adiciones || [];
+        const normalizedAdiciones = [];
+        if (Array.isArray(adicList) && adicList.length > 0) {
+          for (const adItem of adicList) {
+            const adId = Number(typeof adItem === 'object' ? (adItem.id || adItem.idAdicion || adItem.idInsumo) : adItem);
+            const adCantidad = typeof adItem === 'object' ? Math.max(1, Math.floor(Number(adItem.cantidad) || 1)) : 1;
+            if (!adId) continue;
+            normalizedAdiciones.push({ adId, adCantidad });
+            allDemands.push({
+              idInsumo: adId,
+              rawCantidad: 1,
+              recipeUnit: null,
+              multiplierQty: adCantidad * safeDetalleQty,
+              sourceType: 'ADICION',
+              productName: typeof adItem === 'object' && adItem.nombre ? adItem.nombre : `Adición #${adId}`,
+              parentProductName: prodDisplayName,
+              productId: targetProductId,
+              detailItem: d,
+              obsProdItem,
+              checkMiseEnPlace: false,
+              trazabilidadTipo: 'CONSUMO_ADICION',
+              trazabilidadMotivoFn: (ventaId) => `Venta #${ventaId} (Adición)`,
+              trazabilidadDetalleFn: (qtyDesc, unit, insName, ventaId) =>
+                `Adición ${insName} (${qtyDesc} ${unit}) en Venta #${ventaId}`
+            });
+          }
+        }
+
+        preparedDetails.push({
+          d,
+          obsProdItem,
+          chosenVarianteId,
+          prodDisplayName,
+          pricedDetail,
+          safeDetalleQty,
+          normalizedAdiciones
+        });
       }
-    }
+
+      // Bloquear en orden determinístico (idInsumo ASC) todos los insumos y lotes involucrados para evitar condiciones de carrera y deadlocks
+      const uniqueInsumoIds = Array.from(new Set(allDemands.map(dm => Number(dm.idInsumo)).filter(Boolean))).sort((a, b) => a - b);
+      const lockedInsumosMap = new Map();
+      const lockedLotesByInsumo = new Map();
+
+      if (uniqueInsumoIds.length > 0) {
+        const lockedInsumos = await Insumo.findAll({
+          where: { idInsumo: uniqueInsumoIds },
+          order: [['idInsumo', 'ASC']],
+          transaction: t,
+          lock: t.LOCK.UPDATE
+        });
+        for (const ins of lockedInsumos) {
+          lockedInsumosMap.set(Number(ins.idInsumo), ins);
+        }
+
+        const lockedLotes = await LoteInsumo.findAll({
+          where: {
+            idInsumo: uniqueInsumoIds,
+            estado: { [Op.ne]: 'AGOTADO' }
+          },
+          order: [['idInsumo', 'ASC'], ['idLote', 'ASC']],
+          transaction: t,
+          lock: t.LOCK.UPDATE
+        });
+        for (const l of lockedLotes) {
+          const idIns = Number(l.idInsumo);
+          if (!lockedLotesByInsumo.has(idIns)) lockedLotesByInsumo.set(idIns, []);
+          lockedLotesByInsumo.get(idIns).push(l);
+        }
+      }
+
+      // Filtrar Mise & Place ("Sin ...") y agregar la demanda total por insumo de todo el pedido
+      const activeDemands = [];
+      const aggregatedByInsumo = new Map();
+
+      for (const dm of allDemands) {
+        const insumo = lockedInsumosMap.get(dm.idInsumo) || null;
+        if (!insumo) {
+          if (!esDevolucion) {
+            if (!aggregatedByInsumo.has(dm.idInsumo)) {
+              aggregatedByInsumo.set(dm.idInsumo, {
+                insumo: null,
+                totalRequired: 0,
+                unit: dm.recipeUnit || 'und',
+                affectedProducts: new Set(),
+                missingInsumo: true
+              });
+            }
+            aggregatedByInsumo.get(dm.idInsumo).affectedProducts.add(dm.productName);
+          }
+          continue;
+        }
+
+        // Respetar Mise & Place: si el cliente quitó este ingrediente ("Sin ..."), no bloquea la venta ni se descuenta de inventario
+        if (dm.checkMiseEnPlace && isInsumoRemovedByMiseEnPlace(insumo, dm.detailItem, dm.obsProdItem)) {
+          continue;
+        }
+
+        const insumoUnit = insumo.unidadMedida || dm.recipeUnit || 'und';
+        const cantPorUnidad = dm.recipeUnit
+          ? convertUnits(dm.rawCantidad, dm.recipeUnit, insumoUnit)
+          : Number(dm.rawCantidad || 0);
+        const totalADescontar = roundQty(cantPorUnidad * dm.multiplierQty);
+        if (!(totalADescontar > EPSILON)) continue;
+
+        activeDemands.push({ ...dm, insumo, insumoUnit, totalADescontar });
+
+        if (!aggregatedByInsumo.has(dm.idInsumo)) {
+          aggregatedByInsumo.set(dm.idInsumo, {
+            insumo,
+            totalRequired: 0,
+            unit: insumoUnit,
+            affectedProducts: new Set(),
+            missingInsumo: false
+          });
+        }
+        const agg = aggregatedByInsumo.get(dm.idInsumo);
+        agg.totalRequired = roundQty(agg.totalRequired + totalADescontar);
+        agg.affectedProducts.add(dm.sourceType === 'ADICION' ? `Adición "${insumo.nombre}"` : dm.productName);
+      }
+
+      // Validación estricta de stock vigente e insumos activos ANTES de confirmar la venta (409 Conflict)
+      if (!esDevolucion) {
+        const stockConflicts = [];
+
+        for (const [idIns, agg] of aggregatedByInsumo.entries()) {
+          const productos = Array.from(agg.affectedProducts);
+          if (agg.missingInsumo || !agg.insumo) {
+            stockConflicts.push({
+              idInsumo: idIns,
+              insumoNombre: `Insumo #${idIns}`,
+              productos,
+              motivo: 'INSUMO_NO_ENCONTRADO'
+            });
+            continue;
+          }
+
+          const lotesIns = lockedLotesByInsumo.get(idIns) || [];
+          const breakdown = computeInsumoStockBreakdown(agg.insumo, lotesIns, hoyColombia);
+
+          // Respetar insumo.estado === 0 (o eliminado === 1) para TODOS los insumos (con o sin control de stock)
+          if (breakdown.isInactive) {
+            stockConflicts.push({
+              idInsumo: idIns,
+              insumoNombre: agg.insumo.nombre,
+              productos,
+              motivo: 'INSUMO_INACTIVO',
+              stockVigente: 0,
+              requerido: agg.totalRequired,
+              unidad: agg.unit
+            });
+            continue;
+          }
+
+          // Verificar stock vigente suficiente (excluyendo lotes vencidos aunque no se hayan retirado manualmente)
+          if (breakdown.controlarStock && breakdown.stockVigente + EPSILON < agg.totalRequired) {
+            stockConflicts.push({
+              idInsumo: idIns,
+              insumoNombre: agg.insumo.nombre,
+              productos,
+              motivo: breakdown.stockVencido > EPSILON && breakdown.stockVigente <= EPSILON
+                ? 'LOTES_VENCIDOS'
+                : 'STOCK_INSUFICIENTE',
+              stockVigente: breakdown.stockVigente,
+              stockVencido: breakdown.stockVencido,
+              requerido: agg.totalRequired,
+              unidad: agg.unit
+            });
+          }
+        }
+
+        if (stockConflicts.length > 0) {
+          const uniqueAffectedNames = Array.from(new Set(stockConflicts.flatMap(c => c.productos)));
+          const hasOnlyInactive = stockConflicts.every(c => c.motivo === 'INSUMO_INACTIVO');
+          const hasExpired = stockConflicts.some(c => c.motivo === 'LOTES_VENCIDOS');
+
+          let message;
+          if (uniqueAffectedNames.length === 1) {
+            const targetName = uniqueAffectedNames[0];
+            if (hasOnlyInactive) {
+              message = `No se puede completar la venta: "${targetName}" no está disponible porque uno de sus insumos se encuentra inactivo.`;
+            } else if (hasExpired) {
+              message = `No se puede completar la venta: "${targetName}" está agotado (sin stock vigente disponible).`;
+            } else {
+              message = `No se puede completar la venta: "${targetName}" está agotado o no tiene stock vigente suficiente para la cantidad solicitada.`;
+            }
+          } else {
+            const listStr = uniqueAffectedNames.map(n => `"${n}"`).join(', ');
+            message = `No se puede completar la venta: los siguientes productos están agotados o no tienen stock vigente suficiente: ${listStr}.`;
+          }
+
+          const err = new Error(message);
+          err.statusCode = 409;
+          err.code = 'INSUFFICIENT_STOCK';
+          err.productosAgotados = stockConflicts;
+          throw err;
+        }
+      }
+
+      // Crear la venta y sus detalles dentro de la transacción ya validada
+      const createdVenta = await Venta.create({
+        idCliente: finalClienteId,
+        idUsuario: responsibleUserId,
+        idDescuento: data.idDescuento || null,
+        tipoVenta: resolvedTipoVenta,
+        subtotal: finalSubtotal,
+        descuentoAplicado: finalDescuento,
+        total: finalTotal,
+        estadoEntrega: finalEstadoEntrega,
+        observaciones: obsStr,
+        estadoAprobacion: finalEstadoAprobacion,
+        origen: origenVenta,
+        tiempoEstimadoEntrega: upperEstadoEntrega === 'ENTREGADO' ? 'Entregado' : tiempoEstimadoEntregaVenta
+      }, { transaction: t });
+
+      for (const item of preparedDetails) {
+        const { d, obsProdItem, chosenVarianteId, prodDisplayName, pricedDetail, safeDetalleQty, normalizedAdiciones } = item;
+        if (!chosenVarianteId) continue;
+
+        const obsCandidates = [
+          d.observacion,
+          obsProdItem?.observacion,
+          obsProdItem?.observaciones,
+          d.observaciones
+        ]
+          .map(v => (typeof v === 'string' ? v.trim() : ''))
+          .filter(Boolean);
+        const customNote = obsCandidates.find(
+          c => c.toLowerCase() !== prodDisplayName.toLowerCase()
+        ) || obsCandidates[0] || prodDisplayName || null;
+
+        const safeDetalleUnit = esDevolucion ? 0 : (pricedDetail ? pricedDetail.precioUnitario : 0);
+        const safeDetalleSub = esDevolucion ? 0 : Math.round(safeDetalleUnit * safeDetalleQty);
+
+        const createdDetalle = await DetalleVentaProducto.create({
+          idVenta: createdVenta.idVenta,
+          idVariante: chosenVarianteId,
+          cantidad: safeDetalleQty,
+          precioUnitario: safeDetalleUnit,
+          subtotal: safeDetalleSub,
+          observaciones: customNote
+        }, { transaction: t });
+
+        for (const { adId, adCantidad } of normalizedAdiciones) {
+          const insumoAd = lockedInsumosMap.get(adId) || await Insumo.findByPk(adId, { transaction: t }).catch(() => null);
+          // Seguridad (AUD-004): usar SIEMPRE el precio oficial de la adición en BD (nunca el enviado por el cliente)
+          const adPrecio = esDevolucion ? 0 : Math.max(0, Number(insumoAd?.precioAdicion || 0));
+
+          await DetalleVentaAdicion.create({
+            idDetalleVenta: createdDetalle.idDetalleVenta,
+            idAdicion: adId,
+            cantidad: adCantidad,
+            precio: adPrecio,
+            subtotal: adPrecio * adCantidad
+          }, { transaction: t });
+        }
+      }
+
+      // Descontar inventario en estricto orden FEFO (únicamente lotes vigentes + insumo.stock)
+      const allLotesConsumidos = [];
+      for (const dm of activeDemands) {
+        const insumo = dm.insumo;
+        if (!insumo || isInsumoNoStockControl(insumo)) continue;
+
+        const lotesIns = lockedLotesByInsumo.get(dm.idInsumo) || [];
+        const fefoRes = await deductInsumoFefo(insumo, dm.totalADescontar, {
+          lotes: lotesIns,
+          todayCol: hoyColombia,
+          transaction: t
+        });
+
+        if (Array.isArray(fefoRes.lotesConsumidos) && fefoRes.lotesConsumidos.length > 0) {
+          allLotesConsumidos.push(...fefoRes.lotesConsumidos);
+        }
+
+        try {
+          await Trazabilidad.create({
+            tipo: dm.trazabilidadTipo || 'CONSUMO_VENTA',
+            entidadNombre: insumo.nombre,
+            detalle: dm.trazabilidadDetalleFn(dm.totalADescontar, dm.insumoUnit, insumo.nombre, createdVenta.idVenta),
+            idInsumo: insumo.idInsumo,
+            tipoMovimiento: 'SALIDA',
+            cantidad: dm.totalADescontar,
+            motivo: dm.trazabilidadMotivoFn ? dm.trazabilidadMotivoFn(createdVenta.idVenta) : `Venta #${createdVenta.idVenta}`,
+            usuarioId: responsibleUserId || targetUserId || null
+          }, { transaction: t });
+        } catch (tzErr) {
+          console.warn('Error registrando trazabilidad de insumo:', tzErr.message);
+        }
+      }
+
+      // Persistir trazabilidad de lotes consumidos para permitir reintegro FEFO exacto en cancelaciones
+      if (allLotesConsumidos.length > 0) {
+        obsObj.lotesConsumidos = allLotesConsumidos;
+        createdVenta.observaciones = JSON.stringify(obsObj);
+        await createdVenta.save({ transaction: t });
+      }
+
+      return createdVenta;
+    });
+
+    // Invalidar cachés de catálogo e inventario inmediatamente tras el commit
+    invalidateNamespaces(['ventas', 'productos', 'insumos', 'insumos-preparados', 'adiciones', 'dashboard', 'produccion']);
 
     // Trigger client loyalty progression (strictly only for registered customer accounts and when sale is approved)
     if (!esDevolucion && finalClienteId && !isMostradorSale && finalEstadoAprobacion === 'APROBADO') {
@@ -2091,12 +2333,32 @@ class VentaService {
 
     await v.save();
 
-    // Reintegrar insumos (receta base, combos y adiciones) si la venta fue anulada/cancelada de forma idempotente
+    // Reintegrar insumos (receta base, combos, adiciones y lotes FEFO consumidos) si la venta fue anulada/cancelada de forma idempotente
     if (estadoEnum === 'CANCELADO' && estadoAnterior !== 'CANCELADO' && !obsData.inventarioReintegrado) {
       try {
         const saleData = await this.getById(id);
+        const hoyColombiaCancel = getColombiaDateISO();
+        const lotesConsumidosPool = Array.isArray(obsData.lotesConsumidos)
+          ? obsData.lotesConsumidos.map(lc => ({ ...lc, cantidad: Number(lc.cantidad || 0) }))
+          : [];
         if (saleData && Array.isArray(saleData.detalles)) {
-          const { Insumo, Variante, Product: ProdModel, ComboProducto: CPModel, DetalleVentaAdicion, Trazabilidad } = require('../../persistence/models');
+          const { Insumo, LoteInsumo, Variante, Product: ProdModel, ComboProducto: CPModel, DetalleVentaAdicion, Trazabilidad } = require('../../persistence/models');
+          const consumePoolForRestore = (idInsumo, qty) => {
+            const matches = [];
+            let rem = qty;
+            for (const entry of lotesConsumidosPool) {
+              if (rem <= EPSILON) break;
+              if (Number(entry.idInsumo) !== Number(idInsumo) || !(entry.cantidad > EPSILON)) continue;
+              const take = roundQty(Math.min(entry.cantidad, rem));
+              if (take > EPSILON) {
+                matches.push({ idInsumo: entry.idInsumo, idLote: entry.idLote, cantidad: take });
+                entry.cantidad = roundQty(Math.max(0, entry.cantidad - take));
+                rem = roundQty(Math.max(0, rem - take));
+              }
+            }
+            return matches;
+          };
+
           for (let idx = 0; idx < saleData.detalles.length; idx++) {
             const d = saleData.detalles[idx];
             const obsProdItem = Array.isArray(saleData.productos) ? saleData.productos[idx] : null;
@@ -2141,8 +2403,11 @@ class VentaService {
             if (recipeResult.directInsumoId) {
               const insumo = await Insumo.findByPk(recipeResult.directInsumoId);
               if (insumo && !isInsumoNoStockControl(insumo) && !isInsumoRemovedByMiseEnPlace(insumo, d, obsProdItem)) {
-                insumo.stock = Number(insumo.stock || 0) + itemQty;
-                await insumo.save();
+                await restoreInsumoFefo(insumo, itemQty, {
+                  lotesConsumidos: consumePoolForRestore(insumo.idInsumo, itemQty),
+                  LoteInsumoModel: LoteInsumo,
+                  todayCol: hoyColombiaCancel
+                });
                 await Trazabilidad.create({
                   tipo: 'REINTEGRO_CANCELACION',
                   entidadNombre: insumo.nombre,
@@ -2163,8 +2428,11 @@ class VentaService {
                   if (childRecipe.directInsumoId) {
                     const insumoChild = await Insumo.findByPk(childRecipe.directInsumoId);
                     if (insumoChild && !isInsumoNoStockControl(insumoChild)) {
-                      insumoChild.stock = Number(insumoChild.stock || 0) + childQty;
-                      await insumoChild.save();
+                      await restoreInsumoFefo(insumoChild, childQty, {
+                        lotesConsumidos: consumePoolForRestore(insumoChild.idInsumo, childQty),
+                        LoteInsumoModel: LoteInsumo,
+                        todayCol: hoyColombiaCancel
+                      });
                     }
                   } else if (childRecipe.ficha && Array.isArray(childRecipe.ficha.detalles)) {
                     for (const det of childRecipe.ficha.detalles) {
@@ -2175,8 +2443,12 @@ class VentaService {
                         if (insumo && !isInsumoNoStockControl(insumo)) {
                           const insumoUnit = insumo.unidadMedida || recipeUnit;
                           const cantConvertida = convertUnits(cantPorPlato, recipeUnit, insumoUnit);
-                          insumo.stock = Number(insumo.stock || 0) + (cantConvertida * childQty);
-                          await insumo.save();
+                          const qtyRest = cantConvertida * childQty;
+                          await restoreInsumoFefo(insumo, qtyRest, {
+                            lotesConsumidos: consumePoolForRestore(insumo.idInsumo, qtyRest),
+                            LoteInsumoModel: LoteInsumo,
+                            todayCol: hoyColombiaCancel
+                          });
                         }
                       }
                     }
@@ -2198,8 +2470,11 @@ class VentaService {
                     const insumoUnit = insumo.unidadMedida || recipeUnit;
                     const cantConvertida = convertUnits(cantPorPlato, recipeUnit, insumoUnit);
                     const totalARestaurar = cantConvertida * itemQty;
-                    insumo.stock = Number(insumo.stock || 0) + totalARestaurar;
-                    await insumo.save();
+                    await restoreInsumoFefo(insumo, totalARestaurar, {
+                      lotesConsumidos: consumePoolForRestore(insumo.idInsumo, totalARestaurar),
+                      LoteInsumoModel: LoteInsumo,
+                      todayCol: hoyColombiaCancel
+                    });
                   }
                 }
               }
@@ -2218,8 +2493,11 @@ class VentaService {
                   const insumoAd = await Insumo.findByPk(adId);
                   if (insumoAd && !isInsumoNoStockControl(insumoAd)) {
                     const totalAdRestaurar = adCant * itemQty;
-                    insumoAd.stock = Number(insumoAd.stock || 0) + totalAdRestaurar;
-                    await insumoAd.save();
+                    await restoreInsumoFefo(insumoAd, totalAdRestaurar, {
+                      lotesConsumidos: consumePoolForRestore(insumoAd.idInsumo, totalAdRestaurar),
+                      LoteInsumoModel: LoteInsumo,
+                      todayCol: hoyColombiaCancel
+                    });
                   }
                 }
               } catch (adRestockErr) {
@@ -2234,6 +2512,7 @@ class VentaService {
         obsData.fechaReintegroInventario = new Date().toISOString();
         v.observaciones = JSON.stringify(obsData);
         await v.save();
+        invalidateNamespaces(['ventas', 'productos', 'insumos', 'insumos-preparados', 'adiciones', 'dashboard', 'produccion']);
       } catch (restockErr) {
         console.warn('Error reintegrando insumos por cancelación:', restockErr.message);
       }
@@ -2249,18 +2528,20 @@ class VentaService {
     return this.getById(id);
   }
 
-  static async resolveRecipeOrInsumoForDetail(d, chosenVarianteId, targetProductId) {
+  static async resolveRecipeOrInsumoForDetail(d, chosenVarianteId, targetProductId, options = {}) {
     const { FichaTecnica, DetalleFichaInsumo, Variante, VarianteInsumo, Insumo, Product } = require('../../persistence/models');
     const { Op } = require('sequelize');
+    const txOpt = options?.transaction ? { transaction: options.transaction } : {};
 
     // Revisar primero si la variante explícita tiene ficha dedicada o reglas VarianteInsumo
     const explicitVarId = chosenVarianteId || d.idVariante;
     if (explicitVarId) {
       try {
-        const varRow = await Variante.findByPk(explicitVarId);
+        const varRow = await Variante.findByPk(explicitVarId, txOpt);
         const fichaVar = await FichaTecnica.findOne({
           where: { idVariante: explicitVarId, tipo: 'VARIANTE', estado: 1 },
-          include: [{ model: DetalleFichaInsumo, as: 'detalles' }]
+          include: [{ model: DetalleFichaInsumo, as: 'detalles' }],
+          ...txOpt
         });
         if (fichaVar && Array.isArray(fichaVar.detalles) && fichaVar.detalles.length > 0) {
           return {
@@ -2275,7 +2556,8 @@ class VentaService {
           include: [
             { model: Insumo, as: 'insumo' },
             { model: Insumo, as: 'insumoReemplazado' }
-          ]
+          ],
+          ...txOpt
         });
         if (varDeltasPre && varDeltasPre.length > 0) {
           const prodIdLookup = d.idProducto || targetProductId || varRow?.idProducto;
@@ -2287,7 +2569,8 @@ class VentaService {
                   [Op.or]: [{ tipo: 'PRODUCTO' }, { tipo: null }]
                 },
                 include: [{ model: DetalleFichaInsumo, as: 'detalles' }],
-                order: [['idFichaTecnica', 'ASC']]
+                order: [['idFichaTecnica', 'ASC']],
+                ...txOpt
               })
             : null;
           if (!fichaBasePre || !Array.isArray(fichaBasePre.detalles) || fichaBasePre.detalles.length === 0) {
@@ -2422,7 +2705,7 @@ class VentaService {
     let varDeltas = [];
     if (varId) {
       try {
-        varRow = await Variante.findByPk(varId);
+        varRow = await Variante.findByPk(varId, txOpt);
         const isBaseDummyRow = Boolean(d.esVarianteBase || (varRow && String(varRow.nombre || '').toLowerCase().includes('- base')));
         if (!isBaseDummyRow) {
           varDeltas = await VarianteInsumo.findAll({
@@ -2430,7 +2713,8 @@ class VentaService {
             include: [
               { model: Insumo, as: 'insumo' },
               { model: Insumo, as: 'insumoReemplazado' }
-            ]
+            ],
+            ...txOpt
           });
         }
       } catch (e) {}
@@ -2441,7 +2725,8 @@ class VentaService {
       try {
         const fichaVar = await FichaTecnica.findOne({
           where: { idVariante: varId, tipo: 'VARIANTE', estado: 1 },
-          include: [{ model: DetalleFichaInsumo, as: 'detalles' }]
+          include: [{ model: DetalleFichaInsumo, as: 'detalles' }],
+          ...txOpt
         });
         if (fichaVar && Array.isArray(fichaVar.detalles) && fichaVar.detalles.length > 0) {
           return { ficha: fichaVar, targetProductId: fichaVar.idProducto || targetProductId, resolvedName: varRow?.nombre };
@@ -2450,7 +2735,8 @@ class VentaService {
         if (!varDeltas || varDeltas.length === 0) {
           const legacyFichaVar = await FichaTecnica.findOne({
             where: { idVariante: varId, estado: 1 },
-            include: [{ model: DetalleFichaInsumo, as: 'detalles' }]
+            include: [{ model: DetalleFichaInsumo, as: 'detalles' }],
+            ...txOpt
           });
           if (legacyFichaVar && Array.isArray(legacyFichaVar.detalles) && legacyFichaVar.detalles.length > 0) {
             return { ficha: legacyFichaVar, targetProductId: legacyFichaVar.idProducto || targetProductId, resolvedName: varRow?.nombre };
@@ -2470,7 +2756,8 @@ class VentaService {
             [Op.or]: [{ tipo: 'PRODUCTO' }, { tipo: null }]
           },
           include: [{ model: DetalleFichaInsumo, as: 'detalles' }],
-          order: [['idFichaTecnica', 'ASC']]
+          order: [['idFichaTecnica', 'ASC']],
+          ...txOpt
         });
         if (fichaBase) {
           if (varDeltas && varDeltas.length > 0) {
@@ -2535,6 +2822,34 @@ class VentaService {
           }
 
           return { ficha: fichaBase, targetProductId: finalProdId, resolvedName: varRow?.nombre };
+        }
+      } catch (e) {}
+    }
+
+    // Fallback por nombre exacto/prefijo para productos directos sin ficha técnica (paridad con productService.resolveDirectInsumoStock)
+    if (!options?.skipNameFallback) {
+      try {
+        let lookupName = String(d.nombre || '').toLowerCase().trim();
+        if (!lookupName && finalProdId) {
+          const prodObj = await Product.findByPk(finalProdId, { attributes: ['nombre'], ...txOpt }).catch(() => null);
+          if (prodObj?.nombre) lookupName = String(prodObj.nombre).toLowerCase().trim();
+        }
+        if (lookupName) {
+          const allInsumosFallback = await Insumo.findAll({
+            attributes: ['idInsumo', 'nombre'],
+            ...txOpt
+          }).catch(() => []);
+          const matchedByName = allInsumosFallback.find(ins => {
+            const iName = String(ins.nombre || '').toLowerCase().trim();
+            return iName && (iName === lookupName || (lookupName.startsWith(iName) && iName.length >= 6));
+          });
+          if (matchedByName) {
+            return {
+              directInsumoId: Number(matchedByName.idInsumo),
+              targetProductId: finalProdId,
+              resolvedName: matchedByName.nombre
+            };
+          }
         }
       } catch (e) {}
     }

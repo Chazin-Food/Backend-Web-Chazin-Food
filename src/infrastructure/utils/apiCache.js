@@ -228,16 +228,16 @@ const MUTATION_INVALIDATION_MAP = [
   { prefix: '/api/insumos', namespaces: ['insumos', 'insumos-preparados', 'adiciones', 'productos', 'fichas', 'categorias-insumo', 'categories', 'dashboard', 'trazabilidad'] },
   { prefix: '/api/proveedores', namespaces: ['proveedores', 'compras', 'insumos', 'trazabilidad'] },
   { prefix: '/api/compras', namespaces: ['compras', 'insumos', 'adiciones', 'productos', 'proveedores', 'dashboard', 'trazabilidad'] },
-  { prefix: '/api/ventas', namespaces: ['ventas', 'productos', 'adiciones', 'clientes', 'dashboard', 'produccion', 'devoluciones'] },
-  { prefix: '/api/pedidos', namespaces: ['ventas', 'productos', 'adiciones', 'clientes', 'dashboard', 'produccion', 'devoluciones'] },
-  { prefix: '/api/orders', namespaces: ['ventas', 'productos', 'adiciones', 'clientes', 'dashboard', 'produccion', 'devoluciones'] },
+  { prefix: '/api/ventas', namespaces: ['ventas', 'productos', 'insumos', 'insumos-preparados', 'adiciones', 'clientes', 'dashboard', 'produccion', 'devoluciones'] },
+  { prefix: '/api/pedidos', namespaces: ['ventas', 'productos', 'insumos', 'insumos-preparados', 'adiciones', 'clientes', 'dashboard', 'produccion', 'devoluciones'] },
+  { prefix: '/api/orders', namespaces: ['ventas', 'productos', 'insumos', 'insumos-preparados', 'adiciones', 'clientes', 'dashboard', 'produccion', 'devoluciones'] },
   { prefix: '/api/produccion', namespaces: ['produccion', 'ventas', 'productos', 'insumos', 'dashboard'] },
   { prefix: '/api/devoluciones', namespaces: ['devoluciones', 'ventas', 'productos', 'insumos', 'clientes', 'dashboard', 'produccion'] },
   { prefix: '/api/clientes', namespaces: ['clientes', 'ventas', 'usuarios', 'dashboard'] },
   { prefix: '/api/empleados', namespaces: ['empleados', 'roles', 'usuarios', 'dashboard'] },
   { prefix: '/api/resenas', namespaces: ['resenas', 'productos', 'dashboard'] },
   { prefix: '/api/trazabilidad', namespaces: ['trazabilidad', 'insumos', 'proveedores'] },
-  { prefix: '/api/wompi', namespaces: ['ventas', 'productos', 'adiciones', 'clientes', 'dashboard', 'produccion'] }
+  { prefix: '/api/wompi', namespaces: ['ventas', 'productos', 'insumos', 'insumos-preparados', 'adiciones', 'clientes', 'dashboard', 'produccion'] }
 ];
 
 function cacheInvalidationMiddleware(req, res, next) {

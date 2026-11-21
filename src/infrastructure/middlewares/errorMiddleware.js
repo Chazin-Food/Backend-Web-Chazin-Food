@@ -61,10 +61,17 @@ const errorHandler = (err, req, res, next) => {
   }
 
   // Seguridad (AUD-025 / VULN-012): nunca exponer stack traces en respuestas HTTP
-  res.status(statusCode).json({
+  const responseBody = {
     message: friendlyMessage,
     error: friendlyMessage
-  });
+  };
+  if (err.code && typeof err.code === 'string' && statusCode >= 400 && statusCode < 500) {
+    responseBody.code = err.code;
+  }
+  if (Array.isArray(err.productosAgotados) && statusCode === 409) {
+    responseBody.productosAgotados = err.productosAgotados;
+  }
+  res.status(statusCode).json(responseBody);
 };
 
 module.exports = { errorHandler };

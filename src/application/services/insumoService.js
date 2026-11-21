@@ -8,15 +8,11 @@ const {
   extractDateOnlyISO,
   diffCalendarDaysColombia
 } = require('../../infrastructure/utils/colombiaDateUtils');
-
-function isLoteExpiredByDateOrState(lote, todayCol = getColombiaDateISO()) {
-  if (!lote) return false;
-  if (lote.estado === 'VENCIDO') return true;
-  if (lote.estado === 'AGOTADO') return false;
-  const fechaStr = extractDateOnlyISO(lote.fechaVencimiento);
-  // Regla de negocio: fechaVencimiento === hoy sigue utilizable hasta las 11:59 PM de hoy
-  return Boolean(fechaStr && fechaStr < todayCol);
-}
+const {
+  NO_STOCK_TAG,
+  isLoteExpired: isLoteExpiredByDateOrState,
+  computeInsumoStockBreakdown
+} = require('../../infrastructure/utils/stockFefoUtils');
 
 function getExpirationMeta(fechaVencimiento, todayCol = getColombiaDateISO(), forceExpired = false) {
   const fechaISO = extractDateOnlyISO(fechaVencimiento);
@@ -26,8 +22,6 @@ function getExpirationMeta(fechaVencimiento, todayCol = getColombiaDateISO(), fo
   const proximoAVencer = !estaVencido && diasParaVencer !== null && diasParaVencer >= 0 && diasParaVencer <= 5;
   return { diasParaVencer, estaVencido, venceHoy, proximoAVencer };
 }
-
-const NO_STOCK_TAG = '[SIN_CONTROL_STOCK]';
 
 function parseNoStockFlag(rawDescripcion) {
   const str = String(rawDescripcion || '');
@@ -70,6 +64,7 @@ function formatInsumo(i, options = {}) {
   const insExpMeta = getExpirationMeta(i.fechaVencimiento, todayCol, false);
 
   const { controlarStock, cleanDescripcion } = parseNoStockFlag(i.descripcion);
+  const breakdown = computeInsumoStockBreakdown(i, i.lotes || [], todayCol);
   const stockNum = parseFloat(i.stock || 0);
   const countCompras = options.comprasMap ? (options.comprasMap.get(Number(i.idInsumo)) || 0) : 0;
   const tieneCompras = countCompras > 0;
@@ -85,6 +80,10 @@ function formatInsumo(i, options = {}) {
     controlarStock,
     disponibilidad: isDisponible ? 'Disponible' : 'Agotado',
     stock: stockNum,
+    stockVigente: breakdown.stockVigente,
+    stockVencido: breakdown.stockVencido,
+    stockOperativo: breakdown.stockOperativo,
+    tieneLotesVencidos: breakdown.hasExpiredLots,
     stockMinimo: parseFloat(i.stockMinimo || 0),
     stockMaximo: parseFloat(i.stockMaximo !== undefined && i.stockMaximo !== null ? i.stockMaximo : 100),
     fechaExpedicion: i.fechaExpedicion || null,
@@ -161,7 +160,10 @@ class InsumoService {
           where: {
             idInsumo,
             estado: 'ACTIVO',
-            fechaVencimiento: { [Op.gte]: today },
+            [Op.or]: [
+              { fechaVencimiento: { [Op.gte]: today } },
+              { fechaVencimiento: null }
+            ],
             cantidadDisponible: { [Op.gt]: 0 }
           }
         }).catch(() => 0);

@@ -1,6 +1,13 @@
-const { Insumo } = require('../../persistence/models');
+const { Op } = require('sequelize');
+const { Insumo, LoteInsumo } = require('../../persistence/models');
+const { getColombiaDateISO } = require('../../infrastructure/utils/colombiaDateUtils');
+const { computeInsumoStockBreakdown, groupLotesByInsumo } = require('../../infrastructure/utils/stockFefoUtils');
 
-function formatAdicion(insumo) {
+function formatAdicion(insumo, lotes = [], todayCol = getColombiaDateISO()) {
+  const breakdown = computeInsumoStockBreakdown(insumo, lotes, todayCol);
+  const stockOperativo = !breakdown.isInactive
+    ? (breakdown.controlarStock ? breakdown.stockVigente : 99)
+    : 0;
   return {
     idAdicion: insumo.idInsumo,
     id: insumo.idInsumo,
@@ -9,7 +16,10 @@ function formatAdicion(insumo) {
     descripcion: insumo.descripcion || '',
     imagen: insumo.imagen || '',
     precio: parseFloat(insumo.precioAdicion || 0),
-    stock: parseFloat(insumo.stock || 0),
+    stock: stockOperativo,
+    stockTotal: breakdown.stockTotal,
+    stockVigente: breakdown.stockVigente,
+    agotado: breakdown.isInactive || (breakdown.controlarStock && breakdown.stockVigente <= 0),
     unidadMedida: insumo.unidadMedida,
     estado: insumo.estado,
     esAdicion: 1,
@@ -22,20 +32,37 @@ function formatAdicion(insumo) {
 
 class AdicionService {
   static async getAll() {
-    const insumos = await Insumo.findAll({
-      where: { esAdicion: 1, estado: 1, eliminado: 0 }
-    });
-    return insumos.map(formatAdicion);
+    const todayCol = getColombiaDateISO();
+    const [insumos, allLotes] = await Promise.all([
+      Insumo.findAll({
+        where: { esAdicion: 1, estado: 1, eliminado: 0 }
+      }),
+      LoteInsumo.findAll({
+        attributes: ['idLote', 'idInsumo', 'cantidad', 'cantidadDisponible', 'fechaVencimiento', 'estado'],
+        where: { estado: { [Op.ne]: 'AGOTADO' } },
+        raw: true
+      }).catch(() => [])
+    ]);
+    const lotesByInsumo = groupLotesByInsumo(allLotes);
+    return insumos.map(ins => formatAdicion(ins, lotesByInsumo.get(Number(ins.idInsumo)) || [], todayCol));
   }
 
   static async getById(id) {
-    const insumo = await Insumo.findByPk(id);
+    const todayCol = getColombiaDateISO();
+    const [insumo, lotes] = await Promise.all([
+      Insumo.findByPk(id),
+      LoteInsumo.findAll({
+        attributes: ['idLote', 'idInsumo', 'cantidad', 'cantidadDisponible', 'fechaVencimiento', 'estado'],
+        where: { idInsumo: id, estado: { [Op.ne]: 'AGOTADO' } },
+        raw: true
+      }).catch(() => [])
+    ]);
     if (!insumo || !insumo.esAdicion) {
       const error = new Error('Adición no encontrada');
       error.statusCode = 404;
       throw error;
     }
-    return formatAdicion(insumo);
+    return formatAdicion(insumo, lotes, todayCol);
   }
 
   static async create(data) {

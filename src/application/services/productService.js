@@ -1,9 +1,10 @@
 const { Op } = require('sequelize');
-const { Product, CategoriaProducto, Evento, Variante, VarianteInsumo, ComboProducto, FichaTecnica, DetalleFichaInsumo, Insumo, DetalleVentaProducto, Resena } = require('../../persistence/models');
+const { Product, CategoriaProducto, Evento, Variante, VarianteInsumo, ComboProducto, FichaTecnica, DetalleFichaInsumo, Insumo, LoteInsumo, DetalleVentaProducto, Resena } = require('../../persistence/models');
 const FichaTecnicaService = require('./fichaTecnicaService');
 const EventoService = require('./eventoService');
 const { ensureVarianteEventoSchemaOnce } = require('../../infrastructure/utils/dbUtils');
 const { getColombiaDateISO } = require('../../infrastructure/utils/colombiaDateUtils');
+const { computeInsumoStockBreakdown, groupLotesByInsumo } = require('../../infrastructure/utils/stockFefoUtils');
 
 const BROKEN_IMAGE_REPLACEMENTS = {
   'photo-1619740455993-9e612b1af08a': 'https://res.cloudinary.com/dckwtknmq/image/upload/v1788993441/c9pne5jrmjv5po93xhhl.jpg'
@@ -282,7 +283,7 @@ class ProductService {
   static async _queryFormattedProducts({ eliminado = 0, order = [['idProducto', 'ASC']], onlyActiveVariants = false } = {}) {
     await ensureVarianteEventoSchemaOnce();
     const todayCol = getColombiaDateISO();
-    const [products, fichas, allInsumos, ventasPorVariante] = await Promise.all([
+    const [products, fichas, allInsumos, allLotes, ventasPorVariante] = await Promise.all([
       Product.findAll({
         where: {
           eliminado,
@@ -373,7 +374,7 @@ class ProductService {
           model: DetalleFichaInsumo,
           as: 'detalles',
           separate: true,
-          include: [{ model: Insumo, as: 'insumo', attributes: ['idInsumo', 'nombre', 'descripcion', 'stock', 'unidadMedida', 'estado', 'precioUnitario'] }]
+          include: [{ model: Insumo, as: 'insumo', attributes: ['idInsumo', 'nombre', 'descripcion', 'stock', 'unidadMedida', 'estado', 'eliminado', 'fechaVencimiento', 'precioUnitario'] }]
         }
       ],
       order: [['idFichaTecnica', 'ASC']]
@@ -381,7 +382,14 @@ class ProductService {
 
       // Cargar todos los insumos para bebidas o productos directos sin ficha técnica
       Insumo.findAll({
-        attributes: ['idInsumo', 'nombre', 'descripcion', 'stock', 'unidadMedida', 'precioUnitario', 'estado']
+        attributes: ['idInsumo', 'nombre', 'descripcion', 'stock', 'unidadMedida', 'precioUnitario', 'estado', 'eliminado', 'fechaVencimiento']
+      }).catch(() => []),
+
+      // Carga masiva de lotes (1 sola consulta, sin N+1) para calcular disponibilidad estrictamente con stock vigente (FEFO)
+      LoteInsumo.findAll({
+        attributes: ['idLote', 'idInsumo', 'cantidad', 'cantidadDisponible', 'fechaVencimiento', 'estado'],
+        where: { estado: { [Op.ne]: 'AGOTADO' } },
+        raw: true
       }).catch(() => []),
 
       // Cargar historial de ventas por variante para contar ventas reales
@@ -404,6 +412,20 @@ class ProductService {
     allInsumos.forEach(ins => {
       insumoByIdMap.set(Number(ins.idInsumo), ins);
     });
+    const lotesByInsumoMap = groupLotesByInsumo(allLotes);
+    const breakdownByInsumoMap = new Map();
+    const getInsumoBreakdown = (insRef) => {
+      if (!insRef) return null;
+      const insId = Number(insRef.idInsumo || insRef.id || 0);
+      if (insId && breakdownByInsumoMap.has(insId)) {
+        return breakdownByInsumoMap.get(insId);
+      }
+      const fullIns = (insId && insumoByIdMap.get(insId)) || insRef;
+      const lotes = insId ? (lotesByInsumoMap.get(insId) || []) : [];
+      const breakdown = computeInsumoStockBreakdown(fullIns, lotes, todayCol);
+      if (insId) breakdownByInsumoMap.set(insId, breakdown);
+      return breakdown;
+    };
 
     const resolveDirectInsumoStock = (prod) => {
       const rawName = String(prod?.nombre || '').toLowerCase();
@@ -429,13 +451,15 @@ class ProductService {
         directInsumoId = 31;
       }
 
+      const evaluateDirectInsumo = (ins) => {
+        const bd = getInsumoBreakdown(ins);
+        if (!bd || bd.isInactive) return 0;
+        if (!bd.controlarStock) return 99;
+        return Math.max(0, Math.floor(bd.stockVigente));
+      };
+
       if (directInsumoId && insumoByIdMap.has(directInsumoId)) {
-        const ins = insumoByIdMap.get(directInsumoId);
-        const sinControl = String(ins.descripcion || '').includes('[SIN_CONTROL_STOCK]');
-        if (sinControl) return Number(ins.estado) === 0 ? 0 : 99;
-        const directStock = Math.max(0, Math.floor(Number(ins.stock || 0)));
-        if (ins.estado === 0 && directStock <= 0) return 0;
-        return directStock;
+        return evaluateDirectInsumo(insumoByIdMap.get(directInsumoId));
       }
 
       const matchedByName = allInsumos.find(ins => {
@@ -443,12 +467,46 @@ class ProductService {
         return iName && rawName && (iName === rawName || (rawName.startsWith(iName) && iName.length >= 6));
       });
       if (matchedByName) {
-        const sinControl = String(matchedByName.descripcion || '').includes('[SIN_CONTROL_STOCK]');
-        if (sinControl) return Number(matchedByName.estado) === 0 ? 0 : 99;
-        const directStock = Math.max(0, Math.floor(Number(matchedByName.stock || 0)));
-        if (matchedByName.estado === 0 && directStock <= 0) return 0;
-        return directStock;
+        return evaluateDirectInsumo(matchedByName);
       }
+      return null;
+    };
+
+    const computeStockFromDetalles = (detallesList) => {
+      if (!Array.isArray(detallesList) || detallesList.length === 0) return null;
+      let minPortions = Infinity;
+      let hasUnlimitedOnly = false;
+      for (const det of detallesList) {
+        const cantReq = Number(det.cantidad || 0);
+        if (!(cantReq > 0)) continue;
+        const insId = Number(det.idInsumo || det.insumo?.idInsumo || 0);
+        const insumo = (insId && insumoByIdMap.get(insId)) || det.insumo;
+        if (!insumo) return 0;
+
+        const breakdown = getInsumoBreakdown(insumo);
+        // Regla de inocuidad y control operativo: si CUALQUIER insumo de la receta está inactivo (estado === 0) o eliminado,
+        // el plato queda inmediatamente sin stock disponible (agotado: true), incluso si tenía stock o [SIN_CONTROL_STOCK].
+        if (!breakdown || breakdown.isInactive) {
+          return 0;
+        }
+        if (!breakdown.controlarStock) {
+          hasUnlimitedOnly = true;
+          continue;
+        }
+
+        // Regla FEFO: usar estrictamente stock vigente (excluyendo lotes vencidos aunque aún no hayan sido retirados físicamente).
+        if (breakdown.stockVigente <= 0) {
+          return 0;
+        }
+
+        const cantConvertida = convertToInsumoUnit(cantReq, det.unidadMedida, insumo.unidadMedida);
+        if (cantConvertida > 0) {
+          const porciones = Math.floor(breakdown.stockVigente / cantConvertida);
+          minPortions = Math.min(minPortions, porciones);
+        }
+      }
+      if (minPortions !== Infinity) return Math.max(0, minPortions);
+      if (hasUnlimitedOnly) return 99;
       return null;
     };
 
@@ -456,36 +514,8 @@ class ProductService {
       if (!prod || prod.estado === 0) return 0;
       const ficha = fichaMap.get(prod.idProducto);
       if (ficha && Array.isArray(ficha.detalles) && ficha.detalles.length > 0) {
-        let minPortions = Infinity;
-        let hasUnlimitedOnly = false;
-        for (const det of ficha.detalles) {
-          const insumo = det.insumo;
-          const cantReq = Number(det.cantidad || 0);
-          if (insumo && cantReq > 0) {
-            const sinControl = String(insumo.descripcion || '').includes('[SIN_CONTROL_STOCK]');
-            if (sinControl) {
-              // Insumo sin control de stock (ej. salsas/verduras): solo bloquea si está marcado Agotado (estado === 0)
-              if (Number(insumo.estado) === 0) {
-                minPortions = 0;
-                break;
-              }
-              hasUnlimitedOnly = true;
-              continue;
-            }
-            const stockInsumo = Math.max(0, Number(insumo.stock || 0));
-            if (stockInsumo <= 0) {
-              minPortions = 0;
-              break;
-            }
-            const cantConvertida = convertToInsumoUnit(cantReq, det.unidadMedida, insumo.unidadMedida);
-            if (cantConvertida > 0) {
-              const porciones = Math.floor(stockInsumo / cantConvertida);
-              minPortions = Math.min(minPortions, porciones);
-            }
-          }
-        }
-        if (minPortions !== Infinity) return minPortions;
-        if (hasUnlimitedOnly) return 99;
+        const byFicha = computeStockFromDetalles(ficha.detalles);
+        if (byFicha !== null) return byFicha;
       }
       const directStock = resolveDirectInsumoStock(prod);
       if (directStock !== null) return directStock;
@@ -620,6 +650,12 @@ class ProductService {
               }
 
               const varEstado = v.estado !== undefined && v.estado !== null ? Number(v.estado) : 1;
+              const varStockRaw = mappedDetalles.length > 0
+                ? computeStockFromDetalles(mappedDetalles)
+                : null;
+              const varStock = (p.estado === 0 || varEstado === 0)
+                ? 0
+                : (varStockRaw !== null ? varStockRaw : computeSingleProductStock(p));
               return {
                 id: v.idVariante,
                 idVariante: v.idVariante,
@@ -629,6 +665,8 @@ class ProductService {
                 imagen: sanitizeProductImageUrl(typeof v.imagen === 'string' ? v.imagen.trim() : ''),
                 estado: varEstado,
                 activo: varEstado !== 0,
+                stock: varStock,
+                agotado: varStock <= 0 || varEstado === 0 || p.estado === 0,
                 idEvento: v.idEvento ? Number(v.idEvento) : null,
                 creadaPorEvento: Boolean(v.creadaPorEvento || v.idEvento),
                 eventoOrigen: v.evento ? {
@@ -674,11 +712,11 @@ class ProductService {
           totalVentas = ventasMap.get(Number(p.idProducto)) || 0;
         }
 
-        // Calcular stock real disponible según receta, insumo directo o productos del combo
+        // Calcular stock real disponible según receta, insumo directo o productos del combo (solo stock vigente)
         let stockDisponible = computeSingleProductStock(p);
 
         if (isCombo && Array.isArray(p.itemsCombo) && p.itemsCombo.length > 0) {
-          let minCombo = stockDisponible;
+          let minCombo = fichaMap.has(p.idProducto) ? stockDisponible : Infinity;
           for (const it of p.itemsCombo) {
             const comp = it.productoComponente;
             const reqCompQty = Math.max(1, Number(it.cantidad || 1));
@@ -691,7 +729,7 @@ class ProductService {
               minCombo = Math.min(minCombo, Math.floor(compStock / reqCompQty));
             }
           }
-          stockDisponible = minCombo;
+          stockDisponible = minCombo === Infinity ? 0 : minCombo;
         }
 
         if (p.estado === 0) stockDisponible = 0;

@@ -1,34 +1,48 @@
-const { InsumoPreparado, DetalleInsumoPreparadoInsumo, Insumo, FichaTecnica, DetalleFichaInsumo } = require('../../persistence/models');
+const { Op } = require('sequelize');
+const { InsumoPreparado, DetalleInsumoPreparadoInsumo, Insumo, LoteInsumo, FichaTecnica, DetalleFichaInsumo } = require('../../persistence/models');
+const { getColombiaDateISO } = require('../../infrastructure/utils/colombiaDateUtils');
+const { computeInsumoStockBreakdown, groupLotesByInsumo } = require('../../infrastructure/utils/stockFefoUtils');
 
 class InsumoPreparadoService {
   static async getAll() {
-    const preparados = await InsumoPreparado.findAll({
-      where: { eliminado: 0 },
-      include: [
-        {
-          model: DetalleInsumoPreparadoInsumo,
-          as: 'detalles',
-          include: [{ model: Insumo, as: 'insumo' }]
-        },
-        {
-          model: FichaTecnica,
-          as: 'fichaTecnica',
-          required: false,
-          where: { estado: 1 },
-          include: [
-            {
-              model: DetalleFichaInsumo,
-              as: 'detalles',
-              include: [{ model: Insumo, as: 'insumo', attributes: ['idInsumo', 'nombre', 'unidadMedida'] }]
-            }
-          ]
-        }
-      ]
-    });
+    const todayCol = getColombiaDateISO();
+    const [preparados, allLotes] = await Promise.all([
+      InsumoPreparado.findAll({
+        where: { eliminado: 0 },
+        include: [
+          {
+            model: DetalleInsumoPreparadoInsumo,
+            as: 'detalles',
+            include: [{ model: Insumo, as: 'insumo' }]
+          },
+          {
+            model: FichaTecnica,
+            as: 'fichaTecnica',
+            required: false,
+            where: { estado: 1 },
+            include: [
+              {
+                model: DetalleFichaInsumo,
+                as: 'detalles',
+                include: [{ model: Insumo, as: 'insumo', attributes: ['idInsumo', 'nombre', 'unidadMedida'] }]
+              }
+            ]
+          }
+        ]
+      }),
+      LoteInsumo.findAll({
+        attributes: ['idLote', 'idInsumo', 'cantidad', 'cantidadDisponible', 'fechaVencimiento', 'estado'],
+        where: { estado: { [Op.ne]: 'AGOTADO' } },
+        raw: true
+      }).catch(() => [])
+    ]);
+
+    const lotesByInsumo = groupLotesByInsumo(allLotes);
 
     return preparados.map(p => {
       let calcCosto = 0;
       let minPorciones = Infinity;
+      let hasUnlimitedOnly = false;
 
       const insumos = p.detalles ? p.detalles.map(d => {
         const cant = parseFloat(d.cantidad || 0);
@@ -39,8 +53,18 @@ class InsumoPreparadoService {
         calcCosto += sub;
 
         if (d.insumo && cant > 0) {
-          const st = Math.max(0, parseFloat(d.insumo.stock || 0));
-          minPorciones = Math.min(minPorciones, Math.floor(st / cant));
+          const breakdown = computeInsumoStockBreakdown(
+            d.insumo,
+            lotesByInsumo.get(Number(d.insumo.idInsumo)) || [],
+            todayCol
+          );
+          if (breakdown.isInactive) {
+            minPorciones = 0;
+          } else if (!breakdown.controlarStock) {
+            hasUnlimitedOnly = true;
+          } else {
+            minPorciones = Math.min(minPorciones, Math.floor(breakdown.stockVigente / cant));
+          }
         }
 
         return {
@@ -56,7 +80,9 @@ class InsumoPreparadoService {
 
       const finalCosto = parseFloat(p.costoTotal || 0) > 0 ? parseFloat(p.costoTotal) : calcCosto;
       const rend = parseFloat(p.rendimiento || 1);
-      const stockDisponible = minPorciones !== Infinity ? (minPorciones * rend) : 0;
+      const stockDisponible = minPorciones !== Infinity
+        ? (minPorciones * rend)
+        : (hasUnlimitedOnly ? (99 * rend) : 0);
 
       return {
         id: p.id,
@@ -148,8 +174,20 @@ class InsumoPreparadoService {
       throw error;
     }
 
+    const todayCol = getColombiaDateISO();
+    const insumoIds = (p.detalles || []).map(d => Number(d.idInsumo)).filter(Boolean);
+    const lotesRows = insumoIds.length > 0
+      ? await LoteInsumo.findAll({
+          attributes: ['idLote', 'idInsumo', 'cantidad', 'cantidadDisponible', 'fechaVencimiento', 'estado'],
+          where: { idInsumo: insumoIds, estado: { [Op.ne]: 'AGOTADO' } },
+          raw: true
+        }).catch(() => [])
+      : [];
+    const lotesByInsumo = groupLotesByInsumo(lotesRows);
+
     let calcCosto = 0;
     let minPorciones = Infinity;
+    let hasUnlimitedOnly = false;
 
     const insumos = p.detalles ? p.detalles.map(d => {
       const cant = parseFloat(d.cantidad || 0);
@@ -160,8 +198,18 @@ class InsumoPreparadoService {
       calcCosto += sub;
 
       if (d.insumo && cant > 0) {
-        const st = Math.max(0, parseFloat(d.insumo.stock || 0));
-        minPorciones = Math.min(minPorciones, Math.floor(st / cant));
+        const breakdown = computeInsumoStockBreakdown(
+          d.insumo,
+          lotesByInsumo.get(Number(d.insumo.idInsumo)) || [],
+          todayCol
+        );
+        if (breakdown.isInactive) {
+          minPorciones = 0;
+        } else if (!breakdown.controlarStock) {
+          hasUnlimitedOnly = true;
+        } else {
+          minPorciones = Math.min(minPorciones, Math.floor(breakdown.stockVigente / cant));
+        }
       }
 
       return {
@@ -177,7 +225,9 @@ class InsumoPreparadoService {
 
     const finalCosto = parseFloat(p.costoTotal || 0) > 0 ? parseFloat(p.costoTotal) : calcCosto;
     const rend = parseFloat(p.rendimiento || 1);
-    const stockDisponible = minPorciones !== Infinity ? (minPorciones * rend) : 0;
+    const stockDisponible = minPorciones !== Infinity
+      ? (minPorciones * rend)
+      : (hasUnlimitedOnly ? (99 * rend) : 0);
 
     return {
       id: p.id,
