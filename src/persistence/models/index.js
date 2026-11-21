@@ -83,7 +83,7 @@ const User = sequelize.define('usuario', {
   },
   idRol: {
     type: DataTypes.INTEGER,
-    defaultValue: 1
+    defaultValue: 4
   },
   estado: {
     type: DataTypes.STRING,

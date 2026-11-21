@@ -34,7 +34,8 @@ const sequelize = new Sequelize(
       ...(enableSSL ? {
         ssl: {
           minVersion: 'TLSv1.2',
-          rejectUnauthorized: process.env.DB_SSL_REJECT_UNAUTHORIZED === 'true'
+          // Seguridad (AUD-026): validación estricta de certificado TLS activa por defecto para TiDB Cloud
+          rejectUnauthorized: process.env.DB_SSL_REJECT_UNAUTHORIZED !== 'false'
         }
       } : {})
     },

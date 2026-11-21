@@ -10,7 +10,7 @@ const {
   createDevolucion,
   updateEstadoDevolucion
 } = require('../controllers/devolucionController');
-const { protect, optionalProtect, requirePrivilege } = require('../../infrastructure/middlewares/authMiddleware');
+const { protect, requirePrivilege } = require('../../infrastructure/middlewares/authMiddleware');
 const { cacheResponse } = require('../../infrastructure/utils/apiCache');
 
 const cacheDevoluciones = cacheResponse('devoluciones', { ttlMs: 15000, cacheControl: 'private, max-age=10' });
@@ -19,11 +19,11 @@ const cachePoliticas = cacheResponse('devoluciones', { ttlMs: 60000, cacheContro
 // Consulta pública de políticas de devolución
 router.get('/politicas', cachePoliticas, getPoliticas);
 
-// Verificación de elegibilidad de una venta (para modal de devolución de cliente o cajero)
-router.get('/elegibilidad/:idVenta', optionalProtect, checkVentaElegibilidad);
-
-// Rutas autenticadas
+// Todas las demás rutas requieren autenticación (AUD-010: cierra fuga anónima de PII en /elegibilidad/:idVenta)
 router.use(protect);
+
+// Verificación de elegibilidad de una venta (propia del cliente o staff autorizado)
+router.get('/elegibilidad/:idVenta', checkVentaElegibilidad);
 
 // Devoluciones del usuario cliente en sesión
 router.get('/mis-devoluciones', getMisDevoluciones);
@@ -34,7 +34,7 @@ router.get('/stats', requirePrivilege(['Devoluciones', 'Gestión de Ventas', 'Ve
 // Listar devoluciones y registrar nueva solicitud
 router.route('/')
   .get(requirePrivilege(['Devoluciones', 'Gestión de Ventas', 'Ventas'], 'Ver'), cacheDevoluciones, getDevoluciones)
-  .post(createDevolucion); // Clientes y Administradores pueden crear solicitudes de devolución
+  .post(createDevolucion);
 
 // Detalle de devolución
 router.route('/:id')
@@ -44,4 +44,3 @@ router.route('/:id')
 router.put('/:id/estado', requirePrivilege(['Devoluciones', 'Gestión de Ventas', 'Ventas'], 'Editar'), updateEstadoDevolucion);
 
 module.exports = router;
-

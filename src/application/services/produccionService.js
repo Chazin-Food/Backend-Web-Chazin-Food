@@ -692,16 +692,16 @@ class ProduccionService {
               )
             );
 
+            // Seguridad (AUD-004): 2x1 solo desde evento activo en BD o nombre oficial del producto en catálogo (nunca desde observaciones o cantidadCocina del cliente)
+            const dbProdName = String(prod?.nombre || '').toLowerCase();
             const isPromo2x1 = Boolean(
               hasActive2x1Event ||
-              (itemNombre && (itemNombre.toLowerCase().includes("2x1") || itemNombre.toLowerCase().includes("lleva 2") || itemNombre.toLowerCase().includes("paga 1"))) ||
-              (itemObs && (itemObs.toLowerCase().includes("2x1") || itemObs.toLowerCase().includes("lleva 2") || itemObs.toLowerCase().includes("paga 1"))) ||
-              (matchedObsProd && (matchedObsProd.is2x1Promo || (matchedObsProd.nombre && matchedObsProd.nombre.toLowerCase().includes("2x1")) || (matchedObsProd.observaciones && matchedObsProd.observaciones.toLowerCase().includes("2x1")))) ||
-              (matchedObsProd?.cantidadCocina && Number(matchedObsProd.cantidadCocina) > qty) ||
-              (d.observaciones && (d.observaciones.toLowerCase().includes("2x1") || d.observaciones.toLowerCase().includes("lleva 2")))
+              dbProdName.includes("2x1") ||
+              dbProdName.includes("lleva 2") ||
+              dbProdName.includes("paga 1")
             );
 
-            const kitchenQty = isPromo2x1 ? (Number(matchedObsProd?.cantidadCocina) || qty * 2) : qty;
+            const kitchenQty = isPromo2x1 ? (qty * 2) : qty;
             totalItemsCount += (kitchenQty - qty);
 
             let displayObs = itemObs;
@@ -777,13 +777,10 @@ class ProduccionService {
             }
 
             const isPromo2x1Fallback = Boolean(
-              p.is2x1Promo ||
-              (p.nombre && (p.nombre.toLowerCase().includes("2x1") || p.nombre.toLowerCase().includes("lleva 2") || p.nombre.toLowerCase().includes("paga 1"))) ||
-              (pObs && (pObs.toLowerCase().includes("2x1") || pObs.toLowerCase().includes("lleva 2") || pObs.toLowerCase().includes("paga 1"))) ||
-              (p.cantidadCocina && Number(p.cantidadCocina) > qty)
+              p.nombre && (p.nombre.toLowerCase().includes("2x1") || p.nombre.toLowerCase().includes("lleva 2") || p.nombre.toLowerCase().includes("paga 1"))
             );
 
-            const kitchenQtyFallback = isPromo2x1Fallback ? (Number(p.cantidadCocina) || qty * 2) : qty;
+            const kitchenQtyFallback = isPromo2x1Fallback ? (qty * 2) : qty;
             totalItemsCount += (kitchenQtyFallback - qty);
 
             let displayObsFallback = pObs;
@@ -1218,7 +1215,49 @@ class ProduccionService {
     throw error;
   }
 
-  static async updateEstado(id, nuevoEstado, extraData = {}) {
+  /**
+   * Valida reglas de transición de estados de producción (Presencial vs. Domicilio — Ficha SENA 3209616).
+   */
+  static validateTransition({ currentEntrega, currentCocina, requestedEstado, esDomicilio = false, user = null }) {
+    const curEnt = String(currentEntrega || '').toUpperCase().trim();
+    const curCoc = String(currentCocina || '').toUpperCase().trim();
+    const norm = String(requestedEstado || '').toUpperCase().trim();
+
+    if (curEnt === 'CANCELADO' || curCoc === 'CANCELADO') {
+      const err = new Error('No se puede cambiar el estado de una orden cancelada.');
+      err.statusCode = 400;
+      throw err;
+    }
+
+    const isRequestingEntregado = norm === 'ENTREGADO' || norm === 'COMPLETADA';
+    const isRequestingDespachado = norm === 'DESPACHADO' || norm === 'EN_CAMINO';
+
+    if ((curEnt === 'ENTREGADO' || curCoc === 'ENTREGADO') && !isRequestingEntregado) {
+      const err = new Error('No se puede retroceder el estado de una orden que ya fue entregada.');
+      err.statusCode = 400;
+      throw err;
+    }
+
+    const isCocinero =
+      Number(user?.idRol) === 2 ||
+      String(user?.rol || '').toLowerCase().trim() === 'cocinero';
+
+    // En pedidos a Domicilio: el cocinero debe despachar primero (Listo -> Despachado) y no saltar directo a Entregado
+    if (esDomicilio && isRequestingEntregado && isCocinero && curCoc !== 'DESPACHADO' && curCoc !== 'EN_CAMINO') {
+      const err = new Error('Los pedidos a domicilio deben pasar primero a "Despachado" antes de marcarse como "Entregado".');
+      err.statusCode = 400;
+      throw err;
+    }
+
+    // En pedidos Presenciales / En Mesa: no existe etapa "Despachado" (pasan directo de Listo -> Entregado)
+    if (!esDomicilio && isRequestingDespachado) {
+      return 'ENTREGADO';
+    }
+
+    return norm;
+  }
+
+  static async updateEstado(id, nuevoEstado, extraData = {}, user = null) {
     let v = null;
     let idVentaNum = Number(id);
 
@@ -1263,7 +1302,26 @@ class ProduccionService {
     let estadoEnum = v.estadoEntrega || 'PENDIENTE';
     let newAprobacion = v.estadoAprobacion || 'PENDIENTE';
     let estadoCocinaInterno = obsObj.estadoCocina || 'EN_COLA';
-    const norm = String(nuevoEstado || '').toUpperCase();
+
+    const esDomicilio =
+      String(obsObj.tipoEntrega || v.tipoVenta || '').toLowerCase().includes('domicilio') ||
+      String(obsObj.origen || '').toUpperCase() === 'ONLINE';
+
+    const norm = ProduccionService.validateTransition({
+      currentEntrega: estadoEnum,
+      currentCocina: estadoCocinaInterno,
+      requestedEstado: nuevoEstado,
+      esDomicilio,
+      user
+    });
+
+    // Seguridad (AUD-005): impedir avanzar a cocina/entrega una venta cuyo pago NO haya sido aprobado
+    const isProductionAdvance = ['EN PREPARACIÓN', 'EN PREPARACION', 'PREPARANDO', 'LISTO', 'LISTOS', 'DESPACHADO', 'EN_CAMINO', 'ENTREGADO', 'COMPLETADA'].includes(norm);
+    if (isProductionAdvance && String(v.estadoAprobacion || '').toUpperCase() !== 'APROBADO') {
+      const err = new Error('No se puede avanzar a producción una venta cuyo pago aún no ha sido aprobado.');
+      err.statusCode = 400;
+      throw err;
+    }
 
     if (norm === 'APROBAR' || norm === 'APROBADO') {
       newAprobacion = 'APROBADO';

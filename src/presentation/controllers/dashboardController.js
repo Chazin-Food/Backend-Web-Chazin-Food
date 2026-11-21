@@ -27,6 +27,15 @@ const getProductosPopulares = async (req, res, next) => {
   }
 };
 
+const getProductosFavoritos = async (req, res, next) => {
+  try {
+    const data = await DashboardService.getProductosFavoritos(req.query);
+    res.json(data);
+  } catch (error) {
+    next(error);
+  }
+};
+
 const getAlertasStock = async (req, res, next) => {
   try {
     const data = await DashboardService.getAlertasStock(req.query);
@@ -58,6 +67,7 @@ module.exports = {
   getStats,
   getVentasChart,
   getProductosPopulares,
+  getProductosFavoritos,
   getAlertasStock,
   getVentasRecientes,
   getComentariosObservaciones

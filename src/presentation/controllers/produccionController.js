@@ -20,9 +20,10 @@ const createOrden = async (req, res, next) => {
 
 const updateEstadoOrden = async (req, res, next) => {
   try {
-    const orden = await ProduccionService.updateEstado(req.params.id, req.body.estado, req.body);
+    const orden = await ProduccionService.updateEstado(req.params.id, req.body.estado, req.body, req.user);
     res.json(orden);
   } catch (error) {
+    if (error.statusCode) res.status(error.statusCode);
     next(error);
   }
 };

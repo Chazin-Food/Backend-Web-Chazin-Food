@@ -1,9 +1,19 @@
 const bcrypt = require('bcryptjs');
+const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
 const { Op } = require('sequelize');
 const { User, Role, Cliente, Permiso } = require('../../persistence/models');
 const { sanitizeTelefono, sanitizeDocumento, cleanNameAndLastName, formatNombreCompleto, isValidEmailStrict, isValidPersonName } = require('../../infrastructure/utils/validationUtils');
 const EmailService = require('./emailService');
+const {
+  getJwtSecret,
+  JWT_VERIFY_OPTIONS,
+  JWT_SESSION_TTL,
+  revokeAllUserTokens
+} = require('../../infrastructure/config/jwtConfig');
+
+// Hash dummy para igualar el tiempo de respuesta cuando el correo no existe (mitigación de timing oracle)
+const DUMMY_BCRYPT_HASH = '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy';
 
 function getCleanDireccion(raw) {
   if (!raw) return '';
@@ -20,24 +30,35 @@ function getCleanDireccion(raw) {
 
 class AuthService {
   static generateToken(id) {
-    return jwt.sign({ id }, process.env.JWT_SECRET || 'secret123', {
-      expiresIn: '30d',
-    });
+    return jwt.sign(
+      { id, jti: crypto.randomUUID() },
+      getJwtSecret(),
+      {
+        algorithm: 'HS256',
+        expiresIn: JWT_SESSION_TTL,
+      }
+    );
   }
 
   static async register(userData) {
-    const { idUsuario, documento, numeroDocumento, nombre, apellidos, apellido, email, correo, contrasena, contraseña, idRol, rol_id, tipoDocumento, telefono, direccion } = userData;
+    // Seguridad (AUD-002): el registro público ignora idRol/rol_id/estado del cliente y asigna siempre el rol Cliente
+    const { idUsuario, documento, numeroDocumento, nombre, apellidos, apellido, email, correo, contrasena, contraseña, tipoDocumento, telefono, direccion } = userData || {};
     const finalEmail = (email || correo || '').trim().toLowerCase();
     const finalPassword = contrasena || contraseña;
     const rawApellido = apellidos || apellido || '';
     const { nombre: cleanNom, apellidos: cleanApe } = cleanNameAndLastName(nombre, rawApellido);
     const cleanTel = sanitizeTelefono(telefono);
     const cleanTipoDoc = tipoDocumento || 'C.C.';
-    let finalRolId = idRol || rol_id;
     const finalDocumento = sanitizeDocumento(documento || numeroDocumento || idUsuario || '', cleanTipoDoc);
 
     if (!finalEmail || !finalPassword || !cleanNom) {
       const error = new Error('Por favor complete todos los campos requeridos');
+      error.statusCode = 400;
+      throw error;
+    }
+
+    if (String(finalPassword).length < 6) {
+      const error = new Error('La contraseña debe tener al menos 6 caracteres');
       error.statusCode = 400;
       throw error;
     }
@@ -89,10 +110,8 @@ class AuthService {
       }
     }
 
-    if (!finalRolId) {
-      const clienteRol = await Role.findOne({ where: { nombre: 'Cliente' } });
-      finalRolId = clienteRol ? clienteRol.idRol : 4;
-    }
+    const clienteRol = await Role.findOne({ where: { nombre: 'Cliente' } });
+    const finalRolId = clienteRol ? clienteRol.idRol : 4;
 
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(finalPassword, salt);
@@ -135,12 +154,11 @@ class AuthService {
       }
     }
 
-    // Send welcome email upon registration
+    // Send welcome email upon registration (sin exponer la contraseña en texto plano)
     EmailService.sendWelcomeEmail({
       email: user.email,
       nombre: user.nombre,
       apellidos: user.apellidos,
-      password: finalPassword,
       usuario: user
     }).catch(err => console.error('Background welcome email error in register:', err.message));
 
@@ -211,6 +229,15 @@ class AuthService {
     });
 
     if (!user) {
+      await bcrypt.compare(String(password), DUMMY_BCRYPT_HASH);
+      const error = new Error('Credenciales inválidas');
+      error.statusCode = 401;
+      throw error;
+    }
+
+    // Verificar contraseña ANTES de revelar estados de cuenta (mitiga enumeración pre-bcrypt)
+    const isMatch = await bcrypt.compare(password, user.contrasena);
+    if (!isMatch) {
       const error = new Error('Credenciales inválidas');
       error.statusCode = 401;
       throw error;
@@ -231,13 +258,6 @@ class AuthService {
     if (user.rolInfo && (user.rolInfo.estado === 0 || user.rolInfo.estado === '0')) {
       const error = new Error('El rol asignado a tu cuenta se encuentra inactivo. Comunícate con el administrador.');
       error.statusCode = 403;
-      throw error;
-    }
-
-    const isMatch = await bcrypt.compare(password, user.contrasena);
-    if (!isMatch) {
-      const error = new Error('Credenciales inválidas');
-      error.statusCode = 401;
       throw error;
     }
 
@@ -431,8 +451,8 @@ class AuthService {
     };
   }
 
-  static async updateProfile(userId, profileData) {
-    const { passwordActual, passwordNueva, ...otherData } = profileData;
+  static async updateProfile(userId, profileData = {}) {
+    const { passwordActual, passwordNueva } = profileData || {};
 
     const user = await User.findByPk(userId);
     if (!user) {
@@ -441,40 +461,53 @@ class AuthService {
       throw error;
     }
 
-    // If password change or initial password creation is requested
+    // Seguridad (AUD-018): exigir siempre passwordActual para cambiar contraseña en perfil (sin crearPasswordDirecta ni bypass por URL de foto)
     if (passwordNueva) {
-      if (passwordNueva.length < 6) {
+      if (String(passwordNueva).length < 6) {
         const error = new Error('La nueva contraseña debe tener al menos 6 caracteres');
         error.statusCode = 400;
         throw error;
       }
 
-      const isGoogleUser = Boolean(user.foto && user.foto.includes('googleusercontent.com'));
-      const allowDirectSet = Boolean(profileData.crearPasswordDirecta || (isGoogleUser && !passwordActual));
+      if (!passwordActual) {
+        const error = new Error('Debes ingresar tu contraseña actual para cambiarla. Si accedes con Google y aún no tienes contraseña local, usa "Olvidé mi contraseña".');
+        error.statusCode = 400;
+        throw error;
+      }
 
-      if (!allowDirectSet) {
-        if (!passwordActual) {
-          const error = new Error('Debes ingresar tu contraseña actual para cambiarla');
-          error.statusCode = 400;
-          throw error;
-        }
-        const isMatch = await bcrypt.compare(passwordActual, user.contrasena);
-        if (!isMatch) {
-          const error = new Error('La contraseña actual es incorrecta');
-          error.statusCode = 400;
-          throw error;
-        }
+      const isMatch = await bcrypt.compare(String(passwordActual), user.contrasena);
+      if (!isMatch) {
+        const error = new Error('La contraseña actual es incorrecta');
+        error.statusCode = 400;
+        throw error;
       }
 
       const salt = await bcrypt.genSalt(10);
-      const hashed = await bcrypt.hash(passwordNueva, salt);
+      const hashed = await bcrypt.hash(String(passwordNueva), salt);
       await user.update({ contrasena: hashed });
+      revokeAllUserTokens(userId);
     }
 
-    // If there's other profile data to update
-    if (Object.keys(otherData).length > 0) {
+    // Seguridad (AUD-002): lista blanca estricta de campos de perfil editables por el propio usuario (prohibido idRol, rol_id, estado, contrasena)
+    const allowedProfileUpdate = {};
+    const selfAllowedKeys = ['nombre', 'apellidos', 'apellido', 'telefono', 'direccion', 'foto', 'avatar'];
+    for (const key of selfAllowedKeys) {
+      if (profileData[key] !== undefined) {
+        allowedProfileUpdate[key] = profileData[key];
+      }
+    }
+
+    // Permitir completar documento únicamente si el usuario aún no tiene uno válido registrado (onboarding Google/checkout)
+    const hasExistingDoc = Boolean(user.numeroDocumento && String(user.numeroDocumento).trim().length >= 6);
+    if (!hasExistingDoc) {
+      if (profileData.tipoDocumento !== undefined) allowedProfileUpdate.tipoDocumento = profileData.tipoDocumento;
+      if (profileData.documento !== undefined) allowedProfileUpdate.documento = profileData.documento;
+      if (profileData.numeroDocumento !== undefined) allowedProfileUpdate.numeroDocumento = profileData.numeroDocumento;
+    }
+
+    if (Object.keys(allowedProfileUpdate).length > 0) {
       const UserService = require('./userService');
-      await UserService.updateUser(userId, otherData);
+      await UserService.updateUser(userId, allowedProfileUpdate);
     }
 
     const profile = await this.getUserProfile(userId);
@@ -497,22 +530,22 @@ class AuthService {
     const user = await User.findOne({
       where: {
         email: { [Op.like]: targetEmail }
-      }
+      },
+      attributes: ['idUsuario']
     });
 
     if (!user) {
       return {
         exists: false,
         registered: false,
-        message: 'El correo ingresado no se encuentra registrado en el sistema.'
+        message: 'Correo disponible.'
       };
     }
 
     return {
       exists: true,
       registered: true,
-      message: 'El correo se encuentra registrado.',
-      nombre: user.nombre
+      message: 'El correo se encuentra registrado.'
     };
   }
 
@@ -585,17 +618,18 @@ class AuthService {
       }
     });
 
+    const genericMessage = 'Si el correo está registrado, recibirás las instrucciones para restablecer tu contraseña.';
+
     if (!user) {
-      const error = new Error('El correo ingresado no se encuentra registrado en el sistema');
-      error.statusCode = 404;
-      throw error;
+      // Respuesta unificada para prevenir enumeración de correos (AUD-018)
+      return { message: genericMessage };
     }
 
-    const jwtSecret = process.env.JWT_SECRET || 'chazin_food_secret_key_2026';
+    const jwtSecret = getJwtSecret();
     const resetToken = jwt.sign(
-      { id: user.idUsuario, email: user.email },
+      { id: user.idUsuario, email: user.email, purpose: 'password_reset' },
       jwtSecret + user.contrasena,
-      { expiresIn: '1h' }
+      { algorithm: 'HS256', expiresIn: '1h' }
     );
 
     const frontendUrl = EmailService.resolveFrontendUrl(options.requestOrigin);
@@ -611,13 +645,13 @@ class AuthService {
 
     if (!sent) {
       const error = new Error(
-        'No fue posible enviar el correo de recuperación en este momento. Verifica las credenciales de correo (SMTP o Resend) del servidor.'
+        'No fue posible enviar el correo de recuperación en este momento. Intenta nuevamente más tarde.'
       );
       error.statusCode = 503;
       throw error;
     }
 
-    return { message: 'Si el correo está registrado, recibirás las instrucciones para restablecer tu contraseña.' };
+    return { message: genericMessage };
   }
 
   static async resetPassword(data) {
@@ -639,22 +673,28 @@ class AuthService {
       throw error;
     }
 
-    if (newPassword.length < 6) {
+    if (String(newPassword).length < 6) {
       const error = new Error('La contraseña debe tener al menos 6 caracteres');
       error.statusCode = 400;
       throw error;
     }
 
-    const user = await User.findOne({ where: { email } });
+    const user = await User.findOne({ where: { email: String(email).trim().toLowerCase() } });
     if (!user) {
-      const error = new Error('Usuario no encontrado');
-      error.statusCode = 404;
+      const error = new Error('El enlace de restablecimiento es inválido o ha expirado');
+      error.statusCode = 400;
       throw error;
     }
 
-    const jwtSecret = process.env.JWT_SECRET || 'chazin_food_secret_key_2026';
+    const jwtSecret = getJwtSecret();
     try {
-      jwt.verify(token, jwtSecret + user.contrasena);
+      const verified = jwt.verify(token, jwtSecret + user.contrasena, JWT_VERIFY_OPTIONS);
+      if (verified.purpose && verified.purpose !== 'password_reset') {
+        throw new Error('Propósito de token inválido');
+      }
+      if (verified.email && String(verified.email).toLowerCase() !== String(user.email).toLowerCase()) {
+        throw new Error('Correo del token no coincide');
+      }
     } catch (err) {
       const error = new Error('El enlace de restablecimiento es inválido o ha expirado');
       error.statusCode = 400;
@@ -662,18 +702,17 @@ class AuthService {
     }
 
     const salt = await bcrypt.genSalt(10);
-    const hashedPassword = await bcrypt.hash(newPassword, salt);
+    const hashedPassword = await bcrypt.hash(String(newPassword), salt);
 
     await user.update({ contrasena: hashedPassword });
+    revokeAllUserTokens(user.idUsuario);
 
-    // Notificar al usuario por correo con diseño React Email
+    // Notificar al usuario por correo sin incluir la contraseña en texto plano
     try {
       EmailService.sendPasswordChangedEmail({
         email: user.email,
         nombre: user.nombre,
-        apellidos: user.apellidos,
-        nuevaContrasena: newPassword,
-        password: newPassword
+        apellidos: user.apellidos
       });
     } catch (e) {
       console.warn('Error al enviar notificación de contraseña actualizada:', e.message);
@@ -683,96 +722,51 @@ class AuthService {
   }
 
   static async googleLogin(credential, options = {}) {
-    if (!credential) {
-      const error = new Error('Token de Google no proporcionado');
-      error.statusCode = 400;
+    // Seguridad (AUD-001): exigir estrictamente un ID Token JWT firmado de Google y verificado con OAuth2Client
+    if (!credential || typeof credential !== 'string' || credential.trim().startsWith('{') || credential.split('.').length !== 3) {
+      const error = new Error('Token de Google inválido o malformado');
+      error.statusCode = 401;
       throw error;
     }
 
-    const mode = options?.mode || (typeof credential === 'object' && credential.mode ? credential.mode : 'login');
+    const mode = options?.mode || 'login';
     const allowRegister = options?.allowRegister !== undefined
       ? Boolean(options.allowRegister)
-      : (typeof credential === 'object' && credential.allowRegister !== undefined ? Boolean(credential.allowRegister) : (mode === 'register'));
+      : (mode === 'register');
 
-    let payload = null;
-    const googleClientId = process.env.GOOGLE_CLIENT_ID || process.env.VITE_GOOGLE_CLIENT_ID;
-
-    // 1. Verificación oficial con Google OAuth2Client si clientId está configurado
-    if (googleClientId && typeof credential === 'string' && !credential.startsWith('{')) {
-      try {
-        const { OAuth2Client } = require('google-auth-library');
-        const client = new OAuth2Client(googleClientId);
-        const ticket = await client.verifyIdToken({
-          idToken: credential,
-          audience: googleClientId
-        });
-        payload = ticket.getPayload();
-      } catch (verifyError) {
-        console.warn('Verificación directa con OAuth2Client falló, intentando endpoints de respaldo:', verifyError.message);
-      }
-    }
-
-    // 2. Respaldo: tokeninfo oficial de Google si es un ID Token JWT de Google
-    if (!payload && typeof credential === 'string' && credential.includes('.') && credential.length > 50) {
-      try {
-        const https = require('https');
-        const tokenInfo = await new Promise((resolve, reject) => {
-          https.get(`https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(credential)}`, (res) => {
-            let data = '';
-            res.on('data', chunk => { data += chunk; });
-            res.on('end', () => {
-              try {
-                const parsed = JSON.parse(data);
-                if (parsed.error_description || parsed.error) {
-                  reject(new Error(parsed.error_description || parsed.error));
-                } else {
-                  resolve(parsed);
-                }
-              } catch (e) {
-                reject(e);
-              }
-            });
-          }).on('error', reject);
-        });
-        payload = tokenInfo;
-      } catch (fallbackError) {
-        // Continuar al paso 3
-      }
-    }
-
-    // 3. Respaldo: Decodificación de payload JWT o parseo de objeto directo
-    if (!payload) {
-      try {
-        if (typeof credential === 'string') {
-          if (credential.trim().startsWith('{')) {
-            payload = JSON.parse(credential);
-          } else if (credential.includes('.')) {
-            const parts = credential.split('.');
-            if (parts.length >= 2) {
-              const base64Url = parts[1];
-              const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
-              const jsonPayload = Buffer.from(base64, 'base64').toString('utf-8');
-              payload = JSON.parse(jsonPayload);
-            }
-          }
-        } else if (typeof credential === 'object' && (credential.email || credential.correo)) {
-          payload = credential;
-        }
-      } catch (e) {
-        console.error('Error decodificando token de Google:', e.message);
-      }
-    }
-
-    if (!payload || (!payload.email && !payload.correo)) {
-      const error = new Error('No se pudo autenticar con Google. Token o credencial inválida.');
-      error.statusCode = 400;
+    const googleClientId = String(process.env.GOOGLE_CLIENT_ID || process.env.VITE_GOOGLE_CLIENT_ID || '').trim();
+    if (!googleClientId) {
+      const error = new Error('Autenticación con Google no configurada en el servidor');
+      error.statusCode = 503;
       throw error;
     }
 
-    const email = (payload.email || payload.correo).trim().toLowerCase();
-    const givenName = payload.given_name || payload.name || payload.nombre || 'Usuario';
-    const familyName = payload.family_name || payload.apellidos || '';
-    const picture = payload.picture || payload.foto || payload.avatar || null;
+    let payload = null;
+    try {
+      const { OAuth2Client } = require('google-auth-library');
+      const client = new OAuth2Client(googleClientId);
+      const ticket = await client.verifyIdToken({
+        idToken: credential.trim(),
+        audience: googleClientId
+      });
+      payload = ticket.getPayload();
+    } catch (verifyError) {
+      console.warn('Verificación criptográfica de Google OAuth rechazada:', verifyError.message);
+      const error = new Error('No se pudo verificar el token de Google. Inicia sesión nuevamente.');
+      error.statusCode = 401;
+      throw error;
+    }
+
+    if (!payload || !payload.email || payload.email_verified !== true) {
+      const error = new Error('La cuenta de Google no tiene un correo electrónico verificado.');
+      error.statusCode = 401;
+      throw error;
+    }
+
+    const email = String(payload.email).trim().toLowerCase();
+    const givenName = payload.given_name || payload.name || 'Usuario';
+    const familyName = payload.family_name || '';
+    const picture = payload.picture || null;
 
     const { Sequelize } = require('sequelize');
     let user = await User.findOne({
@@ -796,8 +790,14 @@ class AuthService {
         throw error;
       }
 
-      // Si estaba PENDIENTE y se autentica con su cuenta verificada de Google, queda activado
+      // Si estaba PENDIENTE y es cuenta Cliente verificada por Google, queda activada (cuentas administrativas requieren activación explícita)
       if (user.estado === 'PENDIENTE') {
+        const isClientAccount = Number(user.idRol) === 4 || String(user.rolInfo?.nombre || '').toLowerCase() === 'cliente';
+        if (!isClientAccount) {
+          const error = new Error('Tu cuenta administrativa está pendiente de activación. Usa el enlace enviado a tu correo electrónico.');
+          error.statusCode = 403;
+          throw error;
+        }
         await user.update({ estado: 'ACTIVO' });
         user.estado = 'ACTIVO';
       }
@@ -971,11 +971,11 @@ class AuthService {
   }
 
   static generateActivationToken(user) {
-    const jwtSecret = process.env.JWT_SECRET || 'chazin_food_secret_key_2026';
+    const jwtSecret = getJwtSecret();
     return jwt.sign(
       { id: user.idUsuario, email: user.email, purpose: 'activate_account' },
       jwtSecret + user.contrasena,
-      { expiresIn: '72h' }
+      { algorithm: 'HS256', expiresIn: '72h' }
     );
   }
 
@@ -1000,14 +1000,23 @@ class AuthService {
       throw error;
     }
 
-    const jwtSecret = process.env.JWT_SECRET || 'chazin_food_secret_key_2026';
+    const jwtSecret = getJwtSecret();
     try {
-      jwt.verify(token, jwtSecret + user.contrasena);
+      const verified = jwt.verify(token, jwtSecret + user.contrasena, JWT_VERIFY_OPTIONS);
+      if (verified.purpose !== 'activate_account') {
+        throw new Error('Propósito de token inválido');
+      }
     } catch (err) {
+      const error = new Error('El enlace de activación es inválido o ha expirado.');
+      error.statusCode = 400;
+      throw error;
+    }
+
+    if (user.estado !== 'PENDIENTE') {
       const error = new Error(
         user.estado === 'ACTIVO'
           ? 'Esta cuenta ya fue activada anteriormente. Ya puedes iniciar sesión.'
-          : 'El enlace de activación es inválido o ha expirado.'
+          : 'Esta cuenta no está habilitada para activación. Comunícate con el administrador.'
       );
       error.statusCode = 400;
       throw error;
@@ -1058,14 +1067,23 @@ class AuthService {
       throw error;
     }
 
-    const jwtSecret = process.env.JWT_SECRET || 'chazin_food_secret_key_2026';
+    const jwtSecret = getJwtSecret();
     try {
-      jwt.verify(token, jwtSecret + user.contrasena);
+      const verified = jwt.verify(token, jwtSecret + user.contrasena, JWT_VERIFY_OPTIONS);
+      if (verified.purpose !== 'activate_account') {
+        throw new Error('Propósito de token inválido');
+      }
     } catch (err) {
+      const error = new Error('El enlace de activación es inválido o ha expirado.');
+      error.statusCode = 400;
+      throw error;
+    }
+
+    if (user.estado !== 'PENDIENTE') {
       const error = new Error(
         user.estado === 'ACTIVO'
           ? 'Esta cuenta ya fue activada. Inicia sesión con tu contraseña.'
-          : 'El enlace de activación es inválido o ha expirado.'
+          : 'Esta cuenta se encuentra inactiva. Comunícate con el administrador.'
       );
       error.statusCode = 400;
       throw error;
@@ -1074,6 +1092,7 @@ class AuthService {
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(String(newPassword), salt);
     await user.update({ contrasena: hashedPassword, estado: 'ACTIVO' });
+    revokeAllUserTokens(user.idUsuario);
 
     if (user.clienteInfo) {
       try {

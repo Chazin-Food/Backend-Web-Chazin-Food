@@ -19,8 +19,8 @@ const cacheProductos = cacheResponse('productos', {
   cacheControl: 'public, max-age=15, stale-while-revalidate=30'
 });
 
-router.get('/papelera', protect, getProductsPapelera);
-router.get('/deleted', protect, getProductsPapelera);
+router.get('/papelera', protect, requirePrivilege('Productos', 'Ver'), getProductsPapelera);
+router.get('/deleted', protect, requirePrivilege('Productos', 'Ver'), getProductsPapelera);
 
 router.route('/')
   .get(cacheProductos, getProducts)

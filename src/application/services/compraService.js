@@ -355,12 +355,18 @@ class CompraService {
 
       await DetalleCompraInsumo.bulkCreate(detallesParaGuardar);
 
-      // Crear registros en LoteInsumo
+      // Crear registros en LoteInsumo usando detallesParaGuardar (incluye lotes autogenerados)
       const lotesToCreate = [];
-      for (const d of data.detalles) {
-        const lotesArr = Array.isArray(d.lotes) && d.lotes.length > 0
-          ? d.lotes
-          : (d.numeroLote ? [{ numeroLote: d.numeroLote, fechaVencimiento: d.fechaVencimiento, cantidad: d.cantidad }] : []);
+      for (const d of detallesParaGuardar) {
+        let lotesArr = [];
+        try {
+          lotesArr = typeof d.lotes === 'string' ? JSON.parse(d.lotes) : (Array.isArray(d.lotes) ? d.lotes : []);
+        } catch (_) {
+          lotesArr = [];
+        }
+        if (lotesArr.length === 0 && d.numeroLote) {
+          lotesArr = [{ numeroLote: d.numeroLote, fechaVencimiento: d.fechaVencimiento, cantidad: d.cantidad }];
+        }
 
         for (const l of lotesArr) {
           if (l && l.numeroLote && String(l.numeroLote).trim()) {
@@ -567,6 +573,13 @@ class CompraService {
     if (!c) {
       const error = new Error('Compra no encontrada');
       error.statusCode = 404;
+      throw error;
+    }
+
+    // Seguridad / Idempotencia (AUD-020): evitar doble descuento/suma de stock al cancelar una compra ya anulada
+    if (String(c.estado || '').toUpperCase() === 'CANCELADA') {
+      const error = new Error('Esta compra ya fue cancelada o anulada anteriormente.');
+      error.statusCode = 400;
       throw error;
     }
 

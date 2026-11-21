@@ -23,23 +23,34 @@ class EmailService {
    * Prioriza FRONTEND_URL y permite únicamente orígenes confiables (localhost o *.vercel.app) como respaldo.
    */
   static resolveFrontendUrl(requestOrigin = '') {
-    const envUrl = (process.env.FRONTEND_URL || '').trim().replace(/\/+$/, '');
-    const candidate = String(requestOrigin || '').trim().replace(/\/+$/, '');
-    const isTrustedOrigin = (origin) => {
-      if (!origin) return false;
-      return (
-        /^https:\/\/[a-z0-9-]+\.vercel\.app$/i.test(origin) ||
-        /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(origin)
-      );
-    };
+    const rawEnv = String(process.env.FRONTEND_URL || '').trim();
+    const configuredOrigins = rawEnv
+      .split(',')
+      .map(o => o.trim().replace(/\/+$/, ''))
+      .filter(Boolean);
 
-    if (envUrl && !/^https?:\/\/(localhost|127\.0\.0\.1)/i.test(envUrl)) {
-      return envUrl;
+    const trustedOrigins = new Set([
+      ...configuredOrigins,
+      'https://frontend-web-chazin-food.vercel.app'
+    ]);
+
+    const candidate = String(requestOrigin || '').trim().replace(/\/+$/, '');
+    const isLocalOrigin = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(candidate);
+
+    // En producción, usar siempre el primer FRONTEND_URL no-local o el origen exacto en lista blanca (nunca *.vercel.app genérico)
+    const primaryProdUrl = configuredOrigins.find(u => !/^https?:\/\/(localhost|127\.0\.0\.1)/i.test(u));
+    if (primaryProdUrl) {
+      if (candidate && trustedOrigins.has(candidate)) {
+        return candidate;
+      }
+      return primaryProdUrl;
     }
-    if (candidate && isTrustedOrigin(candidate)) {
+
+    if (candidate && (trustedOrigins.has(candidate) || (process.env.NODE_ENV !== 'production' && isLocalOrigin))) {
       return candidate;
     }
-    return envUrl || 'http://localhost:5173';
+
+    return configuredOrigins[0] || (process.env.NODE_ENV === 'production' ? 'https://frontend-web-chazin-food.vercel.app' : 'http://localhost:5173');
   }
 
   /**
@@ -360,7 +371,6 @@ class EmailService {
       devLines: [
         `Para: ${userName} <${email}>`,
         `Enlace Activación: ${targetLink}`,
-        `Clave Temporal: ${password}`,
         ...(pending.length > 0 ? [`Campos Pendientes: ${pending.join(', ')}`] : [])
       ]
     });
@@ -398,7 +408,6 @@ class EmailService {
       label: 'bienvenida',
       devLines: [
         `Para: ${userName} <${email}>`,
-        `Clave: ${password || '(OAuth / sin clave temporal)'}`,
         ...(pending.length > 0 ? [`Campos Pendientes: ${pending.join(', ')}`] : [])
       ]
     });
@@ -431,27 +440,25 @@ class EmailService {
   /**
    * Envía notificación de cambio de contraseña con diseño React Email.
    */
-  static async sendPasswordChangedEmail({ email, nombre, apellidos, nuevaContrasena, password, supportLink }) {
+  static async sendPasswordChangedEmail({ email, nombre, apellidos, supportLink }) {
     const userName = `${nombre} ${apellidos || ''}`.trim();
     const frontendUrl = this.resolveFrontendUrl();
-    const finalPass = nuevaContrasena || password || '';
 
     return this._deliverEmail({
       to: email,
       subject: '🔐 Notificación de Seguridad: Contraseña modificada - Chazin Food',
-      text: `Hola ${userName},\n\nTe notificamos que la contraseña de tu cuenta en Chazin Food ha sido modificada exitosamente.${finalPass ? `\n\nTu nueva contraseña es: ${finalPass}` : ''}\n\nSi no realizaste este cambio, por favor comunícate con nosotros de inmediato para proteger tu cuenta.`,
+      text: `Hola ${userName},\n\nTe notificamos que la contraseña de tu cuenta en Chazin Food ha sido modificada exitosamente.\n\nPor tu seguridad no incluimos contraseñas en este correo. Si no realizaste este cambio, por favor comunícate con nosotros de inmediato para proteger tu cuenta.`,
       renderHtml: () =>
         renderPasswordChangedEmail({
           nombre,
           apellidos,
-          nuevaContrasena: finalPass,
-          password: finalPass,
+          nuevaContrasena: '',
+          password: '',
           supportLink: supportLink || frontendUrl
         }),
       label: 'cambio de contraseña',
       devLines: [
-        `Para: ${userName} <${email}>`,
-        ...(finalPass ? [`Nueva Clave: ${finalPass}`] : [])
+        `Para: ${userName} <${email}>`
       ]
     });
   }

@@ -349,7 +349,7 @@ const deleteEmpleado = async (req, res, next) => {
       return res.status(404).json({ message: 'Empleado no encontrado' });
     }
 
-    await empleado.update({ eliminado: 1, estado: 0 });
+    await empleado.update({ eliminado: 1, estado: 'Inactivo' });
 
     res.json({
       message: 'Empleado enviado a la papelera exitosamente',

@@ -373,7 +373,7 @@ class ProductService {
           model: DetalleFichaInsumo,
           as: 'detalles',
           separate: true,
-          include: [{ model: Insumo, as: 'insumo', attributes: ['idInsumo', 'nombre', 'stock', 'unidadMedida', 'estado', 'precioUnitario'] }]
+          include: [{ model: Insumo, as: 'insumo', attributes: ['idInsumo', 'nombre', 'descripcion', 'stock', 'unidadMedida', 'estado', 'precioUnitario'] }]
         }
       ],
       order: [['idFichaTecnica', 'ASC']]
@@ -381,7 +381,7 @@ class ProductService {
 
       // Cargar todos los insumos para bebidas o productos directos sin ficha técnica
       Insumo.findAll({
-        attributes: ['idInsumo', 'nombre', 'stock', 'unidadMedida', 'precioUnitario', 'estado']
+        attributes: ['idInsumo', 'nombre', 'descripcion', 'stock', 'unidadMedida', 'precioUnitario', 'estado']
       }).catch(() => []),
 
       // Cargar historial de ventas por variante para contar ventas reales
@@ -431,6 +431,8 @@ class ProductService {
 
       if (directInsumoId && insumoByIdMap.has(directInsumoId)) {
         const ins = insumoByIdMap.get(directInsumoId);
+        const sinControl = String(ins.descripcion || '').includes('[SIN_CONTROL_STOCK]');
+        if (sinControl) return Number(ins.estado) === 0 ? 0 : 99;
         const directStock = Math.max(0, Math.floor(Number(ins.stock || 0)));
         if (ins.estado === 0 && directStock <= 0) return 0;
         return directStock;
@@ -441,6 +443,8 @@ class ProductService {
         return iName && rawName && (iName === rawName || (rawName.startsWith(iName) && iName.length >= 6));
       });
       if (matchedByName) {
+        const sinControl = String(matchedByName.descripcion || '').includes('[SIN_CONTROL_STOCK]');
+        if (sinControl) return Number(matchedByName.estado) === 0 ? 0 : 99;
         const directStock = Math.max(0, Math.floor(Number(matchedByName.stock || 0)));
         if (matchedByName.estado === 0 && directStock <= 0) return 0;
         return directStock;
@@ -453,10 +457,21 @@ class ProductService {
       const ficha = fichaMap.get(prod.idProducto);
       if (ficha && Array.isArray(ficha.detalles) && ficha.detalles.length > 0) {
         let minPortions = Infinity;
+        let hasUnlimitedOnly = false;
         for (const det of ficha.detalles) {
           const insumo = det.insumo;
           const cantReq = Number(det.cantidad || 0);
           if (insumo && cantReq > 0) {
+            const sinControl = String(insumo.descripcion || '').includes('[SIN_CONTROL_STOCK]');
+            if (sinControl) {
+              // Insumo sin control de stock (ej. salsas/verduras): solo bloquea si está marcado Agotado (estado === 0)
+              if (Number(insumo.estado) === 0) {
+                minPortions = 0;
+                break;
+              }
+              hasUnlimitedOnly = true;
+              continue;
+            }
             const stockInsumo = Math.max(0, Number(insumo.stock || 0));
             if (stockInsumo <= 0) {
               minPortions = 0;
@@ -464,13 +479,13 @@ class ProductService {
             }
             const cantConvertida = convertToInsumoUnit(cantReq, det.unidadMedida, insumo.unidadMedida);
             if (cantConvertida > 0) {
-              const stockInsumo = Math.max(0, Number(insumo.stock || 0));
               const porciones = Math.floor(stockInsumo / cantConvertida);
               minPortions = Math.min(minPortions, porciones);
             }
           }
         }
         if (minPortions !== Infinity) return minPortions;
+        if (hasUnlimitedOnly) return 99;
       }
       const directStock = resolveDirectInsumoStock(prod);
       if (directStock !== null) return directStock;

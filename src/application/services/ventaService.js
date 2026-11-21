@@ -1,11 +1,18 @@
-const { Venta, DetalleVentaProducto, Cliente, User, Role, Variante } = require('../../persistence/models');
+const { Venta, DetalleVentaProducto, Cliente, User, Role, Variante, Product } = require('../../persistence/models');
 const {
   getColombiaDateISO,
+  extractDateOnlyISO,
   getColombiaPeriodRange,
   formatColombiaDateES,
   formatColombiaTime12,
   formatColombiaTimeWithSeconds12
 } = require('../../infrastructure/utils/colombiaDateUtils');
+
+const NO_STOCK_TAG = '[SIN_CONTROL_STOCK]';
+const isInsumoNoStockControl = (insumo) => Boolean(insumo && String(insumo.descripcion || '').includes(NO_STOCK_TAG));
+
+let lastWompiExpirationSweepMs = 0;
+const WOMPI_SWEEP_INTERVAL_MS = 5 * 60 * 1000;
 
 function convertUnits(amount, fromUnit, toUnit) {
   if (!amount || isNaN(amount)) return 0;
@@ -590,7 +597,7 @@ class VentaService {
       idUsuario: v.usuario.idUsuario,
       nombre: `${v.usuario.nombre} ${v.usuario.apellidos || ''}`.trim(),
       email: v.usuario.email,
-      rol: v.usuario.rolInfo?.nombre || (v.usuario.idRol === 1 ? 'Administrador' : v.usuario.idRol === 2 ? 'Vendedor' : 'Empleado'),
+      rol: v.usuario.rolInfo?.nombre || (v.usuario.idRol === 1 ? 'Administrador' : v.usuario.idRol === 2 ? 'Cocinero' : v.usuario.idRol === 3 ? 'Vendedor' : 'Empleado'),
       tieneCuenta: true,
       estado: v.usuario.estado || 'Activo'
     } : {
@@ -744,6 +751,9 @@ class VentaService {
   }
 
   static async getAll(filter = {}) {
+    // Liberar inventario de órdenes Wompi abandonadas (>30 min) en segundo plano (máx. 1 vez cada 5 min)
+    this.expirarVentasWompiAbandonadas().catch(() => {});
+
     const filterObj = typeof filter === 'string' ? { periodo: filter } : (filter || {});
     const { search } = filterObj;
     const { Op } = require('sequelize');
@@ -953,7 +963,8 @@ class VentaService {
     } else if (typeof data.observaciones === 'object' && data.observaciones !== null) {
       earlyObs = data.observaciones;
     }
-    const esDevolucion = Boolean(data.esDevolucion || earlyObs.esDevolucion);
+    // Seguridad (AUD-005): esDevolucion solo se admite mediante bandera interna confiable desde DevolucionService
+    const esDevolucion = Boolean(data._trustedDevolucion === true);
 
     // Strict Validation 1: Check user provided
     if (!targetUserId) {
@@ -979,12 +990,15 @@ class VentaService {
       throw error;
     }
 
-    // Determine if the operating user is staff (Admin, Vendedor, Cocinero)
-    const userRole = userObj.idRol || (userObj.rolInfo ? userObj.rolInfo.nombre : null);
-    const isStaff = (userRole === 1 || userRole === 2 || userRole === 3 || 
-                     String(userRole).toLowerCase().includes('admin') || 
-                     String(userRole).toLowerCase().includes('vendedor') || 
-                     String(userRole).toLowerCase().includes('cocinero'));
+    // Determine if the operating user is sales staff (Administrador idRol=1 o Vendedor idRol=3, nunca Cocinero idRol=2 ni Cliente idRol=4)
+    const userRoleName = String(userObj.rolInfo ? userObj.rolInfo.nombre : '').toLowerCase().trim();
+    const isStaff = (
+      Number(userObj.idRol) === 1 ||
+      Number(userObj.idRol) === 3 ||
+      userRoleName.includes('admin') ||
+      userRoleName.includes('vendedor') ||
+      userRoleName.includes('cajero')
+    );
 
     let finalClienteId = null;
 
@@ -1119,18 +1133,117 @@ class VentaService {
 
     const rawDetails = data.detalles || data.items || [];
 
+    // Seguridad (AUD-004): resolver SIEMPRE precios unitarios, promociones vigentes y adiciones desde la BD (no confiar en montos del cliente)
+    const { Insumo, Evento } = require('../../persistence/models');
+    const hoyColombia = getColombiaDateISO();
+    const eventosVigentesVenta = !esDevolucion
+      ? (await Evento.findAll({ where: { estado: 1 } }).catch(() => [])).filter((e) => {
+          const ini = extractDateOnlyISO(e.fechaInicio);
+          const fin = extractDateOnlyISO(e.fechaFin);
+          return (!ini || ini <= hoyColombia) && (!fin || fin >= hoyColombia);
+        })
+      : [];
+
+    const serverPricedMap = new WeakMap();
     let calculatedSubtotal = 0;
+
     for (const it of rawDetails) {
-      const itPrice = Number(it.precioUnitario || it.precio || 0);
-      const itQty = Number(it.cantidad || 1);
-      const itAdds = Array.isArray(it.adiciones)
-        ? it.adiciones.reduce((s, a) => s + (Number(a.precio || a.precioUnitario || 0)), 0)
-        : 0;
-      calculatedSubtotal += (itPrice + itAdds) * itQty;
+      const itQty = Math.floor(Number(it.cantidad !== undefined ? it.cantidad : 1));
+      if (!Number.isFinite(itQty) || itQty < 1 || itQty > 100) {
+        const error = new Error('La cantidad de cada producto debe ser un entero entre 1 y 100.');
+        error.statusCode = 400;
+        throw error;
+      }
+
+      let serverUnitPrice = 0;
+      let serverAddsUnitTotal = 0;
+      const resolvedAdiciones = [];
+
+      if (!esDevolucion) {
+        let idProd = it.idProducto || it.productoId || null;
+        let precioVar = null;
+        const reqVarId = !it.esVarianteBase ? (it.idVariante || it.varianteId) : null;
+        if (reqVarId) {
+          const varRow = await Variante.findByPk(reqVarId).catch(() => null);
+          if (varRow) {
+            idProd = idProd || varRow.idProducto;
+            const isDummyBase = String(varRow.nombre || '').toLowerCase().includes('- base');
+            if (!isDummyBase && Number(varRow.precio) > 0) {
+              precioVar = Number(varRow.precio);
+            }
+          }
+        }
+        let precioBase = null;
+        if (idProd) {
+          const prodRow = await Product.findByPk(idProd).catch(() => null);
+          if (prodRow) {
+            precioBase = precioVar !== null ? precioVar : Number(prodRow.precio || 0);
+          }
+        } else if (precioVar !== null) {
+          precioBase = precioVar;
+        }
+
+        if (precioBase === null || !(precioBase > 0)) {
+          const error = new Error(`No se pudo verificar el precio oficial del producto "${it.nombre || idProd || ''}".`);
+          error.statusCode = 400;
+          throw error;
+        }
+
+        serverUnitPrice = precioBase;
+        for (const ev of eventosVigentesVenta) {
+          let aplica = Number(ev.idProducto) === Number(idProd);
+          if (!aplica && ev.productosAsociados) {
+            try {
+              const asociados = JSON.parse(ev.productosAsociados);
+              if (Array.isArray(asociados)) {
+                const match = asociados.find(p => Number(p.idProducto || p.id) === Number(idProd));
+                if (match) {
+                  aplica = true;
+                  const pAsoc = Number(match.precioPromocional || match.nuevoPrecio || match.precio || 0);
+                  if (pAsoc > 0) serverUnitPrice = Math.min(serverUnitPrice, pAsoc);
+                }
+              }
+            } catch (_) {}
+          }
+          if (!aplica) continue;
+          if (Number(ev.nuevoPrecio) > 0) {
+            serverUnitPrice = Math.min(serverUnitPrice, Number(ev.nuevoPrecio));
+          } else if (Number(ev.descuento) > 0) {
+            serverUnitPrice = Math.min(serverUnitPrice, Math.round(precioBase * (1 - Number(ev.descuento) / 100)));
+          }
+        }
+
+        const rawAdics = Array.isArray(it.adiciones) ? it.adiciones : (Array.isArray(it.idAdiciones) ? it.idAdiciones : []);
+        for (const a of rawAdics) {
+          const adId = typeof a === 'object' ? (a.idAdicion || a.idInsumo || a.id) : a;
+          const adCant = typeof a === 'object' ? Math.max(1, Math.floor(Number(a.cantidad || 1))) : 1;
+          if (!adId) continue;
+          const insAd = await Insumo.findByPk(adId).catch(() => null);
+          const adPrice = insAd ? Math.max(0, Number(insAd.precioAdicion || 0)) : 0;
+          serverAddsUnitTotal += adPrice * adCant;
+          resolvedAdiciones.push({
+            ...(typeof a === 'object' ? a : { idAdicion: adId }),
+            idAdicion: adId,
+            cantidad: adCant,
+            precio: adPrice
+          });
+        }
+      }
+
+      const itemLineSubtotal = esDevolucion ? 0 : Math.round((serverUnitPrice + serverAddsUnitTotal) * itQty);
+      serverPricedMap.set(it, {
+        cantidad: itQty,
+        precioUnitario: serverUnitPrice,
+        addsUnitTotal: serverAddsUnitTotal,
+        subtotal: itemLineSubtotal,
+        adiciones: resolvedAdiciones
+      });
+      calculatedSubtotal += itemLineSubtotal;
     }
 
-    const finalSubtotal = esDevolucion ? 0 : (Number(data.subtotal) > 0 ? Number(data.subtotal) : calculatedSubtotal);
-    let finalDescuento = Number(data.descuentoAplicado || data.descuento || 0);
+    const finalSubtotal = esDevolucion ? 0 : Math.round(calculatedSubtotal);
+    // Seguridad (AUD-004): nunca confiar en descuento enviado por el cliente; calcular fidelidad estrictamente desde BD
+    let finalDescuento = 0;
 
     const ClienteService = require('./clienteService');
     const isMostradorSale = (!data.idCliente && isStaff) ||
@@ -1138,26 +1251,19 @@ class VentaService {
       (parsedObs.clienteNombre && String(parsedObs.clienteNombre).toLowerCase().includes('mostrador')) ||
       (!data.idCliente && isStaff);
 
-    if (!esDevolucion && finalDescuento === 0 && finalClienteId && !isMostradorSale) {
+    if (!esDevolucion && finalClienteId && !isMostradorSale) {
       try {
         const clienteInfo = await ClienteService.getById(finalClienteId);
         if (clienteInfo && clienteInfo.tieneCuenta) {
-          const nivel = clienteInfo.tipo || clienteInfo.fidelidad?.tipo || 'Nuevo';
-          let pct = Number(clienteInfo.descuentoPorcentaje !== undefined ? clienteInfo.descuentoPorcentaje : (clienteInfo.fidelidad?.descuentoPorcentaje || 0));
+          // Regla oficial Ficha SENA 3209616: 15% de descuento en la compra siguiente tras cada 3 compras
+          const beneficioActivo = Boolean(
+            clienteInfo.fidelidad?.descuentoDisponible ?? clienteInfo.descuentoDisponible
+          );
+          const pct = beneficioActivo
+            ? Math.min(15, Math.max(0, Number(clienteInfo.fidelidad?.descuentoPorcentaje ?? clienteInfo.descuentoPorcentaje ?? 15)))
+            : 0;
 
-          // Descuentos oficiales del Club de Fidelización Chazin Food:
-          // - Cliente Nuevo: 0% OFF
-          // - Cliente Regular: 5% OFF (vigencia 30 días)
-          // - Cliente Frecuente: 10% OFF (vigencia 30 días + 10 días de gracia)
-          // - Cliente VIP: 15% OFF (vigencia 30 días + 15 días de gracia)
-          if (!pct || pct <= 0) {
-            if (nivel === 'Regular') pct = 5;
-            else if (nivel === 'Frecuente') pct = 10;
-            else if (nivel === 'VIP') pct = 15;
-            else pct = 0;
-          }
-
-          if (pct > 0 && ['Regular', 'Frecuente', 'VIP'].includes(nivel)) {
+          if (pct > 0) {
             finalDescuento = Math.round(finalSubtotal * (pct / 100));
           }
         }
@@ -1281,12 +1387,33 @@ class VentaService {
               : (parsedObs.nota !== undefined
                 ? parsedObs.nota
                 : "")))
-      ),
+      ).replace(/\b(?:\d[ -]*?){13,19}\b/g, (match) => {
+        const digits = match.replace(/\D/g, '');
+        return digits.length >= 13 && digits.length <= 19 ? `**** **** **** ${digits.slice(-4)}` : match;
+      }),
       efectivoConCuanto: parsedObs.efectivoConCuanto || (data.datosPago ? data.datosPago.efectivoConCuanto : null) || "",
       vueltoEfectivo: parsedObs.vueltoEfectivo || (data.datosPago ? data.datosPago.vueltoEfectivo : null) || 0,
       transferenciaReferencia: parsedObs.transferenciaReferencia || (data.datosPago ? data.datosPago.transferReferencia : null) || "",
       transferBanco: parsedObs.transferBanco || (data.datosPago ? data.datosPago.transferBanco : null) || "",
-      tarjetaNumero: parsedObs.tarjetaNumero || (data.datosPago ? data.datosPago.tarjetaNumero : null) || "",
+      tarjetaNumero: (() => {
+        // Seguridad PCI-DSS (AUD-008): nunca almacenar PAN completo de 13-19 dígitos; conservar únicamente últimos 4 dígitos
+        const rawCard = String(
+          parsedObs.tarjetaNumero ||
+          parsedObs.tarjetaUltimos4 ||
+          (data.datosPago ? (data.datosPago.tarjetaUltimos4 || data.datosPago.tarjetaNumero) : '') ||
+          ''
+        ).trim();
+        if (!rawCard) return '';
+        const digits = rawCard.replace(/\D/g, '');
+        if (digits.length >= 12) return `**** **** **** ${digits.slice(-4)}`;
+        if (digits.length >= 4) return `**** ${digits.slice(-4)}`;
+        return rawCard.slice(0, 20);
+      })(),
+      tarjetaVoucher: String(
+        parsedObs.tarjetaVoucher ||
+        (data.datosPago ? data.datosPago.tarjetaVoucher : '') ||
+        ''
+      ).replace(/\b(?:\d[ -]*?){13,19}\b/g, '').trim().slice(0, 40),
       telefono: data.telefono || parsedObs.telefono || "",
       mesa: data.mesa || parsedObs.mesa || null,
       esDevolucion,
@@ -1321,24 +1448,24 @@ class VentaService {
       ]
     };
 
-    // Las ventas online no pueden autodeclararse pagadas: quedan pendientes hasta confirmación de Wompi o aprobación manual (Ítem #116)
-    if (origenVenta === 'ONLINE' && !isStaff && !esDevolucion) {
+    // Las ventas online no pueden autodeclararse pagadas ni aprobadas (AUD-005): quedan PENDIENTE hasta Wompi o aprobación staff
+    if (!isStaff && !esDevolucion) {
       obsObj.estadoPago = 'Pendiente';
     }
 
-    // Auto-aprobación en Ventas: las ventas en Punto de Venta (POS) o con pago confirmado/aprobado
-    // se aprueban directamente en el módulo de Ventas, convirtiéndose en órdenes de producción (Ítem 114 y 116)
-    const esPOS = resolvedTipoVenta === 'PUNTO_DE_VENTA' && origenVenta === 'PUNTO_FISICO';
+    const esPOS = isStaff && resolvedTipoVenta === 'PUNTO_DE_VENTA' && origenVenta === 'PUNTO_FISICO';
     const esPagado = isStaff && String(obsObj.estadoPago || data.estadoPago || '').toLowerCase() === 'pagado';
     const esAprobadoExplicito = esDevolucion || (isStaff && (data.estadoAprobacion === 'APROBADO' || parsedObs.estadoAprobacion === 'APROBADO'));
 
     const finalEstadoAprobacion = (esPOS || esPagado || esAprobadoExplicito)
-      ? 'APROBADO' 
-      : (data.estadoAprobacion || parsedObs.estadoAprobacion || 'PENDIENTE');
+      ? 'APROBADO'
+      : 'PENDIENTE';
 
     obsObj.estadoAprobacion = finalEstadoAprobacion;
 
-    const finalEstadoEntrega = data.estadoEntrega || data.estado || 'ENTREGADO';
+    const finalEstadoEntrega = (!isStaff && !esDevolucion)
+      ? 'PENDIENTE'
+      : (data.estadoEntrega || data.estado || 'ENTREGADO');
     const upperEstadoEntrega = String(finalEstadoEntrega).toUpperCase();
     if (upperEstadoEntrega === 'ENTREGADO' || upperEstadoEntrega === 'COMPLETADA') {
       obsObj.estadoCocina = 'ENTREGADO';
@@ -1515,12 +1642,17 @@ class VentaService {
             c => c.toLowerCase() !== prodDisplayName.toLowerCase()
           ) || obsCandidates[0] || prodDisplayName || null;
 
+          const pricedDetail = serverPricedMap.get(d);
+          const safeDetalleQty = pricedDetail ? pricedDetail.cantidad : Math.max(1, Math.floor(Number(d.cantidad || 1)));
+          const safeDetalleUnit = esDevolucion ? 0 : (pricedDetail ? pricedDetail.precioUnitario : 0);
+          const safeDetalleSub = esDevolucion ? 0 : Math.round(safeDetalleUnit * safeDetalleQty);
+
           const createdDetalle = await DetalleVentaProducto.create({
             idVenta: venta.idVenta,
             idVariante: chosenVarianteId,
-            cantidad: d.cantidad || 1,
-            precioUnitario: d.precioUnitario || d.precio || 0,
-            subtotal: (esDevolucion || (d.subtotal !== undefined && d.subtotal !== null)) ? (esDevolucion ? 0 : Number(d.subtotal)) : ((d.precioUnitario || d.precio || 0) * (d.cantidad || 1)),
+            cantidad: safeDetalleQty,
+            precioUnitario: safeDetalleUnit,
+            subtotal: safeDetalleSub,
             observaciones: customNote
           });
 
@@ -1573,7 +1705,7 @@ class VentaService {
 
             if (recipeResult.directInsumoId) {
               const insumo = await Insumo.findByPk(recipeResult.directInsumoId);
-              if (insumo && !isInsumoRemovedByMiseEnPlace(insumo, d, obsProdItem)) {
+              if (insumo && !isInsumoNoStockControl(insumo) && !isInsumoRemovedByMiseEnPlace(insumo, d, obsProdItem)) {
                 const totalADescontar = itemQty;
                 const stockActual = Number(insumo.stock || 0);
                 const nuevoStock = Math.max(0, stockActual - totalADescontar);
@@ -1605,7 +1737,7 @@ class VentaService {
                     const childRecipe = await VentaService.resolveRecipeOrInsumoForDetail({ idProducto: childProdId, cantidad: childQty }, null, childProdId);
                     if (childRecipe.directInsumoId) {
                       const insumoChild = await Insumo.findByPk(childRecipe.directInsumoId);
-                      if (insumoChild) {
+                      if (insumoChild && !isInsumoNoStockControl(insumoChild)) {
                         const stockAct = Number(insumoChild.stock || 0);
                         insumoChild.stock = Math.max(0, stockAct - childQty);
                         await insumoChild.save();
@@ -1628,7 +1760,7 @@ class VentaService {
                         const recipeUnit = det.unidadMedida || 'und';
                         if (cantPorPlato > 0 && det.idInsumo) {
                           const insumo = await Insumo.findByPk(det.idInsumo);
-                          if (insumo) {
+                          if (insumo && !isInsumoNoStockControl(insumo)) {
                             const insumoUnit = insumo.unidadMedida || recipeUnit;
                             const cantConvertida = convertUnits(cantPorPlato, recipeUnit, insumoUnit);
                             const totalADescontar = cantConvertida * childQty;
@@ -1662,7 +1794,7 @@ class VentaService {
                 const recipeUnit = det.unidadMedida || 'und';
                 if (cantPorPlato > 0 && det.idInsumo) {
                   const insumo = await Insumo.findByPk(det.idInsumo);
-                  if (insumo) {
+                  if (insumo && !isInsumoNoStockControl(insumo)) {
                     // Respetar Mise & Place: si el cliente quitó este ingrediente ("Sin ..."), no se descuenta de inventario
                     if (isInsumoRemovedByMiseEnPlace(insumo, d, obsProdItem)) {
                       continue;
@@ -1703,14 +1835,12 @@ class VentaService {
             const { Insumo, Trazabilidad } = require('../../persistence/models');
             for (const adItem of adicList) {
               const adId = typeof adItem === 'object' ? (adItem.id || adItem.idAdicion || adItem.idInsumo) : adItem;
-              const adCantidad = typeof adItem === 'object' ? (Number(adItem.cantidad) || 1) : 1;
-              let adPrecio = typeof adItem === 'object' ? (Number(adItem.precio !== undefined ? adItem.precio : adItem.precioAdicion) || 0) : 0;
+              const adCantidad = typeof adItem === 'object' ? Math.max(1, Math.floor(Number(adItem.cantidad) || 1)) : 1;
               if (adId) {
                 try {
                   const insumoAd = await Insumo.findByPk(adId);
-                  if (insumoAd && adPrecio <= 0 && insumoAd.precioAdicion) {
-                    adPrecio = Number(insumoAd.precioAdicion) || 0;
-                  }
+                  // Seguridad (AUD-004): usar SIEMPRE el precio oficial de la adición en BD (nunca el enviado por el cliente)
+                  const adPrecio = esDevolucion ? 0 : Math.max(0, Number(insumoAd?.precioAdicion || 0));
 
                   await DetalleVentaAdicion.create({
                     idDetalleVenta: createdDetalle.idDetalleVenta,
@@ -1720,8 +1850,8 @@ class VentaService {
                     subtotal: adPrecio * adCantidad
                   });
 
-                  // Descontar inventario del insumo vinculado a la adición
-                  if (insumoAd) {
+                  // Descontar inventario del insumo vinculado a la adición (si controla stock)
+                  if (insumoAd && !isInsumoNoStockControl(insumoAd)) {
                     const itemQty = Number(d.cantidad || 1);
                     const totalAdDescontar = adCantidad * itemQty;
                     const stockActual = Number(insumoAd.stock || 0);
@@ -1866,12 +1996,12 @@ class VentaService {
 
     await v.save();
 
-    // Reintegrar insumos si la venta fue anulada/cancelada y no estaba ya cancelada
-    if (estadoEnum === 'CANCELADO' && estadoAnterior !== 'CANCELADO') {
+    // Reintegrar insumos (receta base, combos y adiciones) si la venta fue anulada/cancelada de forma idempotente
+    if (estadoEnum === 'CANCELADO' && estadoAnterior !== 'CANCELADO' && !obsData.inventarioReintegrado) {
       try {
         const saleData = await this.getById(id);
         if (saleData && Array.isArray(saleData.detalles)) {
-          const { Insumo, Variante } = require('../../persistence/models');
+          const { Insumo, Variante, Product: ProdModel, ComboProducto: CPModel, DetalleVentaAdicion, Trazabilidad } = require('../../persistence/models');
           for (let idx = 0; idx < saleData.detalles.length; idx++) {
             const d = saleData.detalles[idx];
             const obsProdItem = Array.isArray(saleData.productos) ? saleData.productos[idx] : null;
@@ -1884,11 +2014,81 @@ class VentaService {
             const recipeResult = await VentaService.resolveRecipeOrInsumoForDetail(d, d.idVariante, prodId);
             const itemQty = Number(d.cantidad || 1);
 
+            // Detectar si el producto corresponde a un Combo (igual que al descontar en create)
+            let comboItems = [];
+            if (!recipeResult.directInsumoId && (!recipeResult.ficha || !Array.isArray(recipeResult.ficha.detalles) || recipeResult.ficha.detalles.length === 0) && prodId) {
+              try {
+                const prodRow = await ProdModel.findByPk(prodId);
+                if (prodRow) {
+                  let cfg = prodRow.configuracionCombo;
+                  if (typeof cfg === 'string') {
+                    try { cfg = JSON.parse(cfg); } catch (e) { cfg = null; }
+                  }
+                  if (cfg && cfg.esCombo) {
+                    if (Array.isArray(cfg.productosAsociados) && cfg.productosAsociados.length > 0) {
+                      comboItems = cfg.productosAsociados;
+                    } else if (Array.isArray(cfg.itemsCombo) && cfg.itemsCombo.length > 0) {
+                      comboItems = cfg.itemsCombo;
+                    }
+                  }
+                  if (comboItems.length === 0) {
+                    const dbComboItems = await CPModel.findAll({ where: { idCombo: prodId } });
+                    if (dbComboItems && dbComboItems.length > 0) {
+                      comboItems = dbComboItems.map(ci => ({ idProducto: ci.idProducto, cantidad: ci.cantidad }));
+                    }
+                  }
+                }
+              } catch (comboErr) {
+                console.warn('Error identificando productos de combo para reintegro:', comboErr.message);
+              }
+            }
+
             if (recipeResult.directInsumoId) {
               const insumo = await Insumo.findByPk(recipeResult.directInsumoId);
-              if (insumo && !isInsumoRemovedByMiseEnPlace(insumo, d, obsProdItem)) {
+              if (insumo && !isInsumoNoStockControl(insumo) && !isInsumoRemovedByMiseEnPlace(insumo, d, obsProdItem)) {
                 insumo.stock = Number(insumo.stock || 0) + itemQty;
                 await insumo.save();
+                await Trazabilidad.create({
+                  tipo: 'REINTEGRO_CANCELACION',
+                  entidadNombre: insumo.nombre,
+                  detalle: `Reintegro de ${itemQty} und por cancelación de Venta #${v.idVenta}`,
+                  idInsumo: insumo.idInsumo,
+                  tipoMovimiento: 'ENTRADA',
+                  cantidad: itemQty,
+                  motivo: `Cancelación Venta #${v.idVenta}`
+                }).catch(() => {});
+              }
+            } else if (comboItems.length > 0) {
+              for (const ci of comboItems) {
+                const childProdId = ci.idProducto || ci.id;
+                const childQty = Number(ci.cantidad || 1) * itemQty;
+                if (!childProdId || !(childQty > 0)) continue;
+                try {
+                  const childRecipe = await VentaService.resolveRecipeOrInsumoForDetail({ idProducto: childProdId, cantidad: childQty }, null, childProdId);
+                  if (childRecipe.directInsumoId) {
+                    const insumoChild = await Insumo.findByPk(childRecipe.directInsumoId);
+                    if (insumoChild && !isInsumoNoStockControl(insumoChild)) {
+                      insumoChild.stock = Number(insumoChild.stock || 0) + childQty;
+                      await insumoChild.save();
+                    }
+                  } else if (childRecipe.ficha && Array.isArray(childRecipe.ficha.detalles)) {
+                    for (const det of childRecipe.ficha.detalles) {
+                      const cantPorPlato = Number(det.cantidad || 0);
+                      const recipeUnit = det.unidadMedida || 'und';
+                      if (cantPorPlato > 0 && det.idInsumo) {
+                        const insumo = await Insumo.findByPk(det.idInsumo);
+                        if (insumo && !isInsumoNoStockControl(insumo)) {
+                          const insumoUnit = insumo.unidadMedida || recipeUnit;
+                          const cantConvertida = convertUnits(cantPorPlato, recipeUnit, insumoUnit);
+                          insumo.stock = Number(insumo.stock || 0) + (cantConvertida * childQty);
+                          await insumo.save();
+                        }
+                      }
+                    }
+                  }
+                } catch (childErr) {
+                  console.warn(`Error reintegrando componente #${childProdId} de combo:`, childErr.message);
+                }
               }
             } else if (recipeResult.ficha && Array.isArray(recipeResult.ficha.detalles)) {
               for (const det of recipeResult.ficha.detalles) {
@@ -1896,7 +2096,7 @@ class VentaService {
                 const recipeUnit = det.unidadMedida || 'und';
                 if (cantPorPlato > 0 && det.idInsumo) {
                   const insumo = await Insumo.findByPk(det.idInsumo);
-                  if (insumo) {
+                  if (insumo && !isInsumoNoStockControl(insumo)) {
                     if (isInsumoRemovedByMiseEnPlace(insumo, d, obsProdItem)) {
                       continue;
                     }
@@ -1909,8 +2109,36 @@ class VentaService {
                 }
               }
             }
+
+            // Reintegrar también los insumos de adiciones vinculadas al detalle
+            if (d.idDetalleVenta) {
+              try {
+                const adicionesRows = await DetalleVentaAdicion.findAll({
+                  where: { idDetalleVenta: d.idDetalleVenta }
+                });
+                for (const adRow of adicionesRows) {
+                  const adId = adRow.idAdicion;
+                  const adCant = Number(adRow.cantidad || 1);
+                  if (!adId || !(adCant > 0)) continue;
+                  const insumoAd = await Insumo.findByPk(adId);
+                  if (insumoAd && !isInsumoNoStockControl(insumoAd)) {
+                    const totalAdRestaurar = adCant * itemQty;
+                    insumoAd.stock = Number(insumoAd.stock || 0) + totalAdRestaurar;
+                    await insumoAd.save();
+                  }
+                }
+              } catch (adRestockErr) {
+                console.warn('Error reintegrando adiciones por cancelación:', adRestockErr.message);
+              }
+            }
           }
         }
+
+        // Marcar idempotencia del reintegro para evitar doble restitución
+        obsData.inventarioReintegrado = true;
+        obsData.fechaReintegroInventario = new Date().toISOString();
+        v.observaciones = JSON.stringify(obsData);
+        await v.save();
       } catch (restockErr) {
         console.warn('Error reintegrando insumos por cancelación:', restockErr.message);
       }
@@ -2389,6 +2617,158 @@ class VentaService {
     }
 
     await this.registrarFidelidadUnaVez(v.idVenta);
+
+    return this.getById(v.idVenta);
+  }
+
+  /**
+   * Cancela automáticamente intenciones de pago Wompi abandonadas (> maxAgeMinutes)
+   * que permanecieron en estado PENDIENTE, liberando el inventario reservado (AUD-020).
+   */
+  static async expirarVentasWompiAbandonadas(maxAgeMinutes = 30, force = false) {
+    const nowMs = Date.now();
+    if (!force && nowMs - lastWompiExpirationSweepMs < WOMPI_SWEEP_INTERVAL_MS) {
+      return 0;
+    }
+    lastWompiExpirationSweepMs = nowMs;
+
+    try {
+      const { Op } = require('sequelize');
+      const cutoff = new Date(nowMs - Math.max(5, Number(maxAgeMinutes) || 30) * 60 * 1000);
+      const abandonadas = await Venta.findAll({
+        where: {
+          estadoEntrega: 'PENDIENTE',
+          estadoAprobacion: 'PENDIENTE',
+          fechaVenta: { [Op.lt]: cutoff },
+          observaciones: { [Op.like]: '%"wompiReference"%' }
+        },
+        attributes: ['idVenta'],
+        limit: 25
+      });
+
+      let expiredCount = 0;
+      for (const row of abandonadas) {
+        try {
+          await this.updateEstado(row.idVenta, 'CANCELADO');
+          expiredCount += 1;
+        } catch (err) {
+          console.warn(`Error expirando orden Wompi #${row.idVenta}:`, err.message);
+        }
+      }
+      return expiredCount;
+    } catch (err) {
+      console.warn('Error en barrido de órdenes Wompi abandonadas:', err.message);
+      return 0;
+    }
+  }
+
+  /**
+   * Permite al cliente autenticado confirmar la recepción de su pedido a domicilio
+   * una vez ha sido preparado/despachado (Ficha SENA 3209616).
+   */
+  static async confirmarEntregaCliente(id, user) {
+    const idUsuario = user?.idUsuario || user?.id;
+    if (!idUsuario) {
+      const err = new Error('Usuario no autenticado.');
+      err.statusCode = 401;
+      throw err;
+    }
+
+    const v = await Venta.findByPk(id);
+    if (!v) {
+      const err = new Error('Pedido no encontrado.');
+      err.statusCode = 404;
+      throw err;
+    }
+
+    const clienteRow = await Cliente.findOne({ where: { idUsuario }, attributes: ['idCliente'] });
+    const idCliente = clienteRow ? clienteRow.idCliente : null;
+    const isOwner =
+      (idCliente && Number(v.idCliente) === Number(idCliente)) ||
+      (Number(v.idUsuario) === Number(idUsuario));
+
+    if (!isOwner) {
+      const err = new Error('No tienes permiso para confirmar la entrega de este pedido.');
+      err.statusCode = 403;
+      throw err;
+    }
+
+    if (String(v.estadoEntrega || '').toUpperCase() === 'CANCELADO') {
+      const err = new Error('No se puede confirmar un pedido cancelado.');
+      err.statusCode = 400;
+      throw err;
+    }
+
+    if (String(v.estadoAprobacion || '').toUpperCase() !== 'APROBADO') {
+      const err = new Error('El pedido aún no tiene el pago aprobado.');
+      err.statusCode = 400;
+      throw err;
+    }
+
+    if (String(v.estadoEntrega || '').toUpperCase() === 'ENTREGADO') {
+      return this.getById(v.idVenta);
+    }
+
+    let obsData = {};
+    try {
+      obsData = typeof v.observaciones === 'string' && v.observaciones.startsWith('{')
+        ? JSON.parse(v.observaciones)
+        : { nota: v.observaciones || '' };
+    } catch (e) {
+      obsData = { nota: v.observaciones || '' };
+    }
+
+    const estadoEntregaUpper = String(v.estadoEntrega || '').toUpperCase();
+    const estadoCocinaUpper = String(obsData.estadoCocina || '').toUpperCase();
+    const listoParaConfirmar =
+      ['LISTO', 'DESPACHADO', 'EN_CAMINO'].includes(estadoEntregaUpper) ||
+      ['LISTO', 'DESPACHADO', 'EN_CAMINO'].includes(estadoCocinaUpper);
+
+    if (!listoParaConfirmar) {
+      const err = new Error('Solo puedes confirmar la entrega cuando el pedido ya está listo o en camino.');
+      err.statusCode = 400;
+      throw err;
+    }
+
+    const ahora = new Date();
+    const horaActual = formatColombiaTime12(ahora);
+    const horaActualConSegundos = formatColombiaTimeWithSeconds12(ahora);
+
+    v.estadoEntrega = 'ENTREGADO';
+    v.tiempoEstimadoEntrega = 'Entregado';
+
+    obsData.estadoCocina = 'ENTREGADO';
+    obsData.confirmadoPorCliente = true;
+    obsData.fechaConfirmacionCliente = ahora.toISOString();
+    obsData.fechaEntrega = ahora.toISOString();
+    obsData.horaEntrega = horaActual;
+    obsData.horaEstado = horaActual;
+    obsData.horaExactaEstado = horaActualConSegundos;
+    obsData.fechaCambioEstado = ahora.toISOString();
+    obsData.tiempoEstimadoEntrega = 'Entregado';
+    obsData.modoTiempoEntrega = 'AUTO';
+
+    if (!obsData.tiemposEstados || typeof obsData.tiemposEstados !== 'object') {
+      obsData.tiemposEstados = {};
+    }
+    obsData.tiemposEstados.entregado = {
+      estado: 'Entregado',
+      hora: horaActual,
+      horaExacta: horaActualConSegundos,
+      fecha: ahora.toISOString(),
+      confirmadoPorCliente: true
+    };
+    if (!Array.isArray(obsData.historialEstados)) obsData.historialEstados = [];
+    obsData.historialEstados.push({
+      estado: 'ENTREGADO',
+      etiqueta: 'Confirmado por Cliente',
+      hora: horaActual,
+      horaExacta: horaActualConSegundos,
+      fecha: ahora.toISOString()
+    });
+
+    v.observaciones = JSON.stringify(obsData);
+    await v.save();
 
     return this.getById(v.idVenta);
   }

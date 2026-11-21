@@ -6,13 +6,13 @@ const { getRoles, getRoleById, createRole, updateRole, updateRolePermisos, delet
 const { protect, requirePrivilege } = require('../../infrastructure/middlewares/authMiddleware');
 
 router.route('/')
-  .get(protect, cacheRoles, getRoles)
+  .get(protect, requirePrivilege(['Roles', 'Usuarios'], 'Ver'), cacheRoles, getRoles)
   .post(protect, requirePrivilege('Roles', 'Crear'), createRole);
 
 router.put('/:id/permisos', protect, requirePrivilege('Roles', 'Editar'), updateRolePermisos);
 
 router.route('/:id')
-  .get(protect, cacheRoles, getRoleById)
+  .get(protect, requirePrivilege(['Roles', 'Usuarios'], 'Ver'), cacheRoles, getRoleById)
   .put(protect, requirePrivilege('Roles', 'Editar'), updateRole)
   .delete(protect, requirePrivilege('Roles', 'Eliminar'), deleteRole);
 

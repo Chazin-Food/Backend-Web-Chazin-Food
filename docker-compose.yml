@@ -5,10 +5,10 @@ services:
       dockerfile: Dockerfile
     image: chazinfood-db:latest
     environment:
-      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD:-root}
+      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD:?Define DB_PASSWORD en .env para levantar MySQL Docker}
       MYSQL_DATABASE: ${DB_NAME:-chazinfood}
     ports:
-      - "${DB_PORT:-3306}:3306"
+      - "127.0.0.1:${DB_PORT:-3306}:3306"
     volumes:
       - db_data:/var/lib/mysql
       - ./db/chazinfood.sql:/docker-entrypoint-initdb.d/init.sql:ro

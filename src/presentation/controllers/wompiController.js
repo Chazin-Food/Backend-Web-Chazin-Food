@@ -3,8 +3,13 @@ const AuthService = require('../../application/services/authService');
 
 const crearIntencionPago = async (req, res, next) => {
   try {
-    const user = req.user || { idUsuario: req.body.idUsuario || req.body.userId };
+    // Seguridad (AUD-005): usar exclusivamente el usuario autenticado (nunca req.body.idUsuario)
+    const user = req.user;
     const currentUserId = user?.idUsuario || user?.id || user?._id || null;
+    if (!currentUserId) {
+      return res.status(401).json({ message: 'Debes iniciar sesión para realizar un pago.' });
+    }
+
     const submittedDoc = String(req.body?.clienteDocumento || req.body?.documento || '').trim();
     if (submittedDoc.length >= 6) {
       const check = await AuthService.checkDocument(submittedDoc, currentUserId);
@@ -23,7 +28,7 @@ const crearIntencionPago = async (req, res, next) => {
 const verificarTransaccion = async (req, res, next) => {
   try {
     const { idTransaccion } = req.params;
-    const resultado = await WompiService.verificarTransaccion(idTransaccion);
+    const resultado = await WompiService.verificarTransaccion(idTransaccion, req.user);
     res.json(resultado);
   } catch (error) {
     if (error.statusCode) res.status(error.statusCode);
@@ -33,14 +38,19 @@ const verificarTransaccion = async (req, res, next) => {
 
 const handleWebhook = async (req, res, next) => {
   try {
-    // Responder 200 inmediatamente a Wompi para confirmar recepción
+    const evento = req.body;
+    // Seguridad (AUD-007): validar obligatoriamente la firma criptográfica del webhook antes de aceptar o procesar
+    if (!WompiService.validarFirmaWebhook(evento)) {
+      console.warn('⚠️ [Wompi Webhook] Firma criptográfica inválida o WOMPI_EVENTS_SECRET ausente.');
+      return res.status(401).json({ status: 'unauthorized', message: 'Firma de webhook inválida' });
+    }
+
     res.status(200).json({ status: 'ok' });
 
-    // Procesar asíncronamente el evento
-    const evento = req.body;
+    // Procesar asíncronamente el evento ya autenticado
     await WompiService.procesarWebhook(evento);
   } catch (error) {
-    console.error('Error procesando webhook de Wompi:', error);
+    console.error('Error procesando webhook de Wompi:', error.message);
   }
 };
 

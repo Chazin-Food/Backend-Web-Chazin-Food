@@ -17,19 +17,21 @@ const { protect, requirePrivilege } = require('../../infrastructure/middlewares/
 const { cacheResponse } = require('../../infrastructure/utils/apiCache');
 
 const cacheInsumos = cacheResponse('insumos', { ttlMs: 15000, cacheControl: 'private, max-age=10' });
+const insumoReadModules = ['Insumos', 'Fichas Técnicas', 'Gestión de Compras', 'Gestión de Producción'];
 
 router.use(protect);
 
-router.get('/check-vencimientos', checkVencimientos);
-router.get('/papelera', cacheInsumos, getInsumosPapelera);
-router.get('/deleted', cacheInsumos, getInsumosPapelera);
+router.get('/check-vencimientos', requirePrivilege('Insumos', 'Editar'), checkVencimientos);
+router.post('/check-vencimientos', requirePrivilege('Insumos', 'Editar'), checkVencimientos);
+router.get('/papelera', requirePrivilege('Insumos', 'Ver'), cacheInsumos, getInsumosPapelera);
+router.get('/deleted', requirePrivilege('Insumos', 'Ver'), cacheInsumos, getInsumosPapelera);
 
 router.route('/')
-  .get(cacheInsumos, getInsumos)
+  .get(requirePrivilege(insumoReadModules, 'Ver'), cacheInsumos, getInsumos)
   .post(requirePrivilege(['Insumos', 'Gestión de Compras'], 'Crear'), createInsumo);
 
 router.route('/:id')
-  .get(getInsumoById)
+  .get(requirePrivilege(insumoReadModules, 'Ver'), getInsumoById)
   .put(requirePrivilege('Insumos', 'Editar'), updateInsumo)
   .delete(requirePrivilege('Insumos', 'Eliminar'), deleteInsumo);
 

@@ -9,7 +9,7 @@ const AuthService = require('./authService');
 const { formatColombiaDateES } = require('../../infrastructure/utils/colombiaDateUtils');
 
 class ClienteService {
-  static async formatCliente(c) {
+  static async formatCliente(c, preloadedVentas = null) {
     let meta = {};
     let cleanDireccion = '';
 
@@ -51,19 +51,20 @@ class ClienteService {
     let ticketPromedioVal = 0;
 
     try {
-      const { Op } = require('sequelize');
-      const ventasDB = await Venta.findAll({
-        where: {
-          [Op.or]: [
-            { idCliente: c.idCliente },
-            ...(c.idUsuario ? [{ idUsuario: c.idUsuario }] : [])
-          ],
-          estadoEntrega: { [Op.ne]: 'CANCELADO' },
-          estadoAprobacion: { [Op.ne]: 'RECHAZADO' }
-        },
-        order: [['idVenta', 'DESC']],
-        include: [{ model: DetalleVentaProducto, as: 'detalles' }]
-      });
+      const ventasDB = Array.isArray(preloadedVentas)
+        ? preloadedVentas
+        : await Venta.findAll({
+            where: {
+              [Op.or]: [
+                { idCliente: c.idCliente },
+                ...(c.idUsuario ? [{ idUsuario: c.idUsuario }] : [])
+              ],
+              estadoEntrega: { [Op.ne]: 'CANCELADO' },
+              estadoAprobacion: { [Op.ne]: 'RECHAZADO' }
+            },
+            order: [['idVenta', 'DESC']],
+            include: [{ model: DetalleVentaProducto, as: 'detalles' }]
+          });
 
       comprasCount = ventasDB.length;
       totalGastadoSum = ventasDB.reduce((sum, v) => sum + Number(v.total || 0), 0);
@@ -121,40 +122,19 @@ class ClienteService {
         tieneCuenta: false
       };
     } else {
-      const calculatedTierFromPurchases = comprasCount >= 9 ? 'VIP' : comprasCount >= 6 ? 'Frecuente' : comprasCount >= 3 ? 'Regular' : 'Nuevo';
       const calculatedCicloFromPurchases = comprasCount % 3;
 
-      // Dynamic Fidelity Assessment (Tiers: Nuevo, Regular 5%, Frecuente 10%, VIP 15% with 30-day streak and grace periods)
+      // Regla oficial Ficha SENA 3209616: 15% de descuento en la siguiente compra tras cada 3 compras
       const fidelidadActual = meta.fidelidad || {
-        tipo: meta.tipo || calculatedTierFromPurchases,
+        tipo: meta.tipo || 'Nuevo',
         comprasCiclo: meta.ciclo !== undefined ? Number(meta.ciclo) : (meta.comprasCiclo !== undefined ? Number(meta.comprasCiclo) : calculatedCicloFromPurchases),
         comprasTotales: comprasCount,
-        fechaInicioNivel: meta.inicio || meta.fechaInicioNivel || null,
-        fechaVencimientoNivel: meta.vence || meta.fechaVencimientoNivel || null
+        d15: meta.d15 !== undefined ? Boolean(meta.d15) : undefined
       };
 
       fidelidadEvaluada = FidelidadService.evaluarEstadoFidelidad(fidelidadActual, comprasCount);
       tipo = fidelidadEvaluada.tipo;
       descuentoPorcentaje = fidelidadEvaluada.descuentoPorcentaje;
-
-      // Persist fixed dates / degradation into DB so remaining days decrement consistently
-      const needsDatePersistence = fidelidadEvaluada.tipo !== 'Nuevo' && (!meta.vence || !meta.inicio);
-      const needsStatePersistence = meta.tipo && meta.tipo !== fidelidadEvaluada.tipo;
-      if (needsDatePersistence || needsStatePersistence) {
-        try {
-          const compactMeta = {
-            direccion: cleanDireccion,
-            tipo: fidelidadEvaluada.tipo,
-            ciclo: fidelidadEvaluada.comprasCiclo,
-            inicio: fidelidadEvaluada.fechaInicioNivel,
-            vence: fidelidadEvaluada.fechaVencimientoNivel
-          };
-          c.direccion = JSON.stringify(compactMeta);
-          await c.save();
-        } catch (saveErr) {
-          console.warn(`Error persistiendo fidelidad evaluada para cliente #${c.idCliente}:`, saveErr.message);
-        }
-      }
     }
 
     // Determine state: if user account linked and not active, client state is Inactivo or Pendiente
@@ -213,17 +193,41 @@ class ClienteService {
   }
 
   static async getAll() {
-    const clientes = await Cliente.findAll({
-      order: [['idCliente', 'ASC']],
-      include: [
-        {
-          model: User,
-          as: 'usuario',
-          attributes: ['idUsuario', 'nombre', 'apellidos', 'tipoDocumento', 'numeroDocumento', 'email', 'telefono', 'estado', 'idRol'],
-          include: [{ model: Role, as: 'rolInfo', attributes: ['idRol', 'nombre'] }]
-        }
-      ]
-    });
+    const [clientes, allVentas] = await Promise.all([
+      Cliente.findAll({
+        order: [['idCliente', 'ASC']],
+        include: [
+          {
+            model: User,
+            as: 'usuario',
+            attributes: ['idUsuario', 'nombre', 'apellidos', 'tipoDocumento', 'numeroDocumento', 'email', 'telefono', 'estado', 'idRol'],
+            include: [{ model: Role, as: 'rolInfo', attributes: ['idRol', 'nombre'] }]
+          }
+        ]
+      }),
+      // Elimina N+1: una única consulta por lotes para todas las ventas no anuladas
+      Venta.findAll({
+        where: {
+          estadoEntrega: { [Op.ne]: 'CANCELADO' },
+          estadoAprobacion: { [Op.ne]: 'RECHAZADO' }
+        },
+        order: [['idVenta', 'DESC']],
+        include: [{ model: DetalleVentaProducto, as: 'detalles', separate: true }]
+      }).catch(() => [])
+    ]);
+
+    const ventasByCliente = new Map();
+    const ventasByUsuario = new Map();
+    for (const v of allVentas) {
+      if (v.idCliente) {
+        if (!ventasByCliente.has(v.idCliente)) ventasByCliente.set(v.idCliente, []);
+        ventasByCliente.get(v.idCliente).push(v);
+      }
+      if (v.idUsuario) {
+        if (!ventasByUsuario.has(v.idUsuario)) ventasByUsuario.set(v.idUsuario, []);
+        ventasByUsuario.get(v.idUsuario).push(v);
+      }
+    }
 
     const result = [];
     for (const c of clientes) {
@@ -236,12 +240,31 @@ class ClienteService {
       if (c.usuario) {
         const userRolId = c.usuario.idRol;
         const rolNom = String(c.usuario.rolInfo?.nombre || '').toLowerCase();
-        if (userRolId === 1 || userRolId === 2 || userRolId === 3 || 
+        if (userRolId === 1 || userRolId === 2 || userRolId === 3 ||
             rolNom.includes('admin') || rolNom.includes('vendedor') || rolNom.includes('cocinero')) {
           continue;
         }
       }
-      result.push(await this.formatCliente(c));
+
+      const seenIds = new Set();
+      const mergedVentas = [];
+      for (const v of (ventasByCliente.get(c.idCliente) || [])) {
+        if (!seenIds.has(v.idVenta)) {
+          seenIds.add(v.idVenta);
+          mergedVentas.push(v);
+        }
+      }
+      if (c.idUsuario) {
+        for (const v of (ventasByUsuario.get(c.idUsuario) || [])) {
+          if (!seenIds.has(v.idVenta)) {
+            seenIds.add(v.idVenta);
+            mergedVentas.push(v);
+          }
+        }
+      }
+      mergedVentas.sort((a, b) => Number(b.idVenta || 0) - Number(a.idVenta || 0));
+
+      result.push(await this.formatCliente(c, mergedVentas));
     }
     return result;
   }
@@ -647,11 +670,10 @@ class ClienteService {
       const calculatedCiclo = prevPurchases % 3;
 
       const fidelidadActual = meta.fidelidad || {
-        tipo: meta.tipo || calculatedTier,
+        tipo: meta.tipo || 'Nuevo',
         comprasCiclo: meta.ciclo !== undefined ? Number(meta.ciclo) : (meta.comprasCiclo !== undefined ? Number(meta.comprasCiclo) : calculatedCiclo),
         comprasTotales: meta.comprasTotales !== undefined ? Number(meta.comprasTotales) : prevPurchases,
-        fechaInicioNivel: meta.inicio || meta.fechaInicioNivel || null,
-        fechaVencimientoNivel: meta.vence || meta.fechaVencimientoNivel || null
+        d15: meta.d15 !== undefined ? Boolean(meta.d15) : undefined
       };
 
       const nuevaFidelidad = FidelidadService.registrarCompra(fidelidadActual);
@@ -661,8 +683,7 @@ class ClienteService {
         direccion: cleanDir,
         tipo: nuevaFidelidad.tipo,
         ciclo: nuevaFidelidad.comprasCiclo,
-        inicio: nuevaFidelidad.fechaInicioNivel,
-        vence: nuevaFidelidad.fechaVencimientoNivel
+        d15: Boolean(nuevaFidelidad.descuentoDisponible)
       };
 
       c.direccion = JSON.stringify(compactMeta);

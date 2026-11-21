@@ -24,6 +24,23 @@ function getExpirationMeta(fechaVencimiento, todayCol = getColombiaDateISO(), fo
   return { diasParaVencer, estaVencido, venceHoy, proximoAVencer };
 }
 
+const NO_STOCK_TAG = '[SIN_CONTROL_STOCK]';
+
+function parseNoStockFlag(rawDescripcion) {
+  const str = String(rawDescripcion || '');
+  const sinControl = str.includes(NO_STOCK_TAG);
+  const cleanDescripcion = str.replace(/\[SIN_CONTROL_STOCK\]\s*/g, '').trim();
+  return { controlarStock: !sinControl, cleanDescripcion };
+}
+
+function encodeDescripcionWithStockFlag(rawDescripcion, controlarStock) {
+  const clean = String(rawDescripcion || '').replace(/\[SIN_CONTROL_STOCK\]\s*/g, '').trim();
+  if (controlarStock === false || controlarStock === 0 || controlarStock === 'false') {
+    return clean ? `${NO_STOCK_TAG} ${clean}` : NO_STOCK_TAG;
+  }
+  return clean;
+}
+
 function formatInsumo(i, options = {}) {
   const todayCol = getColombiaDateISO();
   const catNombre = i.categoria ? i.categoria.nombre : 'Sin categoría';
@@ -49,17 +66,21 @@ function formatInsumo(i, options = {}) {
 
   const insExpMeta = getExpirationMeta(i.fechaVencimiento, todayCol, false);
 
+  const { controlarStock, cleanDescripcion } = parseNoStockFlag(i.descripcion);
   const stockNum = parseFloat(i.stock || 0);
   const countCompras = options.comprasMap ? (options.comprasMap.get(Number(i.idInsumo)) || 0) : 0;
   const tieneCompras = countCompras > 0;
-  const tieneStockActivo = stockNum > 0;
+  const tieneStockActivo = controlarStock ? stockNum > 0 : false;
   const puedeEliminarse = !tieneStockActivo && !tieneCompras;
+  const isDisponible = Number(i.estado) === 1 || i.estado === 'Activo' || i.estado === '1';
 
   return {
     idInsumo: i.idInsumo,
     id: i.idInsumo,
     nombre: i.nombre,
     idCategoriaInsumo: i.idCategoriaInsumo,
+    controlarStock,
+    disponibilidad: isDisponible ? 'Disponible' : 'Agotado',
     stock: stockNum,
     stockMinimo: parseFloat(i.stockMinimo || 0),
     stockMaximo: parseFloat(i.stockMaximo !== undefined && i.stockMaximo !== null ? i.stockMaximo : 100),
@@ -72,7 +93,7 @@ function formatInsumo(i, options = {}) {
     unidadMedida: i.unidadMedida,
     precioUnitario: parseFloat(i.precioUnitario || 0),
     idProveedor: i.idProveedor,
-    descripcion: i.descripcion || '',
+    descripcion: cleanDescripcion,
     estado: i.estado,
     esAdicion: i.esAdicion ? 1 : 0,
     precioAdicion: parseFloat(i.precioAdicion || 0),
@@ -330,20 +351,25 @@ class InsumoService {
       ? (estado === 'Activo' || estado === 1 || estado === '1' ? 1 : 0)
       : 1;
 
+    const controlarStockFlag = insumoData.controlarStock !== undefined
+      ? !(insumoData.controlarStock === false || insumoData.controlarStock === 0 || insumoData.controlarStock === 'false')
+      : true;
+    const encodedDescripcion = encodeDescripcionWithStockFlag(descripcion || '', controlarStockFlag);
+
     const transaction = await database.sequelize.transaction();
     try {
       const insumo = await Insumo.create({
         nombre: nombre.trim(),
         idCategoriaInsumo: idCategoriaInsumo ? parseInt(idCategoriaInsumo) : null,
-        stock: stock !== undefined && stock !== null ? parseFloat(stock) : 0,
-        stockMinimo: minVal,
+        stock: controlarStockFlag && stock !== undefined && stock !== null ? parseFloat(stock) : 0,
+        stockMinimo: controlarStockFlag ? minVal : 0,
         stockMaximo: maxVal,
         fechaExpedicion: (fechaExpedicion && String(fechaExpedicion).trim() !== '') ? fechaExpedicion : null,
         fechaVencimiento: (fechaVencimiento && String(fechaVencimiento).trim() !== '') ? fechaVencimiento : null,
         unidadMedida: unidadMedida || 'und',
         precioUnitario: precioUnitario !== undefined && precioUnitario !== null ? parseFloat(precioUnitario) : 0,
         idProveedor: idProveedor ? parseInt(idProveedor) : null,
-        descripcion: descripcion || '',
+        descripcion: encodedDescripcion,
         esAdicion: insumoData.esAdicion ? 1 : 0,
         precioAdicion: insumoData.precioAdicion !== undefined && insumoData.precioAdicion !== null ? parseFloat(insumoData.precioAdicion) : 0,
         imagen: insumoData.imagen || null,
@@ -425,11 +451,17 @@ class InsumoService {
         }
         insumo.stockMaximo = maxParsed;
       }
-      if (descripcion !== undefined) {
-        insumo.descripcion = descripcion;
+      if (descripcion !== undefined || insumoData.controlarStock !== undefined) {
+        const currentParsed = parseNoStockFlag(insumo.descripcion);
+        const nextControlarStock = insumoData.controlarStock !== undefined
+          ? !(insumoData.controlarStock === false || insumoData.controlarStock === 0 || insumoData.controlarStock === 'false')
+          : currentParsed.controlarStock;
+        const nextCleanDesc = descripcion !== undefined ? descripcion : currentParsed.cleanDescripcion;
+        insumo.descripcion = encodeDescripcionWithStockFlag(nextCleanDesc, nextControlarStock);
       }
-      if (estado !== undefined) {
-        insumo.estado = (estado === 'Activo' || estado === 1 || estado === '1') ? 1 : 0;
+      if (estado !== undefined || insumoData.disponibilidad !== undefined) {
+        const rawEst = estado !== undefined ? estado : insumoData.disponibilidad;
+        insumo.estado = (rawEst === 'Activo' || rawEst === 'Disponible' || rawEst === 1 || rawEst === '1' || rawEst === true) ? 1 : 0;
       }
       if (insumoData.esAdicion !== undefined) {
         insumo.esAdicion = (insumoData.esAdicion === 1 || insumoData.esAdicion === true || insumoData.esAdicion === '1') ? 1 : 0;
@@ -852,5 +884,8 @@ class InsumoService {
 
 InsumoService.getColombiaDateISO = getColombiaDateISO;
 InsumoService.isLoteExpiredByDateOrState = isLoteExpiredByDateOrState;
+InsumoService.NO_STOCK_TAG = NO_STOCK_TAG;
+InsumoService.parseNoStockFlag = parseNoStockFlag;
+InsumoService.encodeDescripcionWithStockFlag = encodeDescripcionWithStockFlag;
 
 module.exports = InsumoService;

@@ -59,10 +59,10 @@ module.exports = {
  *             properties:
  *               email:
  *                 type: string
- *                 example: admin@chazinfood.com
+ *                 example: usuario@example.com
  *               contrasena:
  *                 type: string
- *                 example: admin123
+ *                 example: TuClaveSegura123!
  *     responses:
  *       200:
  *         description: Login exitoso, devuelve el token JWT y los datos del usuario.
@@ -80,37 +80,36 @@ module.exports = {
  *           schema:
  *             type: object
  *             required:
- *               - idUsuario
  *               - nombre
  *               - apellidos
  *               - email
  *               - contrasena
  *             properties:
- *               idUsuario:
- *                 type: integer
+ *               documento:
+ *                 type: string
  *                 description: Número de documento de identidad del usuario
- *                 example: 1033183034
+ *                 example: "1000000001"
  *               nombre:
  *                 type: string
- *                 example: Alexis
+ *                 example: Usuario
  *               apellidos:
  *                 type: string
- *                 example: Gómez Pavas
+ *                 example: Prueba
  *               tipoDocumento:
  *                 type: string
  *                 example: C.C.
  *               email:
  *                 type: string
- *                 example: gomezpavas34@gmail.com
+ *                 example: cliente@example.com
  *               contrasena:
  *                 type: string
- *                 example: 1033183034
+ *                 example: ClaveSegura123!
  *               telefono:
  *                 type: string
- *                 example: 3023155969
+ *                 example: "3000000000"
  *               direccion:
  *                 type: string
- *                 example: Calle 10 # 5-20
+ *                 example: Calle 50 # 45-30
  *     responses:
  *       201:
  *         description: Usuario registrado exitosamente.
@@ -130,7 +129,7 @@ module.exports = {
  *             properties:
  *               email:
  *                 type: string
- *                 example: gomezpavas34@gmail.com
+ *                 example: cliente@example.com
  *     responses:
  *       200:
  *         description: Instrucciones de restablecimiento enviadas por email.
@@ -154,10 +153,10 @@ module.exports = {
  *                 type: string
  *               email:
  *                 type: string
- *                 example: gomezpavas34@gmail.com
+ *                 example: cliente@example.com
  *               contrasena:
  *                 type: string
- *                 example: NuevaContrase123
+ *                 example: NuevaClaveSegura123!
  *     responses:
  *       200:
  *         description: Contraseña actualizada exitosamente.

@@ -1,4 +1,5 @@
 const AuthService = require('../../application/services/authService');
+const { revokeToken } = require('../../infrastructure/config/jwtConfig');
 
 const registerUser = async (req, res, next) => {
   try {
@@ -69,13 +70,27 @@ const resetPassword = async (req, res, next) => {
 
 const googleAuth = async (req, res, next) => {
   try {
-    const { credential, token, email, correo, mode, allowRegister } = req.body;
-    const finalToken = credential || token || (email || correo ? req.body : null);
+    const { credential, token, mode, allowRegister } = req.body || {};
+    const finalToken = typeof credential === 'string' && credential.trim()
+      ? credential.trim()
+      : (typeof token === 'string' && token.trim() ? token.trim() : null);
     if (!finalToken) {
-      return res.status(400).json({ message: 'Token de Google no proporcionado' });
+      return res.status(400).json({ message: 'Token JWT de Google no proporcionado' });
     }
     const result = await AuthService.googleLogin(finalToken, { mode, allowRegister });
     res.json(result);
+  } catch (error) {
+    if (error.statusCode) res.status(error.statusCode);
+    next(error);
+  }
+};
+
+const logoutUser = async (req, res, next) => {
+  try {
+    if (req.authToken) {
+      revokeToken(req.authToken, req.authDecoded);
+    }
+    res.json({ success: true, message: 'Sesión cerrada correctamente' });
   } catch (error) {
     if (error.statusCode) res.status(error.statusCode);
     next(error);
@@ -138,6 +153,7 @@ module.exports = {
   forgotPassword,
   resetPassword,
   googleAuth,
+  logoutUser,
   verifyActivation,
   activateAccount,
   verifyEmail,

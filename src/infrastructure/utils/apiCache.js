@@ -81,7 +81,9 @@ function cacheResponse(namespace, { ttlMs = 30000, cacheControl = 'public, max-a
       return next();
     }
 
-    const customScope = typeof keyResolver === 'function' ? keyResolver(req) : '';
+    const customScope = typeof keyResolver === 'function'
+      ? keyResolver(req)
+      : (req.user ? `rol:${req.user.idRol || String(req.user.rol || 'auth').toLowerCase()}` : '');
     if (customScope === false) {
       return next();
     }
@@ -93,6 +95,9 @@ function cacheResponse(namespace, { ttlMs = 30000, cacheControl = 'public, max-a
       }
       res.setHeader('ETag', existing.etag);
       res.vary('Accept-Encoding');
+      if (req.user || req.headers.authorization) {
+        res.vary('Authorization');
+      }
       res.setHeader('X-Cache', 'HIT');
 
       if (req.headers['if-none-match'] === existing.etag) {
@@ -146,6 +151,9 @@ function cacheResponse(namespace, { ttlMs = 30000, cacheControl = 'public, max-a
           }
           res.setHeader('ETag', saved.etag);
           res.vary('Accept-Encoding');
+          if (req.user || req.headers.authorization) {
+            res.vary('Authorization');
+          }
           res.setHeader('X-Cache', 'MISS');
 
           // Enviar el buffer ya serializado UNA sola vez (evita doble JSON.stringify y doble gzip en memoria)

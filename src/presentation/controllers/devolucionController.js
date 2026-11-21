@@ -1,4 +1,7 @@
 const DevolucionService = require('../../application/services/devolucionService');
+const { userHasPrivilege } = require('../../infrastructure/middlewares/authMiddleware');
+
+const STAFF_DEV_MODULES = ['Devoluciones', 'Gestión de Ventas', 'Ventas'];
 
 const getDevoluciones = async (req, res, next) => {
   try {
@@ -12,7 +15,7 @@ const getDevoluciones = async (req, res, next) => {
     const devoluciones = await DevolucionService.getAll(filters);
     res.json(devoluciones);
   } catch (error) {
-    console.error('[devolucionController.getDevoluciones] Error:', error);
+    console.error('[devolucionController.getDevoluciones] Error:', error.message);
     next(error);
   }
 };
@@ -38,9 +41,10 @@ const getPoliticas = async (req, res, next) => {
 const checkVentaElegibilidad = async (req, res, next) => {
   try {
     const { idVenta } = req.params;
-    const result = await DevolucionService.checkVentaElegibilidad(idVenta);
+    const result = await DevolucionService.checkVentaElegibilidad(idVenta, req.user);
     res.json(result);
   } catch (error) {
+    if (error.statusCode) return res.status(error.statusCode).json({ message: error.message });
     next(error);
   }
 };
@@ -48,7 +52,9 @@ const checkVentaElegibilidad = async (req, res, next) => {
 const getMisDevoluciones = async (req, res, next) => {
   try {
     const idUsuario = req.user?.idUsuario || req.user?.id;
-    const idCliente = req.query.idCliente || null;
+    // Seguridad (AUD-010): ignorar req.query.idCliente salvo que sea staff autorizado en Devoluciones/Ventas
+    const canViewOtherClients = userHasPrivilege(req.user, STAFF_DEV_MODULES, 'Ver');
+    const idCliente = canViewOtherClients ? (req.query.idCliente || null) : null;
     const devoluciones = await DevolucionService.getByCliente(idCliente, idUsuario);
     res.json(devoluciones);
   } catch (error) {
@@ -73,7 +79,8 @@ const createDevolucion = async (req, res, next) => {
     const devolucion = await DevolucionService.create(req.body, req.user);
     res.status(201).json(devolucion);
   } catch (error) {
-    res.status(400).json({ message: error.message });
+    const status = error.statusCode || 400;
+    res.status(status).json({ message: error.message });
   }
 };
 
@@ -82,7 +89,8 @@ const updateEstadoDevolucion = async (req, res, next) => {
     const devolucion = await DevolucionService.updateEstado(req.params.id, req.body, req.user);
     res.json(devolucion);
   } catch (error) {
-    res.status(400).json({ message: error.message });
+    const status = error.statusCode || 400;
+    res.status(status).json({ message: error.message });
   }
 };
 
@@ -96,4 +104,3 @@ module.exports = {
   createDevolucion,
   updateEstadoDevolucion
 };
-

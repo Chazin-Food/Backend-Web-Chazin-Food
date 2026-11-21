@@ -74,6 +74,11 @@ async function deleteImage(urlOrPublicId) {
     }
   }
 
+  // Validar formato de publicId para mitigar inyección de argumentos (&) o path traversal (..)
+  if (!publicId || /[&?#\\]|\.\./.test(publicId) || !/^[a-zA-Z0-9/_-]+$/.test(publicId)) {
+    return { success: false, skipped: true, reason: 'Identificador public_id inválido' };
+  }
+
   // Verificar credenciales mínimas configuradas en backend
   const config = cloudinary.config();
   if (!config.api_key || !config.api_secret || !config.cloud_name) {

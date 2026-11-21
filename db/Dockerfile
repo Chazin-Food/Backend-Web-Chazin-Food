@@ -1,7 +1,6 @@
 FROM mysql:8.0
 
-# Default environment variables (overridable from docker-compose or .env)
-ENV MYSQL_ROOT_PASSWORD=root
+# Variables de entorno deben inyectarse en tiempo de ejecución desde docker-compose o entorno aislado (sin credenciales fijas en la imagen)
 ENV MYSQL_DATABASE=chazinfood
 
 EXPOSE 3306

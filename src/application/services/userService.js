@@ -1,8 +1,10 @@
 const bcrypt = require('bcryptjs');
+const crypto = require('crypto');
 const { Op } = require('sequelize');
 const { User, Role, Cliente, Permiso } = require('../../persistence/models');
 const { sanitizeTelefono, sanitizeDocumento, cleanNameAndLastName, formatNombreCompleto, isValidEmailStrict, isValidPersonName } = require('../../infrastructure/utils/validationUtils');
 const EmailService = require('./emailService');
+const { revokeAllUserTokens } = require('../../infrastructure/config/jwtConfig');
 
 function getCleanDireccion(raw) {
   if (!raw) return '';
@@ -108,13 +110,13 @@ class UserService {
   static async createUser(userData) {
     const { nombre, apellidos, apellido, email, correo, contrasena, contraseña, password, idRol, rol_id, tipoDocumento, documento, numeroDocumento, telefono, direccion, estado } = userData;
     const finalEmail = (email || correo || '').trim().toLowerCase();
-    const finalPassword = contrasena || contraseña || password || '123456';
+    const finalPassword = contrasena || contraseña || password || crypto.randomBytes(12).toString('hex');
     const rawApellido = apellidos || apellido || '';
     const { nombre: cleanNom, apellidos: cleanApe } = cleanNameAndLastName(nombre, rawApellido);
     const cleanTel = sanitizeTelefono(telefono);
     const targetTipoDoc = tipoDocumento || 'C.C.';
     const cleanDoc = sanitizeDocumento(documento || numeroDocumento || '', targetTipoDoc);
-    const finalRolId = idRol || rol_id || 1;
+    const finalRolId = idRol || rol_id || 4;
 
     if (!cleanNom || !finalEmail) {
       const error = new Error('Nombre y correo son requeridos');
@@ -191,13 +193,12 @@ class UserService {
       });
     }
 
-    // Send welcome email if requested
+    // Send welcome email if requested (sin contraseña en texto plano)
     if (userData.enviarCorreoBienvenida || userData.notificarEmail) {
       EmailService.sendWelcomeEmail({
         email: user.email,
         nombre: user.nombre,
         apellidos: user.apellidos,
-        password: finalPassword,
         usuario: user
       }).catch(err => console.error('Background welcome email error:', err.message));
     }
@@ -290,6 +291,8 @@ class UserService {
       user.numeroDocumento = cleanDoc;
     }
 
+    const prevRol = user.idRol;
+    const prevEstado = user.estado;
     if (telefono !== undefined) user.telefono = sanitizeTelefono(telefono);
     if (idRol || rol_id) user.idRol = idRol || rol_id;
     if (estado) user.estado = estado;
@@ -297,12 +300,24 @@ class UserService {
       user.foto = foto !== undefined ? foto : (avatar !== undefined ? avatar : null);
     }
 
+    let passwordUpdated = false;
     if (contrasena || contraseña || password) {
+      const rawNewPass = String(contrasena || contraseña || password);
+      if (rawNewPass.length < 6) {
+        const error = new Error('La contraseña debe tener al menos 6 caracteres');
+        error.statusCode = 400;
+        throw error;
+      }
       const salt = await bcrypt.genSalt(10);
-      user.contrasena = await bcrypt.hash(contrasena || contraseña || password, salt);
+      user.contrasena = await bcrypt.hash(rawNewPass, salt);
+      passwordUpdated = true;
     }
 
     await user.save();
+
+    if (passwordUpdated || user.idRol !== prevRol || user.estado !== prevEstado) {
+      revokeAllUserTokens(id);
+    }
 
     if (direccion !== undefined || foto !== undefined || avatar !== undefined) {
       const cleanDir = direccion !== undefined ? getCleanDireccion(direccion) : undefined;
@@ -344,9 +359,7 @@ class UserService {
         EmailService.sendPasswordChangedEmail({
           email: user.email,
           nombre: user.nombre,
-          apellidos: user.apellidos,
-          nuevaContrasena: finalNewPassword,
-          password: finalNewPassword
+          apellidos: user.apellidos
         }).catch(err => console.error('Background password email error:', err.message));
       }
 
@@ -386,6 +399,9 @@ class UserService {
 
     user.estado = estado || (user.estado === 'ACTIVO' ? 'INACTIVO' : 'ACTIVO');
     await user.save();
+    if (user.estado !== 'ACTIVO') {
+      revokeAllUserTokens(id);
+    }
     return this.getUserById(id);
   }
 
@@ -422,12 +438,12 @@ class UserService {
       throw error;
     }
 
-    // 3. Proteger integridad si el usuario ha registrado compras de insumos
+    // 3. Proteger integridad si el usuario ha intervenido en anulaciones/gestión de compras
     if (Compra) {
-      const comprasUsuario = await Compra.count({ where: { idUsuario: id } }).catch(() => 0);
+      const comprasUsuario = await Compra.count({ where: { usuarioCancelacionId: id } }).catch(() => 0);
       if (comprasUsuario > 0) {
         const error = new Error(
-          `No es posible eliminar al usuario "${user.nombre}" porque cuenta con ${comprasUsuario} ${comprasUsuario === 1 ? 'orden de compra registrada' : 'órdenes de compra registradas'}. Solo puedes cambiar su estado a Inactivo.`
+          `No es posible eliminar al usuario "${user.nombre}" porque cuenta con ${comprasUsuario} ${comprasUsuario === 1 ? 'registro de compra asociado' : 'registros de compra asociados'}. Solo puedes cambiar su estado a Inactivo.`
         );
         error.statusCode = 400;
         throw error;

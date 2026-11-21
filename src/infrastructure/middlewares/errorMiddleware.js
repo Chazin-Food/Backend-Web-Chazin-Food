@@ -4,15 +4,24 @@ const errorHandler = (err, req, res, next) => {
     statusCode = err.statusCode;
   } else if (err.status && typeof err.status === 'number') {
     statusCode = err.status;
+  } else if (err.name === 'MulterError') {
+    statusCode = 400;
   }
 
   let friendlyMessage = err.message || 'Ha ocurrido un error inesperado en el servidor';
 
-  // Normalizar errores técnicos de Sequelize / MySQL / TiDB a mensajes claros en español
   const errName = err.name || '';
   const rawMsg = String(err.message || '');
 
-  if (errName === 'SequelizeForeignKeyConstraintError' || rawMsg.includes('foreign key constraint')) {
+  if (errName === 'MulterError') {
+    if (err.code === 'LIMIT_FILE_SIZE') {
+      friendlyMessage = 'El archivo supera el tamaño máximo permitido de 5 MB.';
+    } else if (err.code === 'LIMIT_FILE_COUNT') {
+      friendlyMessage = 'Solo se permite subir un archivo por solicitud.';
+    } else {
+      friendlyMessage = 'Error al procesar el archivo subido.';
+    }
+  } else if (errName === 'SequelizeForeignKeyConstraintError' || rawMsg.includes('foreign key constraint')) {
     statusCode = 400;
     if (rawMsg.includes('categoriaproducto') || rawMsg.includes('idCategoriaProducto')) {
       friendlyMessage = 'No se puede eliminar la categoría porque tiene productos asociados en el menú.';
@@ -41,15 +50,20 @@ const errorHandler = (err, req, res, next) => {
     } else {
       friendlyMessage = 'Los datos enviados no cumplen con el formato o las validaciones requeridas.';
     }
-  } else if (errName === 'SequelizeConnectionError' || rawMsg.includes('ECONNREFUSED') || rawMsg.includes('connect')) {
+  } else if (errName === 'SequelizeConnectionError' || rawMsg.includes('ECONNREFUSED')) {
     statusCode = 503;
     friendlyMessage = 'No se pudo conectar con la base de datos en este momento. Por favor reintenta en breve.';
+  } else if (statusCode >= 500) {
+    console.error(`[HTTP ${statusCode}] ${req.method} ${req.originalUrl}:`, err.stack || err.message);
+    if (process.env.NODE_ENV === 'production') {
+      friendlyMessage = 'Ha ocurrido un error interno en el servidor. Intenta nuevamente más tarde.';
+    }
   }
 
+  // Seguridad (AUD-025 / VULN-012): nunca exponer stack traces en respuestas HTTP
   res.status(statusCode).json({
     message: friendlyMessage,
-    error: friendlyMessage,
-    stack: process.env.NODE_ENV === 'production' ? null : err.stack,
+    error: friendlyMessage
   });
 };
 

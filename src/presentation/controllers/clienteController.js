@@ -1,4 +1,5 @@
 const ClienteService = require('../../application/services/clienteService');
+const { userHasPrivilege } = require('../../infrastructure/middlewares/authMiddleware');
 
 const getClientes = async (req, res, next) => {
   try {
@@ -20,7 +21,15 @@ const getClientesStats = async (req, res, next) => {
 
 const getClienteById = async (req, res, next) => {
   try {
+    const canViewAll = userHasPrivilege(req.user, ['Clientes', 'Gestión de Ventas'], 'Ver');
     const cliente = await ClienteService.getById(req.params.id);
+    if (!canViewAll) {
+      const reqUserId = Number(req.user?.idUsuario || req.user?.id || 0);
+      const ownerUserId = Number(cliente?.idUsuario || 0);
+      if (!reqUserId || reqUserId !== ownerUserId) {
+        return res.status(403).json({ message: 'No tienes permisos para consultar la información de este cliente.' });
+      }
+    }
     res.json(cliente);
   } catch (error) {
     next(error);

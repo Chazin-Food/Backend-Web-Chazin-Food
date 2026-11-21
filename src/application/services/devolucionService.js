@@ -102,12 +102,36 @@ function calculateSaleEligibility(venta, evalNow = null) {
   const refNow = parsedEval && !isNaN(parsedEval.getTime()) ? parsedEval : new Date();
 
   const estadoEntrega = String(venta.estadoEntrega || '').toUpperCase();
+  if (estadoEntrega === 'CANCELADO' || String(venta.estadoAprobacion || '').toUpperCase() === 'RECHAZADO') {
+    return {
+      elegible: false,
+      razon: 'No se pueden solicitar devoluciones sobre pedidos cancelados o rechazados.',
+      horasRestantes: 0,
+      diasTranscurridos: 0,
+      cumplePlazo: false,
+      esVentaEntregada: false,
+      fechaEntregaRef: null
+    };
+  }
+
   const esVentaEntregada =
     estadoEntrega === 'ENTREGADO' ||
     estadoEntrega === 'LISTO' ||
     estadoEntrega === 'DESPACHADO' ||
     estadoEntrega === 'COMPLETADA' ||
     estadoEntrega === 'EN_CAMINO';
+
+  if (!esVentaEntregada) {
+    return {
+      elegible: false,
+      razon: 'Solo puedes solicitar una devolución una vez que el pedido haya sido preparado o entregado.',
+      horasRestantes: 0,
+      diasTranscurridos: 0,
+      cumplePlazo: false,
+      esVentaEntregada: false,
+      fechaEntregaRef: null
+    };
+  }
 
   if (!deliveryRefDate) {
     return {
@@ -237,7 +261,7 @@ function validateAndNormalizeDatosReembolso(rawDatos, resolucionNorm, currentUse
   const esStaff = Boolean(
     currentUser && (
       Number(currentUser.idRol) === 1 ||
-      Number(currentUser.idRol) === 2 ||
+      Number(currentUser.idRol) === 3 ||
       userRolLower.includes('admin') ||
       userRolLower.includes('vendedor') ||
       userRolLower.includes('cajero')
@@ -507,7 +531,7 @@ class DevolucionService {
     };
   }
 
-  static async checkVentaElegibilidad(idVenta) {
+  static async checkVentaElegibilidad(idVenta, currentUser = null) {
     await ensureDevolucionSchemaReady();
     const venta = await Venta.findByPk(idVenta, {
       include: [
@@ -541,6 +565,23 @@ class DevolucionService {
         elegible: false,
         mensaje: 'La venta especificada no existe.'
       };
+    }
+
+    // Seguridad (AUD-010): verificar que el solicitante sea el dueño de la venta o staff autorizado en Devoluciones/Ventas
+    if (currentUser) {
+      const { userHasPrivilege } = require('../../infrastructure/middlewares/authMiddleware');
+      const canViewAll = userHasPrivilege(currentUser, ['Devoluciones', 'Gestión de Ventas', 'Ventas'], 'Ver');
+      if (!canViewAll) {
+        const reqUid = Number(currentUser.idUsuario || currentUser.id || 0);
+        const ownCliente = reqUid ? await Cliente.findOne({ where: { idUsuario: reqUid } }) : null;
+        const belongsByCliente = ownCliente && Number(venta.idCliente) === Number(ownCliente.idCliente);
+        const belongsByUser = reqUid && Number(venta.idUsuario) === reqUid;
+        if (!belongsByCliente && !belongsByUser) {
+          const err = new Error('No tienes permiso para consultar la elegibilidad de esta venta.');
+          err.statusCode = 403;
+          throw err;
+        }
+      }
     }
 
     const eligibility = calculateSaleEligibility(venta);
@@ -621,21 +662,38 @@ class DevolucionService {
       throw new Error(`La venta #${idVenta} no existe.`);
     }
 
-    // Validación de la política de plazo (máximo 2 días)
+    // Seguridad (AUD-010): verificar que el solicitante sea el dueño de la venta o staff autorizado en Devoluciones/Ventas
+    const { userHasPrivilege } = require('../../infrastructure/middlewares/authMiddleware');
+    const isStaffDev = userHasPrivilege(currentUser, ['Devoluciones', 'Gestión de Ventas', 'Ventas'], 'Crear') ||
+      userHasPrivilege(currentUser, ['Devoluciones', 'Gestión de Ventas', 'Ventas'], 'Editar');
+
+    if (!isStaffDev) {
+      const reqUid = Number(currentUser?.idUsuario || currentUser?.id || 0);
+      const ownCliente = reqUid ? await Cliente.findOne({ where: { idUsuario: reqUid } }) : null;
+      const belongsByCliente = ownCliente && Number(venta.idCliente) === Number(ownCliente.idCliente);
+      const belongsByUser = reqUid && Number(venta.idUsuario) === reqUid;
+      if (!belongsByCliente && !belongsByUser) {
+        const err = new Error('No tienes permiso para solicitar una devolución sobre un pedido que no te pertenece.');
+        err.statusCode = 403;
+        throw err;
+      }
+    }
+
+    // Validación de la política de plazo (máximo 2 días) y estado entregado
     const eligibility = calculateSaleEligibility(venta);
     if (!eligibility.elegible) {
       throw new Error(`No es posible registrar la devolución: ${eligibility.razon}`);
     }
 
-    // Verificar si ya existe una solicitud de devolución activa para esta venta
+    // Verificar si ya existe una solicitud de devolución activa o completada para esta venta
     const devExistente = await Devolucion.findOne({
       where: {
         idVenta,
-        estado: { [Op.in]: ['PENDIENTE', 'APROBADA'] }
+        estado: { [Op.in]: ['PENDIENTE', 'APROBADA', 'COMPLETADA'] }
       }
     });
     if (devExistente) {
-      throw new Error(`Ya existe una solicitud de devolución en trámite (${devExistente.estado}) para esta venta.`);
+      throw new Error(`Ya existe una devolución registrada (${devExistente.estado}) para esta venta.`);
     }
 
     // Validación de motivos según política de la empresa
@@ -656,8 +714,8 @@ class DevolucionService {
       throw new Error(`Tipo de resolución inválido. Opciones válidas: ${POLICIES.RESOLUCIONES.join(', ')}.`);
     }
 
-    // Resolver cliente
-    let finalClienteId = idCliente || venta.idCliente;
+    // Resolver cliente (un cliente nunca puede suplantar otro idCliente)
+    let finalClienteId = isStaffDev ? (idCliente || venta.idCliente) : venta.idCliente;
     if (!finalClienteId && currentUser?.idUsuario) {
       const clienteEncontrado = await Cliente.findOne({ where: { idUsuario: currentUser.idUsuario } });
       if (clienteEncontrado) finalClienteId = clienteEncontrado.idCliente;
@@ -675,31 +733,40 @@ class DevolucionService {
       throw new Error('Debe especificar al menos un producto y su cantidad a devolver.');
     }
 
-    // Validar cantidades contra los detalles de la venta
+    // Seguridad (AUD-010): validar cada ítem estrictamente contra DetalleVentaProducto y calcular el monto SOLO desde BD
     let montoCalculado = 0;
     const detallesVenta = venta.detalles || [];
 
     for (const item of productosParsed) {
-      const cant = Number(item.cantidad || 0);
-      if (cant <= 0) {
-        throw new Error(`La cantidad a devolver para ${item.nombre || 'el producto'} debe ser mayor a 0.`);
+      const cant = Math.floor(Number(item.cantidad || 0));
+      if (!Number.isFinite(cant) || cant <= 0) {
+        throw new Error(`La cantidad a devolver para ${item.nombre || 'el producto'} debe ser un entero mayor a 0.`);
       }
 
-      // Buscar coincidencia en detalles de la venta
-      const detVenta = detallesVenta.find(d => Number(d.idVariante) === Number(item.idVariante));
-      if (detVenta && cant > Number(detVenta.cantidad)) {
+      const detVenta = detallesVenta.find(d =>
+        (item.idDetalleVenta && Number(d.idDetalleVenta) === Number(item.idDetalleVenta)) ||
+        (item.idVariante !== undefined && Number(d.idVariante) === Number(item.idVariante))
+      );
+      if (!detVenta) {
+        throw new Error(`El producto "${item.nombre || item.idVariante || ''}" no corresponde a los ítems registrados en la venta.`);
+      }
+      if (cant > Number(detVenta.cantidad)) {
         throw new Error(`La cantidad a devolver (${cant}) excede la cantidad comprada (${detVenta.cantidad}) para el producto.`);
       }
 
-      const precioUnit = Number(item.precioUnitario || detVenta?.precioUnitario || 0);
+      const precioUnit = Math.max(0, Number(detVenta.precioUnitario || 0));
+      item.cantidad = cant;
+      item.idVariante = detVenta.idVariante;
+      item.idDetalleVenta = detVenta.idDetalleVenta;
       item.precioUnitario = precioUnit;
       item.subtotal = Number((cant * precioUnit).toFixed(2));
       montoCalculado += item.subtotal;
     }
 
-    const finalValorDevuelto = valorDevuelto !== undefined && valorDevuelto !== null
-      ? Number(valorDevuelto)
-      : (isDineroResolution(resolucionNorm) ? montoCalculado : 0);
+    const maxVentaTotal = Math.max(0, Number(venta.total || 0));
+    const finalValorDevuelto = isDineroResolution(resolucionNorm)
+      ? Math.min(maxVentaTotal, Math.round(montoCalculado * 100) / 100)
+      : 0;
 
     const datosReembolsoObj = validateAndNormalizeDatosReembolso(data.datosReembolso, resolucionNorm, currentUser);
     const estadoReembolsoInicial = isDineroResolution(resolucionNorm) ? 'PENDIENTE' : null;
@@ -853,6 +920,7 @@ class DevolucionService {
       idUsuario: deliveryCtx.idUsuario || currentUser?.idUsuario,
       idCliente: devolucion.idCliente || deliveryCtx.idCliente || null,
       aprobadoPorUsuarioId: currentUser?.idUsuario || null,
+      _trustedDevolucion: true,
       esDevolucion: true,
       idDevolucionAsociada: devolucion.idDevolucion,
       codigoDevolucionAsociada: codigoDev,

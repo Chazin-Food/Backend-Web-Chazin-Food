@@ -14,18 +14,19 @@ const { protect, requirePrivilege } = require('../../infrastructure/middlewares/
 const { cacheResponse } = require('../../infrastructure/utils/apiCache');
 
 const cachePreparados = cacheResponse('insumos-preparados', { ttlMs: 15000, cacheControl: 'private, max-age=10' });
+const insumoReadModules = ['Insumos', 'Fichas Técnicas', 'Gestión de Compras', 'Gestión de Producción'];
 
 router.use(protect);
 
-router.get('/papelera', cachePreparados, getInsumosPreparadosPapelera);
-router.get('/deleted', cachePreparados, getInsumosPreparadosPapelera);
+router.get('/papelera', requirePrivilege('Insumos', 'Ver'), cachePreparados, getInsumosPreparadosPapelera);
+router.get('/deleted', requirePrivilege('Insumos', 'Ver'), cachePreparados, getInsumosPreparadosPapelera);
 
 router.route('/')
-  .get(cachePreparados, getInsumosPreparados)
+  .get(requirePrivilege(insumoReadModules, 'Ver'), cachePreparados, getInsumosPreparados)
   .post(requirePrivilege('Insumos', 'Crear'), createInsumoPreparado);
 
 router.route('/:id')
-  .get(getInsumoPreparadoById)
+  .get(requirePrivilege(insumoReadModules, 'Ver'), getInsumoPreparadoById)
   .put(requirePrivilege('Insumos', 'Editar'), updateInsumoPreparado)
   .delete(requirePrivilege('Insumos', 'Eliminar'), deleteInsumoPreparado);
 

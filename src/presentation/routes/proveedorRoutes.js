@@ -16,28 +16,28 @@ const {
   validateCreateProveedor,
   validateUpdateProveedor,
 } = require('../../infrastructure/middlewares/proveedorValidation');
-const { protect, requirePrivilege } = require('../../infrastructure/middlewares/authMiddleware');
+const { protect, authorize, requirePrivilege } = require('../../infrastructure/middlewares/authMiddleware');
 const { cacheResponse } = require('../../infrastructure/utils/apiCache');
 
 const cacheProveedores = cacheResponse('proveedores', { ttlMs: 20000, cacheControl: 'private, max-age=10' });
 
 router.use(protect);
 
-router.get('/tipos', cacheProveedores, getTiposProveedor);
-router.get('/papelera', requirePrivilege('Proveedores', 'Ver'), cacheProveedores, getPapeleraProveedores);
+router.get('/tipos', requirePrivilege(['Proveedores', 'Insumos', 'Gestión de Compras'], 'Ver'), cacheProveedores, getTiposProveedor);
+router.get('/papelera', authorize('Administrador'), cacheProveedores, getPapeleraProveedores);
 
 router.route('/')
-  .get(cacheProveedores, getProveedores)
-  .post(requirePrivilege(['Proveedores', 'Gestión de Compras'], 'Crear'), validateCreateProveedor, createProveedor);
+  .get(requirePrivilege(['Proveedores', 'Insumos', 'Gestión de Compras'], 'Ver'), cacheProveedores, getProveedores)
+  .post(authorize('Administrador'), validateCreateProveedor, createProveedor);
 
 router.route('/:id')
-  .get(getProveedorById)
-  .put(requirePrivilege('Proveedores', 'Editar'), validateUpdateProveedor, updateProveedor)
-  .delete(requirePrivilege('Proveedores', 'Eliminar'), deleteProveedor);
+  .get(requirePrivilege(['Proveedores', 'Insumos', 'Gestión de Compras'], 'Ver'), getProveedorById)
+  .put(authorize('Administrador'), validateUpdateProveedor, updateProveedor)
+  .delete(authorize('Administrador'), deleteProveedor);
 
-router.put('/:id/estado', requirePrivilege('Proveedores', 'Editar'), toggleProveedorEstado);
-router.patch('/:id/estado', requirePrivilege('Proveedores', 'Editar'), toggleProveedorEstado);
-router.put('/:id/restaurar', requirePrivilege('Proveedores', 'Editar'), restoreProveedor);
-router.delete('/:id/permanente', requirePrivilege('Proveedores', 'Eliminar'), deletePermanenteProveedor);
+router.put('/:id/estado', authorize('Administrador'), toggleProveedorEstado);
+router.patch('/:id/estado', authorize('Administrador'), toggleProveedorEstado);
+router.put('/:id/restaurar', authorize('Administrador'), restoreProveedor);
+router.delete('/:id/permanente', authorize('Administrador'), deletePermanenteProveedor);
 
 module.exports = router;

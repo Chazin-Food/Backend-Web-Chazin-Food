@@ -1,4 +1,4 @@
-const { Venta, Insumo, Cliente, Product, Compra, sequelize } = require('../../persistence/models');
+const { Venta, Insumo, Cliente, User, Product, Compra, Resena, DetalleVentaProducto, Variante, sequelize } = require('../../persistence/models');
 const { Op } = require('sequelize');
 const {
   COLOMBIA_OFFSET,
@@ -30,6 +30,19 @@ function parseDateRange(filtro = {}) {
   };
 }
 
+function isValidCompletedOrApprovedSale(v) {
+  if (!v) return false;
+  const entrega = String(v.estadoEntrega || '').toUpperCase().trim();
+  if (entrega === 'CANCELADO' || entrega === 'RECHAZADO') return false;
+  const aprob = String(v.estadoAprobacion || '').toUpperCase().trim();
+  if (aprob === 'PENDIENTE' || aprob === 'RECHAZADO') return false;
+  if (v.observaciones) {
+    const rawObs = typeof v.observaciones === 'string' ? v.observaciones : JSON.stringify(v.observaciones);
+    if (rawObs.includes('"esDevolucion":true')) return false;
+  }
+  return true;
+}
+
 class DashboardService {
   static async getStats(filtro = {}) {
     try {
@@ -48,24 +61,30 @@ class DashboardService {
         periodo
       } = range;
 
-      const [todasVentas, clientesTotal, clientesActivos, insumosBajoStock, productosTotal] = await Promise.all([
+      const [todasVentas, clientesTotal, clientesActivos, usuariosTotal, usuariosActivos, insumosBajoStock, productosTotal] = await Promise.all([
         Venta.findAll({
-          attributes: ['fechaVenta', 'total', 'estadoEntrega'],
+          attributes: ['fechaVenta', 'total', 'estadoEntrega', 'estadoAprobacion', 'observaciones'],
           raw: true
         }).catch(() => []),
         Cliente.count().catch(() => 0),
         Cliente.count({ where: { estado: 1 } }).catch(() => null),
+        User.count().catch(() => 0),
+        User.count({ where: { estado: 'ACTIVO' } }).catch(() => 0),
         Insumo.count({
           where: {
             estado: 1,
             eliminado: 0,
-            stock: { [Op.lte]: sequelize.col('stockMinimo') }
+            stock: { [Op.lte]: sequelize.col('stockMinimo') },
+            [Op.or]: [
+              { descripcion: null },
+              { descripcion: { [Op.notLike]: '%[SIN_CONTROL_STOCK]%' } }
+            ]
           }
         }).catch(() => 0),
         Product.count({ where: { estado: 1, eliminado: 0 } }).catch(() => 0)
       ]);
 
-      const ventasValidas = todasVentas.filter(v => v.estadoEntrega !== 'CANCELADO');
+      const ventasValidas = todasVentas.filter(isValidCompletedOrApprovedSale);
 
       // Total Global acumulado de todas las ventas no anuladas de la empresa
       const totalVentasGlobal = ventasValidas.reduce((sum, v) => sum + parseFloat(v.total || 0), 0);
@@ -165,6 +184,8 @@ class DashboardService {
         frecuenciaVentas,
         clientesTotal,
         clientesActivos: clientesActivos ?? clientesTotal,
+        usuariosTotal,
+        usuariosActivos,
         clientesVariacion: 0,
         productosTotal,
         insumosBajoStock,
@@ -183,6 +204,8 @@ class DashboardService {
         frecuenciaVentas: 0,
         clientesTotal: 0,
         clientesActivos: 0,
+        usuariosTotal: 0,
+        usuariosActivos: 0,
         clientesVariacion: 0,
         productosTotal: 0,
         insumosBajoStock: 0,
@@ -205,10 +228,10 @@ class DashboardService {
       };
 
       if (periodo === 'todos' || periodo === 'historico' || periodo === 'all') {
-        const [ventasAll, comprasAll] = await Promise.all([
+        const [ventasAllRaw, comprasAll] = await Promise.all([
           Venta.findAll({
             where: { estadoEntrega: { [Op.ne]: 'CANCELADO' } },
-            attributes: ['fechaVenta', 'total'],
+            attributes: ['fechaVenta', 'total', 'estadoEntrega', 'estadoAprobacion', 'observaciones'],
             raw: true
           }).catch(() => []),
           Compra.findAll({
@@ -217,6 +240,7 @@ class DashboardService {
             raw: true
           }).catch(() => [])
         ]);
+        const ventasAll = ventasAllRaw.filter(isValidCompletedOrApprovedSale);
 
         const yearMap = new Map();
         for (let y = currentYear - 2; y <= currentYear; y++) {
@@ -331,13 +355,13 @@ class DashboardService {
       const rangeStart = new Date(buckets[0].startMs);
       const rangeEnd = new Date(buckets[buckets.length - 1].endMs);
 
-      const [ventasRange, comprasRange] = await Promise.all([
+      const [ventasRangeRaw, comprasRange] = await Promise.all([
         Venta.findAll({
           where: {
             fechaVenta: { [Op.between]: [rangeStart, rangeEnd] },
             estadoEntrega: { [Op.ne]: 'CANCELADO' }
           },
-          attributes: ['fechaVenta', 'total'],
+          attributes: ['fechaVenta', 'total', 'estadoEntrega', 'estadoAprobacion', 'observaciones'],
           raw: true
         }).catch(() => []),
         Compra.findAll({
@@ -349,6 +373,7 @@ class DashboardService {
           raw: true
         }).catch(() => [])
       ]);
+      const ventasRange = ventasRangeRaw.filter(isValidCompletedOrApprovedSale);
 
       const lastIdx = buckets.length - 1;
       const matchesBucket = (ts, b, idx) => (
@@ -416,6 +441,8 @@ class DashboardService {
         LEFT JOIN variante var ON dv.idVariante = var.idVariante
         LEFT JOIN producto p ON var.idProducto = p.idProducto
         WHERE v.estadoEntrega != 'CANCELADO'
+          AND (v.estadoAprobacion IS NULL OR v.estadoAprobacion NOT IN ('PENDIENTE', 'RECHAZADO'))
+          AND (v.observaciones IS NULL OR v.observaciones NOT LIKE '%"esDevolucion":true%')
         ${dateFilter}
       `, { replacements }).catch(() => [[]]);
 
@@ -514,13 +541,164 @@ class DashboardService {
     }
   }
 
+  static async getProductosFavoritos(filtro = {}) {
+    try {
+      const { startDate, endDate } = parseDateRange(filtro);
+      const whereVentas = {
+        estadoEntrega: { [Op.ne]: 'CANCELADO' }
+      };
+      if (startDate) {
+        whereVentas.fechaVenta = {
+          [Op.between]: [startDate, endDate || new Date()]
+        };
+      }
+
+      const [resenasRaw, ventasRaw, productosCatalogo] = await Promise.all([
+        Resena.findAll({
+          where: { estado: 1 },
+          attributes: ['idProducto', 'puntuacion', 'idUsuario'],
+          raw: true
+        }).catch(() => []),
+        Venta.findAll({
+          where: whereVentas,
+          attributes: ['idVenta', 'idCliente', 'estadoEntrega', 'estadoAprobacion', 'observaciones'],
+          include: [
+            {
+              model: DetalleVentaProducto,
+              as: 'detalles',
+              separate: true,
+              attributes: ['cantidad', 'idVariante'],
+              include: [
+                {
+                  model: Variante,
+                  as: 'variante',
+                  attributes: ['idProducto']
+                }
+              ]
+            }
+          ]
+        }).catch(() => []),
+        Product.findAll({
+          where: { eliminado: 0 },
+          attributes: ['idProducto', 'nombre', 'precio', 'imagen', 'categoria'],
+          raw: true
+        }).catch(() => [])
+      ]);
+
+      const prodMap = new Map();
+      for (const p of productosCatalogo) {
+        prodMap.set(Number(p.idProducto), p);
+      }
+
+      const agg = new Map();
+      const ensureEntry = (idProducto) => {
+        const pid = Number(idProducto);
+        if (!pid || !prodMap.has(pid)) return null;
+        if (!agg.has(pid)) {
+          const meta = prodMap.get(pid);
+          agg.set(pid, {
+            idProducto: pid,
+            nombre: meta.nombre,
+            categoria: meta.categoria || '',
+            imagen: meta.imagen || null,
+            precio: Number(meta.precio || 0),
+            sumaRating: 0,
+            totalResenas: 0,
+            clientesSet: new Set(),
+            pedidos: 0,
+            unidades: 0
+          });
+        }
+        return agg.get(pid);
+      };
+
+      for (const r of resenasRaw) {
+        const entry = ensureEntry(r.idProducto);
+        if (!entry) continue;
+        const pts = Number(r.puntuacion || 0);
+        if (pts > 0) {
+          entry.sumaRating += pts;
+          entry.totalResenas += 1;
+        }
+      }
+
+      const ventasValidas = ventasRaw.filter(isValidCompletedOrApprovedSale);
+      for (const v of ventasValidas) {
+        const clientKey = v.idCliente ? `c:${v.idCliente}` : `v:${v.idVenta}`;
+        const seenInOrder = new Set();
+        for (const d of (v.detalles || [])) {
+          const pid = Number(d.variante?.idProducto || 0);
+          const entry = ensureEntry(pid);
+          if (!entry) continue;
+          entry.unidades += Number(d.cantidad || 1);
+          entry.clientesSet.add(clientKey);
+          if (!seenInOrder.has(pid)) {
+            entry.pedidos += 1;
+            seenInOrder.add(pid);
+          }
+        }
+      }
+
+      const ranked = Array.from(agg.values())
+        .filter((e) => e.totalResenas > 0 || e.clientesSet.size > 0)
+        .map((e) => {
+          const promedioCalificacion = e.totalResenas > 0
+            ? Math.round((e.sumaRating / e.totalResenas) * 10) / 10
+            : 0;
+          const clientesUnicos = e.clientesSet.size;
+          const ratingScore = e.totalResenas > 0
+            ? promedioCalificacion * (1 + Math.log10(1 + e.totalResenas)) * 12
+            : 0;
+          const preferenceScore = ratingScore + (clientesUnicos * 3) + (e.pedidos * 0.5);
+          return {
+            idProducto: e.idProducto,
+            nombre: e.nombre,
+            categoria: e.categoria,
+            imagen: e.imagen,
+            precio: e.precio,
+            promedioCalificacion,
+            totalResenas: e.totalResenas,
+            clientesUnicos,
+            pedidos: e.pedidos,
+            unidades: e.unidades,
+            score: preferenceScore
+          };
+        })
+        .sort((a, b) => b.score - a.score || b.promedioCalificacion - a.promedioCalificacion || b.clientesUnicos - a.clientesUnicos)
+        .slice(0, 5);
+
+      const maxScore = ranked[0]?.score || 1;
+      return ranked.map((item, idx) => ({
+        id: idx + 1,
+        idProducto: item.idProducto,
+        nombre: item.nombre,
+        categoria: item.categoria,
+        imagen: item.imagen,
+        precio: item.precio,
+        promedioCalificacion: item.promedioCalificacion,
+        totalResenas: item.totalResenas,
+        clientesUnicos: item.clientesUnicos,
+        pedidos: item.pedidos,
+        unidades: item.unidades,
+        porcentajeFavorito: Math.min(100, Math.round((item.score / maxScore) * 100))
+      }));
+    } catch (error) {
+      console.error('Error in getProductosFavoritos:', error);
+      return [];
+    }
+  }
+
   static async getAlertasStock() {
     try {
       const insumosBajoStock = await Insumo.findAll({
         where: {
           estado: 1,
           eliminado: 0,
-          stock: { [Op.lte]: sequelize.col('stockMinimo') }
+          stock: { [Op.lte]: sequelize.col('stockMinimo') },
+          [Op.or]: [
+            { descripcion: null },
+            { descripcion: { [Op.notLike]: '%[SIN_CONTROL_STOCK]%' } }
+          ]
         },
         limit: 5,
         raw: true

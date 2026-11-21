@@ -1,5 +1,14 @@
 const connectDB = require('../../persistence/config/db');
 
+const SAFE_SQL_IDENTIFIER_RE = /^[a-zA-Z_][a-zA-Z0-9_]{0,63}$/;
+
+function assertSafeSqlIdentifier(identifier) {
+  if (typeof identifier !== 'string' || !SAFE_SQL_IDENTIFIER_RE.test(identifier)) {
+    throw new Error(`Identificador SQL inválido: ${String(identifier)}`);
+  }
+  return identifier;
+}
+
 /**
  * Resets the AUTO_INCREMENT value for a given table.
  * If total rows === 0, resets AUTO_INCREMENT to 1.
@@ -7,16 +16,18 @@ const connectDB = require('../../persistence/config/db');
  */
 async function resetAutoIncrement(tableName, primaryKeyColumn = 'id') {
   try {
+    const safeTable = assertSafeSqlIdentifier(tableName);
+    const safePk = assertSafeSqlIdentifier(primaryKeyColumn);
     const sequelize = connectDB.sequelize;
-    const [results] = await sequelize.query(`SELECT COUNT(*) as total FROM \`${tableName}\` WHERE \`${primaryKeyColumn}\` > 0`);
+    const [results] = await sequelize.query(`SELECT COUNT(*) as total FROM \`${safeTable}\` WHERE \`${safePk}\` > 0`);
     const total = results && results[0] ? parseInt(results[0].total || 0, 10) : 0;
 
     if (total === 0) {
-      await sequelize.query(`ALTER TABLE \`${tableName}\` AUTO_INCREMENT = 1;`);
-    } else if (primaryKeyColumn) {
-      const [maxRes] = await sequelize.query(`SELECT IFNULL(MAX(\`${primaryKeyColumn}\`), 0) + 1 as nextId FROM \`${tableName}\` WHERE \`${primaryKeyColumn}\` > 0`);
+      await sequelize.query(`ALTER TABLE \`${safeTable}\` AUTO_INCREMENT = 1;`);
+    } else if (safePk) {
+      const [maxRes] = await sequelize.query(`SELECT IFNULL(MAX(\`${safePk}\`), 0) + 1 as nextId FROM \`${safeTable}\` WHERE \`${safePk}\` > 0`);
       const nextId = maxRes && maxRes[0] ? parseInt(maxRes[0].nextId || 1, 10) : 1;
-      await sequelize.query(`ALTER TABLE \`${tableName}\` AUTO_INCREMENT = ${nextId};`);
+      await sequelize.query(`ALTER TABLE \`${safeTable}\` AUTO_INCREMENT = ${nextId};`);
     }
   } catch (err) {
     console.warn(`Error resetting auto increment for ${tableName}:`, err.message);
@@ -30,31 +41,38 @@ async function resetAutoIncrement(tableName, primaryKeyColumn = 'id') {
  * Excludes technical records with ID <= 0 (e.g. system zero variant).
  */
 async function resequenceTableIds(tableName, primaryKeyColumn = 'id', fkTables = []) {
+  const sequelize = connectDB.sequelize;
+  let fkDisabled = false;
   try {
-    const sequelize = connectDB.sequelize;
+    const safeTable = assertSafeSqlIdentifier(tableName);
+    const safePk = assertSafeSqlIdentifier(primaryKeyColumn);
     // Skip reserved ID=0 rows (used by placeholder records)
-    const [rows] = await sequelize.query(`SELECT \`${primaryKeyColumn}\` FROM \`${tableName}\` WHERE \`${primaryKeyColumn}\` > 0 ORDER BY \`${primaryKeyColumn}\` ASC`);
+    const [rows] = await sequelize.query(`SELECT \`${safePk}\` FROM \`${safeTable}\` WHERE \`${safePk}\` > 0 ORDER BY \`${safePk}\` ASC`);
 
     await sequelize.query('SET FOREIGN_KEY_CHECKS = 0');
+    fkDisabled = true;
 
     let newId = 1;
     for (const r of rows) {
-      const oldId = r[primaryKeyColumn];
+      const oldId = r[safePk];
       if (oldId !== newId) {
-        await sequelize.query(`UPDATE \`${tableName}\` SET \`${primaryKeyColumn}\` = ? WHERE \`${primaryKeyColumn}\` = ?`, { replacements: [newId, oldId] });
+        await sequelize.query(`UPDATE \`${safeTable}\` SET \`${safePk}\` = ? WHERE \`${safePk}\` = ?`, { replacements: [newId, oldId] });
         for (const fkItem of fkTables) {
-          const table = typeof fkItem === 'string' ? fkItem : fkItem.table;
-          const column = typeof fkItem === 'string' ? primaryKeyColumn : fkItem.column;
+          const table = assertSafeSqlIdentifier(typeof fkItem === 'string' ? fkItem : fkItem.table);
+          const column = assertSafeSqlIdentifier(typeof fkItem === 'string' ? safePk : fkItem.column);
           await sequelize.query(`UPDATE \`${table}\` SET \`${column}\` = ? WHERE \`${column}\` = ?`, { replacements: [newId, oldId] });
         }
       }
       newId++;
     }
 
-    await sequelize.query(`ALTER TABLE \`${tableName}\` AUTO_INCREMENT = ${newId};`);
-    await sequelize.query('SET FOREIGN_KEY_CHECKS = 1');
+    await sequelize.query(`ALTER TABLE \`${safeTable}\` AUTO_INCREMENT = ${newId};`);
   } catch (err) {
     console.warn(`Error resequencing IDs for ${tableName}:`, err.message);
+  } finally {
+    if (fkDisabled) {
+      await sequelize.query('SET FOREIGN_KEY_CHECKS = 1').catch(() => {});
+    }
   }
 }
 

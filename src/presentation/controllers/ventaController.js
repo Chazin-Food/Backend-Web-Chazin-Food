@@ -1,7 +1,9 @@
 const VentaService = require('../../application/services/ventaService');
 const { Cliente } = require('../../persistence/models');
+const { userHasPrivilege } = require('../../infrastructure/middlewares/authMiddleware');
 
-const isClienteRole = (user) => String(user?.rol || '').toLowerCase().trim() === 'cliente';
+const isClienteRole = (user) => String(user?.rol || '').toLowerCase().trim() === 'cliente' || Number(user?.idRol) === 4;
+const STAFF_VENTAS_VIEW = ['Gestión de Ventas', 'Gestión de Producción', 'Dashboard'];
 
 /**
  * Devuelve true si la venta pertenece al cliente autenticado (por cuenta de usuario o registro de cliente).
@@ -21,6 +23,11 @@ const getClienteIdDeUsuario = async (idUsuario) => {
 
 const getVentas = async (req, res, next) => {
   try {
+    const canViewAll = userHasPrivilege(req.user, STAFF_VENTAS_VIEW, 'Ver');
+    if (!canViewAll && !isClienteRole(req.user)) {
+      return res.status(403).json({ message: 'No tienes privilegios para consultar las ventas del sistema.' });
+    }
+
     const filter = {
       periodo: req.query.periodo,
       estado: req.query.estado,
@@ -31,7 +38,7 @@ const getVentas = async (req, res, next) => {
     const ventas = await VentaService.getAll(filter);
 
     // Los clientes solo pueden consultar sus propios pedidos ("Mis Pedidos")
-    if (isClienteRole(req.user)) {
+    if (!canViewAll) {
       const idUsuario = req.user.idUsuario || req.user.id;
       const idCliente = await getClienteIdDeUsuario(idUsuario);
       return res.json(ventas.filter(v => ventaPerteneceAlCliente(v, idUsuario, idCliente)));
@@ -62,8 +69,12 @@ const getVentasStats = async (req, res, next) => {
 
 const getVentaById = async (req, res, next) => {
   try {
+    const canViewAll = userHasPrivilege(req.user, STAFF_VENTAS_VIEW, 'Ver');
+    if (!canViewAll && !isClienteRole(req.user)) {
+      return res.status(403).json({ message: 'No tienes privilegios para consultar este pedido.' });
+    }
     const venta = await VentaService.getById(req.params.id);
-    if (isClienteRole(req.user)) {
+    if (!canViewAll) {
       const idUsuario = req.user.idUsuario || req.user.id;
       const idCliente = await getClienteIdDeUsuario(idUsuario);
       if (!ventaPerteneceAlCliente(venta, idUsuario, idCliente)) {
@@ -78,14 +89,36 @@ const getVentaById = async (req, res, next) => {
 
 const createVenta = async (req, res, next) => {
   try {
-    const payload = { ...req.body };
-    // Si hay sesión, el usuario autenticado es quien registra la venta (evita suplantación)
-    if (req.user) {
-      payload.idUsuario = req.user.idUsuario || req.user.id || payload.idUsuario;
+    const canCreateStaffSale = userHasPrivilege(req.user, ['Gestión de Ventas', 'Punto de Venta'], 'Crear');
+    if (!canCreateStaffSale && !isClienteRole(req.user)) {
+      return res.status(403).json({ message: 'No tienes privilegios para registrar ventas.' });
     }
+
+    // Seguridad (AUD-004 / AUD-005): nunca permitir esDevolucion ni _trustedDevolucion desde HTTP, ni suplantar idUsuario
+    const payload = { ...(req.body || {}) };
+    delete payload.esDevolucion;
+    delete payload._trustedDevolucion;
+    delete payload.aprobadoPorUsuarioId;
+    payload.idUsuario = req.user.idUsuario || req.user.id;
+
+    if (!canCreateStaffSale) {
+      // Un cliente nunca puede auto-aprobar su pago ni fijar estado entregado ni suplantar otro cliente
+      delete payload.estadoAprobacion;
+      delete payload.estadoPago;
+      delete payload.estadoEntrega;
+      delete payload.estado;
+      delete payload.idCliente;
+      delete payload.subtotal;
+      delete payload.total;
+      delete payload.descuento;
+      delete payload.descuentoAplicado;
+      payload.origen = 'ONLINE';
+    }
+
     const venta = await VentaService.create(payload);
     res.status(201).json(venta);
   } catch (error) {
+    if (error.statusCode) res.status(error.statusCode);
     next(error);
   }
 };
@@ -119,8 +152,12 @@ const aprobarPagoVenta = async (req, res, next) => {
 
 const cancelarVenta = async (req, res, next) => {
   try {
-    // Un cliente solo puede cancelar sus propios pedidos y mientras sigan pendientes
-    if (isClienteRole(req.user)) {
+    const canManageSales = userHasPrivilege(req.user, 'Gestión de Ventas', 'Editar');
+    if (!canManageSales) {
+      if (!isClienteRole(req.user)) {
+        return res.status(403).json({ message: 'No tienes privilegios para cancelar ventas.' });
+      }
+      // Un cliente solo puede cancelar sus propios pedidos y mientras sigan pendientes
       const venta = await VentaService.getById(req.params.id);
       const idUsuario = req.user.idUsuario || req.user.id;
       const idCliente = await getClienteIdDeUsuario(idUsuario);
@@ -138,4 +175,27 @@ const cancelarVenta = async (req, res, next) => {
   }
 };
 
-module.exports = { getVentas, getVentasStats, getVentaById, createVenta, updateEstadoVenta, updateTiempoEntregaVenta, cancelarVenta, aprobarPagoVenta };
+const confirmarEntregaCliente = async (req, res, next) => {
+  try {
+    const venta = await VentaService.confirmarEntregaCliente(req.params.id, req.user);
+    res.json({
+      message: 'Entrega confirmada exitosamente. ¡Gracias por tu compra!',
+      venta
+    });
+  } catch (error) {
+    if (error.statusCode) res.status(error.statusCode);
+    next(error);
+  }
+};
+
+module.exports = {
+  getVentas,
+  getVentasStats,
+  getVentaById,
+  createVenta,
+  updateEstadoVenta,
+  updateTiempoEntregaVenta,
+  cancelarVenta,
+  aprobarPagoVenta,
+  confirmarEntregaCliente
+};

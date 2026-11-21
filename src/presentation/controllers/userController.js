@@ -1,4 +1,8 @@
+const bcrypt = require('bcryptjs');
 const UserService = require('../../application/services/userService');
+const { User } = require('../../persistence/models');
+
+const SELF_EDIT_ALLOWLIST = ['nombre', 'apellidos', 'apellido', 'telefono', 'direccion', 'foto', 'avatar'];
 
 const getUsers = async (req, res, next) => {
   try {
@@ -32,7 +36,16 @@ const createUser = async (req, res, next) => {
 
 const updateUser = async (req, res, next) => {
   try {
-    const updatedUser = await UserService.updateUser(req.params.id, req.body);
+    let payload = req.body || {};
+    // Seguridad (AUD-002): si el usuario se autoedita sin permiso Usuarios:Editar, aplicar lista blanca estricta (sin idRol, estado ni contraseña directa)
+    if (req.isSelfOnlyEdit) {
+      const sanitized = {};
+      for (const k of SELF_EDIT_ALLOWLIST) {
+        if (payload[k] !== undefined) sanitized[k] = payload[k];
+      }
+      payload = sanitized;
+    }
+    const updatedUser = await UserService.updateUser(req.params.id, payload);
     res.json(updatedUser);
   } catch (error) {
     if (error.statusCode) res.status(error.statusCode);
@@ -53,9 +66,31 @@ const toggleUserStatus = async (req, res, next) => {
 
 const changeUserPassword = async (req, res, next) => {
   try {
-    const { password, contrasena, contraseña, notificarEmail, notificarCambios } = req.body;
+    const { passwordActual, currentPassword, password, contrasena, contraseña, notificarEmail, notificarCambios } = req.body || {};
+    const newPass = password || contrasena || contraseña;
+
+    if (!newPass || String(newPass).length < 6) {
+      return res.status(400).json({ message: 'La nueva contraseña debe tener al menos 6 caracteres' });
+    }
+
+    // Seguridad (AUD-018): si un usuario cambia su propia contraseña sin privilegio Usuarios:Editar, exigir contraseña actual
+    if (req.isSelfOnlyEdit) {
+      const providedCurrent = passwordActual || currentPassword;
+      if (!providedCurrent) {
+        return res.status(400).json({ message: 'Debes ingresar tu contraseña actual para cambiarla' });
+      }
+      const dbUser = await User.findByPk(req.params.id);
+      if (!dbUser) {
+        return res.status(404).json({ message: 'Usuario no encontrado' });
+      }
+      const isMatch = await bcrypt.compare(String(providedCurrent), dbUser.contrasena);
+      if (!isMatch) {
+        return res.status(400).json({ message: 'La contraseña actual es incorrecta' });
+      }
+    }
+
     const updatedUser = await UserService.updateUser(req.params.id, {
-      contrasena: password || contrasena || contraseña,
+      contrasena: newPass,
       notificarEmail: notificarEmail !== undefined ? notificarEmail : notificarCambios
     });
     res.json(updatedUser);

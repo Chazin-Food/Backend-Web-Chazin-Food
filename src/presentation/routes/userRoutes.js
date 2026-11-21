@@ -1,36 +1,84 @@
 const express = require('express');
 const router = express.Router();
-const { getUsers, getUserById, createUser, updateUser, changeUserPassword, toggleUserStatus, deleteUser } = require('../controllers/userController');
-const { registerUser, loginUser, forgotPassword, resetPassword, getUserProfile, updateUserProfile, googleAuth, verifyEmail, verifyDocument, verifyActivation, activateAccount } = require('../controllers/authController');
-const { protect, optionalProtect, requirePrivilege } = require('../../infrastructure/middlewares/authMiddleware');
+const {
+  getUsers,
+  getUserById,
+  createUser,
+  updateUser,
+  changeUserPassword,
+  toggleUserStatus,
+  deleteUser
+} = require('../controllers/userController');
+const {
+  registerUser,
+  loginUser,
+  logoutUser,
+  forgotPassword,
+  resetPassword,
+  getUserProfile,
+  updateUserProfile,
+  googleAuth,
+  verifyEmail,
+  verifyDocument,
+  verifyActivation,
+  activateAccount
+} = require('../controllers/authController');
+const {
+  protect,
+  optionalProtect,
+  requirePrivilege,
+  userHasPrivilege
+} = require('../../infrastructure/middlewares/authMiddleware');
+const {
+  authLoginLimiter,
+  authSensitiveLimiter,
+  authLookupLimiter
+} = require('../../infrastructure/middlewares/rateLimitMiddleware');
 const { cacheResponse } = require('../../infrastructure/utils/apiCache');
 
 const cacheUsuarios = cacheResponse('usuarios', { ttlMs: 15000, cacheControl: 'private, max-age=10' });
 
-const allowSelfOrEditUsers = (req, res, next) => {
+const allowSelfOrViewUsers = (req, res, next) => {
   if (req.user && String(req.user.id || req.user.idUsuario) === String(req.params.id)) {
+    return next();
+  }
+  return requirePrivilege('Usuarios', 'Ver')(req, res, next);
+};
+
+const allowSelfOrEditUsers = (req, res, next) => {
+  const hasAdminEdit = userHasPrivilege(req.user, 'Usuarios', 'Editar');
+  if (hasAdminEdit) {
+    req.isSelfOnlyEdit = false;
+    return next();
+  }
+  if (req.user && String(req.user.id || req.user.idUsuario) === String(req.params.id)) {
+    req.isSelfOnlyEdit = true;
     return next();
   }
   return requirePrivilege('Usuarios', 'Editar')(req, res, next);
 };
 
-router.post('/login', loginUser);
-router.post('/google', googleAuth);
-router.post('/registro', registerUser);
-router.post('/register', registerUser);
-router.post('/verificar-correo', verifyEmail);
-router.get('/verificar-correo', verifyEmail);
-router.post('/check-email', verifyEmail);
-router.post('/verificar-documento', optionalProtect, verifyDocument);
-router.get('/verificar-documento', optionalProtect, verifyDocument);
-router.post('/check-document', optionalProtect, verifyDocument);
-router.get('/check-document', optionalProtect, verifyDocument);
-router.post('/recuperar-contrasena', forgotPassword);
-router.post('/forgot-password', forgotPassword);
-router.post('/restablecer-contrasena', resetPassword);
-router.post('/reset-password', resetPassword);
-router.get('/verificar-activacion', verifyActivation);
-router.post('/activar-cuenta', activateAccount);
+router.post('/login', authLoginLimiter, loginUser);
+router.post('/google', authLoginLimiter, googleAuth);
+router.post('/logout', protect, logoutUser);
+router.post('/registro', authSensitiveLimiter, registerUser);
+router.post('/register', authSensitiveLimiter, registerUser);
+
+router.post('/verificar-correo', authLookupLimiter, verifyEmail);
+router.get('/verificar-correo', authLookupLimiter, verifyEmail);
+router.post('/check-email', authLookupLimiter, verifyEmail);
+
+router.post('/verificar-documento', authLookupLimiter, optionalProtect, verifyDocument);
+router.get('/verificar-documento', authLookupLimiter, optionalProtect, verifyDocument);
+router.post('/check-document', authLookupLimiter, optionalProtect, verifyDocument);
+router.get('/check-document', authLookupLimiter, optionalProtect, verifyDocument);
+
+router.post('/recuperar-contrasena', authSensitiveLimiter, forgotPassword);
+router.post('/forgot-password', authSensitiveLimiter, forgotPassword);
+router.post('/restablecer-contrasena', authSensitiveLimiter, resetPassword);
+router.post('/reset-password', authSensitiveLimiter, resetPassword);
+router.get('/verificar-activacion', authLookupLimiter, verifyActivation);
+router.post('/activar-cuenta', authSensitiveLimiter, activateAccount);
 
 // Perfil de usuario autenticado
 router.route('/perfil')
@@ -38,11 +86,11 @@ router.route('/perfil')
   .put(protect, updateUserProfile);
 
 router.route('/')
-  .get(protect, cacheUsuarios, getUsers)
+  .get(protect, requirePrivilege('Usuarios', 'Ver'), cacheUsuarios, getUsers)
   .post(protect, requirePrivilege('Usuarios', 'Crear'), createUser);
 
 router.route('/:id')
-  .get(protect, getUserById)
+  .get(protect, allowSelfOrViewUsers, getUserById)
   .put(protect, allowSelfOrEditUsers, updateUser)
   .delete(protect, requirePrivilege('Usuarios', 'Eliminar'), deleteUser);
 
