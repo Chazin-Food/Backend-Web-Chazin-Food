@@ -26,6 +26,14 @@ function resolveTierDiscount(tipo = 'Nuevo') {
   return 0;
 }
 
+function resolveNextLevelLabel(tipo = 'Nuevo') {
+  const t = String(tipo || 'Nuevo').toLowerCase();
+  if (t.includes('vip')) return 'nivel VIP 15% OFF';
+  if (t.includes('frecuente')) return 'nivel VIP 15% OFF al completar 3 compras';
+  if (t.includes('regular')) return 'nivel Frecuente 10% OFF al completar 3 compras';
+  return 'nivel Regular 5% OFF al completar 3 compras';
+}
+
 class FidelidadService {
   /**
    * Evalúa el estado actual de fidelidad de un cliente según la regla oficial (15% tras cada 3 compras).
@@ -84,7 +92,7 @@ class FidelidadService {
       comprasFaltantes,
       comprasMeta: COMPRAS_PARA_BENEFICIO,
       progresoPorcentaje,
-      siguienteNivel: descuentoDisponible ? '15% OFF disponible en tu próxima compra' : '15% OFF al completar 3 compras',
+      siguienteNivel: descuentoDisponible ? '15% OFF disponible en tu próxima compra' : resolveNextLevelLabel(tipo),
       fechaInicioNivel: null,
       fechaVencimientoNivel: null,
       diasRestantes: null,
@@ -142,7 +150,7 @@ class FidelidadService {
       comprasFaltantes,
       comprasMeta: COMPRAS_PARA_BENEFICIO,
       progresoPorcentaje,
-      siguienteNivel: descuentoDisponible ? '15% OFF disponible en tu próxima compra' : '15% OFF al completar 3 compras',
+      siguienteNivel: descuentoDisponible ? '15% OFF disponible en tu próxima compra' : resolveNextLevelLabel(tipoNuevo),
       fechaInicioNivel: null,
       fechaVencimientoNivel: null,
       diasRestantes: null,
@@ -163,7 +171,7 @@ class FidelidadService {
         nivel: 'Nuevo',
         descuento: 0,
         badge: '🌱',
-        descripcion: 'Acumula 3 compras con tu cuenta registrada para desbloquear tu 15% de descuento.',
+        descripcion: 'Acumula 3 compras con tu cuenta registrada para ascender al nivel Regular (5% OFF).',
         requisito: '1 a 2 compras en el ciclo',
         duracion: 'Sin vencimiento de ciclo'
       },
