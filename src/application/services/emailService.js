@@ -7,6 +7,43 @@ const {
   renderPasswordChangedEmail,
   renderUserUpdatedEmail
 } = require('./emails');
+const {
+  CANONICAL_FRONTEND_URL,
+  WHATSAPP_SUPPORT_URL,
+  WHATSAPP_SECURITY_URL
+} = require('./emails/EmailStyles');
+
+const LEGACY_DEAD_ORIGINS_RE = /^https?:\/\/(chazin-food-web|chazin-food)\.vercel\.app$/i;
+
+function sanitizeFrontendOrigin(url = '') {
+  const clean = String(url || '').trim().replace(/\/+$/, '');
+  if (!clean) return '';
+  if (LEGACY_DEAD_ORIGINS_RE.test(clean)) return CANONICAL_FRONTEND_URL;
+  return clean;
+}
+
+function extractCleanDireccionFromUser(userData = {}) {
+  const candidates = [
+    userData.direccion,
+    userData.clienteInfo?.direccion,
+    userData.cliente?.direccion
+  ];
+  for (const raw of candidates) {
+    if (!raw) continue;
+    const str = String(raw).trim();
+    if (!str) continue;
+    if (str.startsWith('{')) {
+      try {
+        const parsed = JSON.parse(str);
+        const nested = String(parsed?.direccion || '').trim();
+        if (nested) return nested;
+      } catch (_) {}
+      continue;
+    }
+    return str;
+  }
+  return '';
+}
 
 const SMTP_TIMEOUTS = {
   connectionTimeout: 10000,
@@ -20,37 +57,45 @@ const SMTP_TIMEOUTS = {
 class EmailService {
   /**
    * Resuelve de forma segura la URL base del frontend para enlaces en correos.
-   * Prioriza FRONTEND_URL y permite únicamente orígenes confiables (localhost o *.vercel.app) como respaldo.
+   * Reemplaza automáticamente dominios heredados fuera de servicio (chazin-food-web.vercel.app)
+   * por la URL oficial activa (https://frontend-web-chazin-food.vercel.app).
    */
   static resolveFrontendUrl(requestOrigin = '') {
     const rawEnv = String(process.env.FRONTEND_URL || '').trim();
     const configuredOrigins = rawEnv
       .split(',')
-      .map(o => o.trim().replace(/\/+$/, ''))
+      .map(sanitizeFrontendOrigin)
       .filter(Boolean);
 
     const trustedOrigins = new Set([
       ...configuredOrigins,
-      'https://frontend-web-chazin-food.vercel.app'
+      CANONICAL_FRONTEND_URL
     ]);
 
-    const candidate = String(requestOrigin || '').trim().replace(/\/+$/, '');
+    const candidate = sanitizeFrontendOrigin(requestOrigin);
     const isLocalOrigin = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(candidate);
 
-    // En producción, usar siempre el primer FRONTEND_URL no-local o el origen exacto en lista blanca (nunca *.vercel.app genérico)
-    const primaryProdUrl = configuredOrigins.find(u => !/^https?:\/\/(localhost|127\.0\.0\.1)/i.test(u));
+    // En producción, usar siempre el primer origen productivo válido (nunca localhost ni dominios heredados muertos)
+    const primaryProdUrl = configuredOrigins.find(u => !/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(u));
     if (primaryProdUrl) {
-      if (candidate && trustedOrigins.has(candidate)) {
+      if (candidate && trustedOrigins.has(candidate) && !isLocalOrigin) {
         return candidate;
       }
       return primaryProdUrl;
     }
 
-    if (candidate && (trustedOrigins.has(candidate) || (process.env.NODE_ENV !== 'production' && isLocalOrigin))) {
+    if (process.env.NODE_ENV === 'production') {
+      if (candidate && trustedOrigins.has(candidate) && !isLocalOrigin) {
+        return candidate;
+      }
+      return CANONICAL_FRONTEND_URL;
+    }
+
+    if (candidate && (trustedOrigins.has(candidate) || isLocalOrigin)) {
       return candidate;
     }
 
-    return configuredOrigins[0] || (process.env.NODE_ENV === 'production' ? 'https://frontend-web-chazin-food.vercel.app' : 'http://localhost:5173');
+    return configuredOrigins[0] || CANONICAL_FRONTEND_URL;
   }
 
   /**
@@ -315,10 +360,23 @@ class EmailService {
 
   /**
    * Determina los campos de perfil pendientes por registrar.
-   * Valida número de documento, teléfono, dirección y apellidos.
+   * Valida número de documento, teléfono, apellidos y —únicamente para clientes— dirección de entrega.
    */
   static getPendingProfileFields(userData = {}) {
+    if (!userData || typeof userData !== 'object') return [];
     const pending = [];
+
+    const rawRolId = userData.idRol !== undefined && userData.idRol !== null ? Number(userData.idRol) : null;
+    const rawRolName = String(
+      (typeof userData.rol === 'object' ? userData.rol?.nombre : userData.rol) ||
+      userData.rolInfo?.nombre ||
+      ''
+    ).toLowerCase().trim();
+    const isStaffAccount = (
+      (rawRolId !== null && rawRolId !== 4) ||
+      (rawRolName !== '' && !rawRolName.includes('cliente'))
+    );
+
     const doc = userData.numeroDocumento || userData.documento;
     if (!doc || String(doc).trim() === '' || String(doc).trim().length < 5) {
       pending.push('Número de Documento / Identificación');
@@ -327,9 +385,11 @@ class EmailService {
     if (!tel || String(tel).trim() === '' || String(tel).trim().length < 7) {
       pending.push('Teléfono de Contacto');
     }
-    const dir = userData.direccion;
-    if (!dir || String(dir).trim() === '') {
-      pending.push('Dirección de Residencia / Entrega');
+    if (!isStaffAccount) {
+      const dir = extractCleanDireccionFromUser(userData);
+      if (!dir) {
+        pending.push('Dirección de Residencia / Entrega');
+      }
     }
     const ape = userData.apellidos || userData.apellido;
     if (!ape || String(ape).trim() === '') {
@@ -341,22 +401,22 @@ class EmailService {
   /**
    * Envía correo de activación de cliente con diseño React Email.
    */
-  static async sendActivationEmail({ email, nombre, apellidos, password, activationLink, usuario, camposPendientes }) {
+  static async sendActivationEmail({ email, nombre, apellidos, password, activationLink, usuario, camposPendientes, requestOrigin }) {
     const userName = `${nombre} ${apellidos || ''}`.trim();
-    const frontendUrl = this.resolveFrontendUrl();
+    const frontendUrl = this.resolveFrontendUrl(requestOrigin);
     const targetLink = activationLink || `${frontendUrl}/login`;
     const pending = Array.isArray(camposPendientes)
       ? camposPendientes
       : this.getPendingProfileFields(usuario || { nombre, apellidos });
 
     const pendingText = pending.length > 0
-      ? `\n\n⚠️ Datos pendientes por registrar en tu perfil:\n- ${pending.join('\n- ')}\n\nTe invitamos a completar estos datos en tu cuenta para agilizar tus pedidos y entregas.`
+      ? `\n\n⚠️ Datos pendientes por registrar en tu perfil:\n- ${pending.join('\n- ')}\n\nUna vez actives tu cuenta podrás completar estos datos en: ${frontendUrl}/perfil?tab=editar`
       : '';
 
     return this._deliverEmail({
       to: email,
       subject: '🍔 ¡Activa tu cuenta de cliente en Chazin Food! Credenciales de acceso',
-      text: `¡Bienvenido a Chazin Food, ${userName}!\n\nTu cuenta de cliente ha sido registrada. Para activarla ingresa con tus credenciales:\nUsuario: ${email}\nClave temporal: ${password}\nEnlace: ${targetLink}${pendingText}`,
+      text: `¡Bienvenido a Chazin Food, ${userName}!\n\nTu cuenta de cliente ha sido registrada. Para activarla ingresa al siguiente enlace:\nUsuario: ${email}${password ? `\nClave temporal: ${password}` : ''}\nEnlace de activación: ${targetLink}${pendingText}\n\n¿Necesitas ayuda? Escríbenos por WhatsApp: ${WHATSAPP_SUPPORT_URL}`,
       renderHtml: () =>
         renderActivationEmail({
           nombre,
@@ -365,7 +425,8 @@ class EmailService {
           password,
           activationLink: targetLink,
           camposPendientes: pending,
-          profileLink: `${frontendUrl}/perfil`
+          profileLink: targetLink,
+          frontendUrl
         }),
       label: 'activación de cliente',
       devLines: [
@@ -379,31 +440,34 @@ class EmailService {
   /**
    * Envía correo de bienvenida con diseño React Email.
    */
-  static async sendWelcomeEmail({ email, nombre, apellidos, password, loginLink, usuario, camposPendientes }) {
+  static async sendWelcomeEmail({ email, nombre, apellidos, password, loginLink, usuario, camposPendientes, esGoogle = false, requestOrigin }) {
     const userName = `${nombre} ${apellidos || ''}`.trim();
-    const frontendUrl = this.resolveFrontendUrl();
+    const frontendUrl = this.resolveFrontendUrl(requestOrigin);
     const targetLink = loginLink || `${frontendUrl}/login`;
+    const editProfileLink = `${frontendUrl}/perfil?tab=editar`;
     const pending = Array.isArray(camposPendientes)
       ? camposPendientes
       : this.getPendingProfileFields(usuario || { nombre, apellidos });
 
     const pendingText = pending.length > 0
-      ? `\n\n⚠️ Datos pendientes por registrar en tu perfil:\n- ${pending.join('\n- ')}\n\nTe sugerimos completar estos datos en tu perfil: ${frontendUrl}/perfil`
+      ? `\n\n⚠️ Datos pendientes por registrar en tu perfil:\n- ${pending.join('\n- ')}\n\nTe sugerimos completar estos datos en tu perfil: ${editProfileLink}`
       : '';
 
     return this._deliverEmail({
       to: email,
       subject: '🎉 ¡Bienvenido a Chazin Food! Credenciales de acceso',
-      text: `¡Bienvenido a Chazin Food, ${userName}!\n\nTu cuenta ha sido creada exitosamente:\nUsuario: ${email}${password ? `\nContraseña: ${password}` : ''}\nEnlace de acceso: ${targetLink}${pendingText}`,
+      text: `¡Bienvenido a Chazin Food, ${userName}!\n\nTu cuenta ha sido creada exitosamente:\nUsuario: ${email}${password ? `\nContraseña: ${password}` : ''}\nEnlace de acceso: ${targetLink}${pendingText}\n\n¿Necesitas ayuda? Escríbenos por WhatsApp: ${WHATSAPP_SUPPORT_URL}`,
       renderHtml: () =>
         renderWelcomeEmail({
           nombre,
           apellidos,
           email,
           password,
+          esGoogle: Boolean(esGoogle),
           loginLink: targetLink,
           camposPendientes: pending,
-          profileLink: `${frontendUrl}/perfil`
+          profileLink: editProfileLink,
+          frontendUrl
         }),
       label: 'bienvenida',
       devLines: [
@@ -416,18 +480,20 @@ class EmailService {
   /**
    * Envía correo de recuperación de contraseña con diseño React Email.
    */
-  static async sendPasswordResetEmail({ email, nombre, apellidos, resetLink }) {
+  static async sendPasswordResetEmail({ email, nombre, apellidos, resetLink, requestOrigin }) {
     const userName = `${nombre} ${apellidos || ''}`.trim();
+    const frontendUrl = this.resolveFrontendUrl(requestOrigin);
 
     return this._deliverEmail({
       to: email,
       subject: '🔐 Restablecer Contraseña - Chazin Food',
-      text: `Hola ${userName},\n\nPara restablecer tu contraseña de Chazin Food, ingresa al siguiente enlace:\n${resetLink}\n\nEste enlace expira en 1 hora.`,
+      text: `Hola ${userName},\n\nPara restablecer tu contraseña de Chazin Food, ingresa al siguiente enlace:\n${resetLink}\n\nEste enlace expira en 1 hora.\n\nSi no reconoces esta solicitud, puedes descartar este mensaje o escribirnos por WhatsApp: ${WHATSAPP_SECURITY_URL}`,
       renderHtml: () =>
         renderPasswordResetEmail({
           nombre,
           apellidos,
-          resetLink
+          resetLink,
+          frontendUrl
         }),
       label: 'restablecimiento de contraseña',
       devLines: [
@@ -440,21 +506,23 @@ class EmailService {
   /**
    * Envía notificación de cambio de contraseña con diseño React Email.
    */
-  static async sendPasswordChangedEmail({ email, nombre, apellidos, supportLink }) {
+  static async sendPasswordChangedEmail({ email, nombre, apellidos, supportLink, requestOrigin }) {
     const userName = `${nombre} ${apellidos || ''}`.trim();
-    const frontendUrl = this.resolveFrontendUrl();
+    const frontendUrl = this.resolveFrontendUrl(requestOrigin);
+    const portalLink = supportLink || `${frontendUrl}/login`;
 
     return this._deliverEmail({
       to: email,
       subject: '🔐 Notificación de Seguridad: Contraseña modificada - Chazin Food',
-      text: `Hola ${userName},\n\nTe notificamos que la contraseña de tu cuenta en Chazin Food ha sido modificada exitosamente.\n\nPor tu seguridad no incluimos contraseñas en este correo. Si no realizaste este cambio, por favor comunícate con nosotros de inmediato para proteger tu cuenta.`,
+      text: `Hola ${userName},\n\nTe notificamos que la contraseña de tu cuenta en Chazin Food ha sido modificada exitosamente.\n\nPor tu seguridad no incluimos contraseñas en este correo. Si no realizaste este cambio, comunícate de inmediato con nosotros por WhatsApp para proteger tu cuenta: ${WHATSAPP_SECURITY_URL}`,
       renderHtml: () =>
         renderPasswordChangedEmail({
           nombre,
           apellidos,
           nuevaContrasena: '',
           password: '',
-          supportLink: supportLink || frontendUrl
+          supportLink: portalLink,
+          frontendUrl
         }),
       label: 'cambio de contraseña',
       devLines: [
@@ -466,29 +534,32 @@ class EmailService {
   /**
    * Envía notificación de datos de cuenta actualizados con diseño React Email.
    */
-  static async sendUserUpdatedEmail({ email, nombre, apellidos, modifiedFields, portalLink, usuario, camposPendientes }) {
+  static async sendUserUpdatedEmail({ email, nombre, apellidos, modifiedFields, portalLink, usuario, camposPendientes, requestOrigin }) {
     const userName = `${nombre} ${apellidos || ''}`.trim();
-    const frontendUrl = this.resolveFrontendUrl();
+    const frontendUrl = this.resolveFrontendUrl(requestOrigin);
     const targetLink = portalLink || `${frontendUrl}/perfil`;
+    const editProfileLink = `${frontendUrl}/perfil?tab=editar`;
     const pending = Array.isArray(camposPendientes)
       ? camposPendientes
       : this.getPendingProfileFields(usuario || { nombre, apellidos });
 
     const pendingText = pending.length > 0
-      ? `\n\n⚠️ Recordatorio: Aún tienes campos pendientes por registrar en tu perfil:\n- ${pending.join('\n- ')}\n\nPuedes completarlos ingresando a: ${targetLink}`
+      ? `\n\n⚠️ Recordatorio: Aún tienes campos pendientes por registrar en tu perfil:\n- ${pending.join('\n- ')}\n\nPuedes completarlos ingresando a: ${editProfileLink}`
       : '';
 
     return this._deliverEmail({
       to: email,
       subject: '✏️ Tus datos de usuario han sido actualizados - Chazin Food',
-      text: `Hola ${userName},\n\nTe informamos que los datos de tu cuenta en Chazin Food han sido actualizados.\nModificaciones: ${modifiedFields || 'Perfil actualizado'}${pendingText}`,
+      text: `Hola ${userName},\n\nTe informamos que los datos de tu cuenta en Chazin Food han sido actualizados.\nModificaciones: ${modifiedFields || 'Perfil actualizado'}${pendingText}\n\nVer tu perfil: ${targetLink}\n\nProtección de datos: Si no autorizaste esta modificación, ingresa inmediatamente a tu perfil o comunícate con nosotros por WhatsApp para verificar la seguridad de tu cuenta: ${WHATSAPP_SECURITY_URL}`,
       renderHtml: () =>
         renderUserUpdatedEmail({
           nombre,
           apellidos,
           modifiedFields,
           portalLink: targetLink,
-          camposPendientes: pending
+          editProfileLink,
+          camposPendientes: pending,
+          frontendUrl
         }),
       label: 'actualización de perfil',
       devLines: [

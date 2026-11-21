@@ -8,11 +8,12 @@ const {
   Section,
   Heading,
   Text,
-  Button
+  Button,
+  Link
 } = require('@react-email/components');
 const EmailHeader = require('./EmailHeader');
 const EmailFooter = require('./EmailFooter');
-const { colors, commonStyles } = require('./EmailStyles');
+const { colors, commonStyles, WHATSAPP_SUPPORT_URL, normalizeEmailBaseUrl } = require('./EmailStyles');
 
 const e = React.createElement;
 
@@ -21,10 +22,15 @@ function WelcomeEmail({
   apellidos = '',
   email = '',
   password = '',
-  loginLink = 'http://localhost:5173/login',
+  esGoogle = false,
+  loginLink = '',
   camposPendientes = [],
-  profileLink = 'http://localhost:5173/perfil'
+  profileLink = '',
+  frontendUrl = ''
 }) {
+  const baseUrl = normalizeEmailBaseUrl(frontendUrl);
+  const resolvedLoginLink = loginLink || `${baseUrl}/login`;
+  const resolvedProfileLink = profileLink || `${baseUrl}/perfil?tab=editar`;
   const fullName = `${nombre} ${apellidos}`.trim() || 'Estimado(a) Colaborador(a)';
 
   return e(
@@ -226,7 +232,7 @@ function WelcomeEmail({
                               fontStyle: 'italic'
                             }
                           },
-                          'Acceso vinculado con Google'
+                          esGoogle ? 'Acceso vinculado con Google' : 'Configurada en tu registro'
                         )
                   )
                 )
@@ -285,7 +291,7 @@ function WelcomeEmail({
                   e(
                     Button,
                     {
-                      href: profileLink || loginLink,
+                      href: resolvedProfileLink,
                       style: {
                         backgroundColor: '#F59E0B',
                         color: '#FFFFFF',
@@ -309,7 +315,7 @@ function WelcomeEmail({
             e(
               Button,
               {
-                href: loginLink,
+                href: resolvedLoginLink,
                 style: commonStyles.ctaButton
               },
               'Ingresar al Portal Chazin Food'
@@ -337,11 +343,20 @@ function WelcomeEmail({
                 }
               },
               e('strong', null, 'Importante: '),
-              'Por motivos de seguridad, te recomendamos cambiar la contraseña asignada al momento de tu primer ingreso desde la configuración de tu perfil.'
+              'Mantén tus credenciales en privado y recuerda que puedes actualizar tus datos en cualquier momento desde tu perfil. Si requieres soporte, escríbenos por ',
+              e(
+                Link,
+                {
+                  href: WHATSAPP_SUPPORT_URL,
+                  style: { color: colors.amberText, fontWeight: '700', textDecoration: 'underline' }
+                },
+                'WhatsApp'
+              ),
+              '.'
             )
           )
         ),
-        e(EmailFooter)
+        e(EmailFooter, { frontendUrl: baseUrl })
       )
     )
   );

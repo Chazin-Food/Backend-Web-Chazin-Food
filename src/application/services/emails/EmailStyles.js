@@ -7,6 +7,30 @@
 const LOGO_OFFICIAL_URL =
   'https://res.cloudinary.com/dckwtknmq/image/upload/w_200,h_200,c_fill,r_max,q_auto,f_auto/v1792555455/chazin_food/branding/chazin_emblem_official.png';
 
+const CANONICAL_FRONTEND_URL = 'https://frontend-web-chazin-food.vercel.app';
+const WHATSAPP_SUPPORT_NUMBER = '573192028562';
+const WHATSAPP_SUPPORT_URL = `https://wa.me/${WHATSAPP_SUPPORT_NUMBER}`;
+const WHATSAPP_SECURITY_URL = `https://wa.me/${WHATSAPP_SUPPORT_NUMBER}?text=${encodeURIComponent(
+  'Hola Chazin Food, necesito ayuda para verificar la seguridad de mi cuenta.'
+)}`;
+
+function normalizeEmailBaseUrl(rawUrl = '') {
+  const candidates = String(rawUrl || process.env.FRONTEND_URL || '')
+    .split(',')
+    .map(u => u.trim().replace(/\/+$/, ''))
+    .filter(Boolean)
+    .map(u =>
+      /^https?:\/\/(chazin-food-web|chazin-food)\.vercel\.app$/i.test(u)
+        ? CANONICAL_FRONTEND_URL
+        : u
+    );
+
+  const nonLocal = candidates.find(u => !/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(u));
+  if (nonLocal) return nonLocal;
+  if (process.env.NODE_ENV === 'production') return CANONICAL_FRONTEND_URL;
+  return candidates[0] || CANONICAL_FRONTEND_URL;
+}
+
 const colors = {
   // Cast Iron & Charcoal (Hero Masthead & Deep Accents)
   castIron: '#141210',
@@ -159,5 +183,10 @@ module.exports = {
   typography,
   commonStyles,
   LOGO_OFFICIAL_URL,
+  CANONICAL_FRONTEND_URL,
+  WHATSAPP_SUPPORT_NUMBER,
+  WHATSAPP_SUPPORT_URL,
+  WHATSAPP_SECURITY_URL,
+  normalizeEmailBaseUrl,
   getLogoUrl
 };

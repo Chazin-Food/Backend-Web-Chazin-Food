@@ -8,11 +8,12 @@ const {
   Section,
   Heading,
   Text,
-  Button
+  Button,
+  Link
 } = require('@react-email/components');
 const EmailHeader = require('./EmailHeader');
 const EmailFooter = require('./EmailFooter');
-const { colors, typography, commonStyles } = require('./EmailStyles');
+const { colors, typography, commonStyles, WHATSAPP_SUPPORT_URL, normalizeEmailBaseUrl } = require('./EmailStyles');
 
 const e = React.createElement;
 
@@ -21,10 +22,14 @@ function ActivationEmail({
   apellidos = '',
   email = '',
   password = '',
-  activationLink = 'http://localhost:5173/login',
+  activationLink = '',
   camposPendientes = [],
-  profileLink = 'http://localhost:5173/perfil'
+  profileLink = '',
+  frontendUrl = ''
 }) {
+  const baseUrl = normalizeEmailBaseUrl(frontendUrl);
+  const resolvedActivationLink = activationLink || `${baseUrl}/login`;
+  const resolvedProfileLink = profileLink || resolvedActivationLink;
   const fullName = `${nombre} ${apellidos}`.trim() || 'Estimado(a) Cliente';
 
   return e(
@@ -285,7 +290,7 @@ function ActivationEmail({
                   e(
                     Button,
                     {
-                      href: profileLink || activationLink,
+                      href: resolvedProfileLink,
                       style: {
                         backgroundColor: '#F59E0B',
                         color: '#FFFFFF',
@@ -297,7 +302,7 @@ function ActivationEmail({
                         display: 'inline-block'
                       }
                     },
-                    'Completar mi perfil'
+                    'Activar y completar mi perfil'
                   )
                 )
               )
@@ -309,7 +314,7 @@ function ActivationEmail({
             e(
               Button,
               {
-                href: activationLink,
+                href: resolvedActivationLink,
                 style: commonStyles.ctaButton
               },
               'Activar Cuenta e Iniciar Sesión'
@@ -380,11 +385,20 @@ function ActivationEmail({
                 }
               },
               e('strong', null, 'Consejo de seguridad y vigencia: '),
-              'El enlace de activación tiene una vigencia de 72 horas. Al iniciar sesión con tu clave temporal, puedes dirigirte a tu perfil en cualquier momento para configurar una contraseña personalizada.'
+              'El enlace de activación tiene una vigencia de 72 horas. Al activar tu cuenta podrás definir tu contraseña personal. Si necesitas ayuda, contáctanos por ',
+              e(
+                Link,
+                {
+                  href: WHATSAPP_SUPPORT_URL,
+                  style: { color: colors.amberText, fontWeight: '700', textDecoration: 'underline' }
+                },
+                'WhatsApp'
+              ),
+              '.'
             )
           )
         ),
-        e(EmailFooter)
+        e(EmailFooter, { frontendUrl: baseUrl })
       )
     )
   );

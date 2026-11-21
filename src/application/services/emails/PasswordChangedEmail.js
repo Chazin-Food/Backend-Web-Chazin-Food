@@ -8,11 +8,12 @@ const {
   Section,
   Heading,
   Text,
-  Button
+  Button,
+  Link
 } = require('@react-email/components');
 const EmailHeader = require('./EmailHeader');
 const EmailFooter = require('./EmailFooter');
-const { colors, commonStyles } = require('./EmailStyles');
+const { colors, commonStyles, WHATSAPP_SECURITY_URL, normalizeEmailBaseUrl } = require('./EmailStyles');
 
 const e = React.createElement;
 
@@ -21,8 +22,11 @@ function PasswordChangedEmail({
   apellidos = '',
   nuevaContrasena = '',
   password = '',
-  supportLink = 'http://localhost:5173'
+  supportLink = '',
+  frontendUrl = ''
 }) {
+  const baseUrl = normalizeEmailBaseUrl(frontendUrl);
+  const resolvedPortalLink = supportLink || `${baseUrl}/login`;
   const fullName = `${nombre} ${apellidos}`.trim() || 'Usuario';
   const changeDate = new Date().toLocaleString('es-CO', {
     timeZone: 'America/Bogota',
@@ -180,10 +184,10 @@ function PasswordChangedEmail({
             e(
               Button,
               {
-                href: supportLink,
+                href: resolvedPortalLink,
                 style: commonStyles.ctaButton
               },
-              'Ir al Portal Chazin Food'
+              'Iniciar Sesión en Chazin Food'
             )
           ),
           // Advertencia de seguridad en caso de actividad no autorizada
@@ -208,11 +212,20 @@ function PasswordChangedEmail({
                 }
               },
               e('strong', null, '¿No reconoces esta actividad? '),
-              'Si no realizaste este cambio, comunícate de inmediato con el equipo de soporte de Chazin Food para asegurar tu cuenta.'
+              'Si no realizaste este cambio, comunícate de inmediato con nosotros por ',
+              e(
+                Link,
+                {
+                  href: WHATSAPP_SECURITY_URL,
+                  style: { color: colors.crimson, fontWeight: '700', textDecoration: 'underline' }
+                },
+                'WhatsApp'
+              ),
+              ' para verificar y proteger tu cuenta.'
             )
           )
         ),
-        e(EmailFooter)
+        e(EmailFooter, { frontendUrl: baseUrl })
       )
     )
   );

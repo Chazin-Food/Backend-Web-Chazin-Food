@@ -155,11 +155,13 @@ class AuthService {
     }
 
     // Send welcome email upon registration (sin exponer la contraseña en texto plano)
+    const userPlainReg = typeof user.toJSON === 'function' ? user.toJSON() : { ...user };
     EmailService.sendWelcomeEmail({
       email: user.email,
       nombre: user.nombre,
       apellidos: user.apellidos,
-      usuario: user
+      esGoogle: false,
+      usuario: { ...userPlainReg, direccion: getCleanDireccion(direccion || '') }
     }).catch(err => console.error('Background welcome email error in register:', err.message));
 
     const role = await Role.findByPk(user.idRol);
@@ -873,12 +875,14 @@ class AuthService {
       });
 
       // Enviar correo de bienvenida en segundo plano
+      const userPlainGoogle = typeof user.toJSON === 'function' ? user.toJSON() : { ...user };
       EmailService.sendWelcomeEmail({
         email: user.email,
         nombre: user.nombre,
         apellidos: user.apellidos,
-        password: '(Autenticado con Google)',
-        usuario: user
+        password: '',
+        esGoogle: true,
+        usuario: { ...userPlainGoogle, direccion: '' }
       }).catch(err => console.error('Background welcome email error in googleLogin:', err.message));
     }
 

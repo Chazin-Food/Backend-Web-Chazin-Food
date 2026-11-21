@@ -8,11 +8,17 @@ const {
   Section,
   Heading,
   Text,
-  Button
+  Button,
+  Link
 } = require('@react-email/components');
 const EmailHeader = require('./EmailHeader');
 const EmailFooter = require('./EmailFooter');
-const { colors, commonStyles } = require('./EmailStyles');
+const {
+  colors,
+  commonStyles,
+  WHATSAPP_SECURITY_URL,
+  normalizeEmailBaseUrl
+} = require('./EmailStyles');
 
 const e = React.createElement;
 
@@ -20,9 +26,14 @@ function UserUpdatedEmail({
   nombre = 'Usuario',
   apellidos = '',
   modifiedFields = 'Perfil actualizado',
-  portalLink = 'http://localhost:5173/perfil',
-  camposPendientes = []
+  portalLink = '',
+  editProfileLink = '',
+  camposPendientes = [],
+  frontendUrl = ''
 }) {
+  const baseUrl = normalizeEmailBaseUrl(frontendUrl);
+  const resolvedPortalLink = portalLink || `${baseUrl}/perfil`;
+  const resolvedEditLink = editProfileLink || `${baseUrl}/perfil?tab=editar`;
   const fullName = `${nombre} ${apellidos}`.trim() || 'Usuario';
   const updateDate = new Date().toLocaleString('es-CO', {
     timeZone: 'America/Bogota',
@@ -216,7 +227,7 @@ function UserUpdatedEmail({
                   e(
                     Button,
                     {
-                      href: portalLink,
+                      href: resolvedEditLink,
                       style: {
                         backgroundColor: '#F59E0B',
                         color: '#FFFFFF',
@@ -240,13 +251,13 @@ function UserUpdatedEmail({
             e(
               Button,
               {
-                href: portalLink,
+                href: resolvedPortalLink,
                 style: commonStyles.ctaButton
               },
               'Ver Mi Perfil en Chazin Food'
             )
           ),
-          // Reaseguro
+          // Reaseguro con enlace real a perfil y WhatsApp Soporte
           e(
             Section,
             {
@@ -268,11 +279,29 @@ function UserUpdatedEmail({
                 }
               },
               e('strong', null, 'Protección de datos: '),
-              'Si no autorizaste esta modificación, ingresa inmediatamente a tu perfil o comunícate con nosotros para verificar la seguridad de tu cuenta.'
+              'Si no autorizaste esta modificación, ingresa inmediatamente a ',
+              e(
+                Link,
+                {
+                  href: resolvedPortalLink,
+                  style: { color: colors.crimson, fontWeight: '600', textDecoration: 'underline' }
+                },
+                'tu perfil'
+              ),
+              ' o comunícate con nosotros por ',
+              e(
+                Link,
+                {
+                  href: WHATSAPP_SECURITY_URL,
+                  style: { color: colors.emeraldText, fontWeight: '700', textDecoration: 'underline' }
+                },
+                'WhatsApp'
+              ),
+              ' para verificar la seguridad de tu cuenta.'
             )
           )
         ),
-        e(EmailFooter)
+        e(EmailFooter, { frontendUrl: baseUrl })
       )
     )
   );

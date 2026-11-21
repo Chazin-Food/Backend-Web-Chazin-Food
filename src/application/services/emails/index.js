@@ -12,7 +12,14 @@ const WelcomeEmail = require('./WelcomeEmail');
 const PasswordResetEmail = require('./PasswordResetEmail');
 const PasswordChangedEmail = require('./PasswordChangedEmail');
 const UserUpdatedEmail = require('./UserUpdatedEmail');
-const { colors, typography, LOGO_OFFICIAL_URL } = require('./EmailStyles');
+const {
+  colors,
+  typography,
+  LOGO_OFFICIAL_URL,
+  WHATSAPP_SUPPORT_URL,
+  WHATSAPP_SECURITY_URL,
+  normalizeEmailBaseUrl
+} = require('./EmailStyles');
 const { getColombiaYear } = require('../../../infrastructure/utils/colombiaDateUtils');
 
 const e = React.createElement;
@@ -43,16 +50,16 @@ function getEmailHeader(subtitle = 'Comidas Rápidas Artesanales') {
 }
 
 // Generador de pie de página HTML estático
-function getEmailFooter() {
+function getEmailFooter(frontendUrl = '') {
   const currentYear = getColombiaYear();
-  const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+  const baseUrl = normalizeEmailBaseUrl(frontendUrl);
 
   return `
     <div style="background-color:#FAFAF9;padding:28px 24px 30px;text-align:center;border-bottom-left-radius:16px;border-bottom-right-radius:16px;border-top:1px solid ${colors.borderLight};">
       <div style="margin-bottom:18px;">
-        <a href="${frontendUrl}" style="background-color:#FFFFFF;border:1px solid ${colors.borderLight};border-radius:8px;color:${colors.textTitle};font-size:12px;font-weight:600;text-decoration:none;padding:7px 14px;margin:0 4px;display:inline-block;">Explorar Menú</a>
-        <a href="${frontendUrl}/login" style="background-color:#FFFFFF;border:1px solid ${colors.borderLight};border-radius:8px;color:${colors.textTitle};font-size:12px;font-weight:600;text-decoration:none;padding:7px 14px;margin:0 4px;display:inline-block;">Mi Cuenta</a>
-        <a href="https://wa.me/573000000000" style="background-color:#FFFFFF;border:1px solid ${colors.borderLight};border-radius:8px;color:${colors.emeraldText};font-size:12px;font-weight:600;text-decoration:none;padding:7px 14px;margin:0 4px;display:inline-block;">WhatsApp Soporte</a>
+        <a href="${baseUrl}/menu" style="background-color:#FFFFFF;border:1px solid ${colors.borderLight};border-radius:8px;color:${colors.textTitle};font-size:12px;font-weight:600;text-decoration:none;padding:7px 14px;margin:0 4px;display:inline-block;">Explorar Menú</a>
+        <a href="${baseUrl}/perfil" style="background-color:#FFFFFF;border:1px solid ${colors.borderLight};border-radius:8px;color:${colors.textTitle};font-size:12px;font-weight:600;text-decoration:none;padding:7px 14px;margin:0 4px;display:inline-block;">Mi Cuenta</a>
+        <a href="${WHATSAPP_SUPPORT_URL}" style="background-color:#FFFFFF;border:1px solid ${colors.borderLight};border-radius:8px;color:${colors.emeraldText};font-size:12px;font-weight:600;text-decoration:none;padding:7px 14px;margin:0 4px;display:inline-block;">WhatsApp Soporte</a>
       </div>
       <p style="color:${colors.textBody};font-size:12px;font-weight:700;margin:0 0 4px 0;">Chazin Food · Hamburguesería & Sabor Artesanal</p>
       <p style="color:${colors.textMuted};font-size:11.5px;line-height:1.5;margin:0 0 14px 0;">
@@ -67,7 +74,7 @@ function getEmailFooter() {
   `;
 }
 
-function wrapEmailContainer(content, subtitle = '') {
+function wrapEmailContainer(content, subtitle = '', frontendUrl = '') {
   return `<!DOCTYPE html>
 <html lang="es">
 <head>
@@ -81,7 +88,7 @@ function wrapEmailContainer(content, subtitle = '') {
     <div style="padding:36px 32px 28px;">
       ${content}
     </div>
-    ${getEmailFooter()}
+    ${getEmailFooter(frontendUrl)}
   </div>
 </body>
 </html>`;
@@ -95,7 +102,9 @@ async function renderActivationEmail(props) {
     return await render(e(ActivationEmail, props));
   } catch (err) {
     console.warn('Fallback a plantilla estática para ActivationEmail:', err.message);
-    const { nombre = 'Cliente', apellidos = '', email = '', password = '', activationLink = 'http://localhost:5173/login', camposPendientes = [], profileLink = 'http://localhost:5173/perfil' } = props;
+    const baseUrl = normalizeEmailBaseUrl(props?.frontendUrl);
+    const { nombre = 'Cliente', apellidos = '', email = '', password = '', activationLink = `${baseUrl}/login`, camposPendientes = [], profileLink = '' } = props;
+    const resolvedProfileLink = profileLink || activationLink;
     const fullName = `${nombre} ${apellidos}`.trim() || 'Estimado(a) Cliente';
     const pendingHtml = Array.isArray(camposPendientes) && camposPendientes.length > 0
       ? `
@@ -106,7 +115,7 @@ async function renderActivationEmail(props) {
             ${camposPendientes.map(c => `<li style="margin-bottom:4px;font-weight:600;">${c}</li>`).join('')}
           </ul>
           <div style="text-align:center;">
-            <a href="${profileLink || activationLink}" style="display:inline-block;background-color:#F59E0B;color:#FFFFFF;padding:9px 20px;border-radius:8px;font-size:12.5px;font-weight:700;text-decoration:none;">Completar mi perfil</a>
+            <a href="${resolvedProfileLink}" style="display:inline-block;background-color:#F59E0B;color:#FFFFFF;padding:9px 20px;border-radius:8px;font-size:12.5px;font-weight:700;text-decoration:none;">Activar y completar mi perfil</a>
           </div>
         </div>
       `
@@ -126,7 +135,7 @@ async function renderActivationEmail(props) {
       <div style="text-align:center;margin:24px 0 28px;">
         <a href="${activationLink}" style="background:${colors.flameGradient};color:#FFFFFF;padding:15px 36px;border-radius:12px;font-size:15px;font-weight:700;text-decoration:none;display:inline-block;box-shadow:0 6px 18px -2px rgba(220, 38, 38, 0.35);">Activar Cuenta e Iniciar Sesión</a>
       </div>
-    `, 'Activación de Cuenta de Cliente');
+    `, 'Activación de Cuenta de Cliente', baseUrl);
   }
 }
 
@@ -138,8 +147,12 @@ async function renderWelcomeEmail(props) {
     return await render(e(WelcomeEmail, props));
   } catch (err) {
     console.warn('Fallback a plantilla estática para WelcomeEmail:', err.message);
-    const { nombre = 'Usuario', apellidos = '', email = '', password = '', loginLink = 'http://localhost:5173/login', camposPendientes = [], profileLink = 'http://localhost:5173/perfil' } = props;
+    const baseUrl = normalizeEmailBaseUrl(props?.frontendUrl);
+    const { nombre = 'Usuario', apellidos = '', email = '', password = '', esGoogle = false, loginLink = `${baseUrl}/login`, camposPendientes = [], profileLink = `${baseUrl}/perfil?tab=editar` } = props;
     const fullName = `${nombre} ${apellidos}`.trim() || 'Estimado(a) Colaborador(a)';
+    const passwordDisplayHtml = password
+      ? `<code style="background:${colors.crimsonLight};color:${colors.crimson};border:1px solid ${colors.crimsonBorder};padding:4px 10px;border-radius:6px;font-size:13.5px;font-weight:700;margin-left:4px;">${password}</code>`
+      : `<span style="color:${colors.textMuted};font-size:12.5px;font-style:italic;margin-left:4px;">${esGoogle ? 'Acceso vinculado con Google' : 'Configurada en tu registro'}</span>`;
     const pendingHtml = Array.isArray(camposPendientes) && camposPendientes.length > 0
       ? `
         <div style="background-color:#FFFBEB;border:1px solid #FDE68A;border-radius:12px;padding:16px 20px;margin-bottom:24px;text-align:left;">
@@ -163,13 +176,13 @@ async function renderWelcomeEmail(props) {
       <div style="background-color:${colors.cardSubtle};border:1px solid ${colors.borderLight};border-radius:12px;padding:18px 20px;margin-bottom:24px;">
         <div style="color:${colors.textTitle};font-size:11.5px;font-weight:700;text-transform:uppercase;margin-bottom:10px;">Datos de Acceso</div>
         <div style="margin-bottom:6px;"><span style="color:${colors.textMuted};font-size:13px;">Correo Registrado:</span> <strong style="color:${colors.textTitle};font-size:13.5px;margin-left:4px;">${email}</strong></div>
-        ${password ? `<div><span style="color:${colors.textMuted};font-size:13px;">Contraseña:</span> <code style="background:${colors.crimsonLight};color:${colors.crimson};border:1px solid ${colors.crimsonBorder};padding:4px 10px;border-radius:6px;font-size:13.5px;font-weight:700;margin-left:4px;">${password}</code></div>` : ''}
+        <div><span style="color:${colors.textMuted};font-size:13px;">Contraseña:</span> ${passwordDisplayHtml}</div>
       </div>
       ${pendingHtml}
       <div style="text-align:center;margin:24px 0 28px;">
         <a href="${loginLink}" style="background:${colors.flameGradient};color:#FFFFFF;padding:15px 36px;border-radius:12px;font-size:15px;font-weight:700;text-decoration:none;display:inline-block;box-shadow:0 6px 18px -2px rgba(220, 38, 38, 0.35);">Ingresar al Portal Chazin Food</a>
       </div>
-    `, 'Bienvenida y Acceso al Sistema');
+    `, 'Bienvenida y Acceso al Sistema', baseUrl);
   }
 }
 
@@ -181,7 +194,8 @@ async function renderPasswordResetEmail(props) {
     return await render(e(PasswordResetEmail, props));
   } catch (err) {
     console.warn('Fallback a plantilla estática para PasswordResetEmail:', err.message);
-    const { nombre = 'Usuario', apellidos = '', resetLink = 'http://localhost:5173/reset-password' } = props;
+    const baseUrl = normalizeEmailBaseUrl(props?.frontendUrl);
+    const { nombre = 'Usuario', apellidos = '', resetLink = `${baseUrl}/login` } = props;
     const fullName = `${nombre} ${apellidos}`.trim() || 'Usuario';
     return wrapEmailContainer(`
       <div style="text-align:center;margin-bottom:20px;">
@@ -193,9 +207,9 @@ async function renderPasswordResetEmail(props) {
         <a href="${resetLink}" style="background:${colors.flameGradient};color:#FFFFFF;padding:15px 36px;border-radius:12px;font-size:15px;font-weight:700;text-decoration:none;display:inline-block;box-shadow:0 6px 18px -2px rgba(220, 38, 38, 0.35);">Restablecer Mi Contraseña</a>
       </div>
       <div style="background-color:${colors.briocheAmberLight};border:1px solid ${colors.briocheAmberBorder};border-radius:10px;padding:12px 14px;text-align:center;">
-        <p style="color:${colors.amberText};font-size:12px;line-height:1.5;margin:0;">Este enlace es válido durante 60 minutos por motivos de seguridad.</p>
+        <p style="color:${colors.amberText};font-size:12px;line-height:1.5;margin:0;">Este enlace es válido durante 60 minutos por motivos de seguridad. Si necesitas ayuda, escríbenos por <a href="${WHATSAPP_SECURITY_URL}" style="color:${colors.amberText};font-weight:700;">WhatsApp</a>.</p>
       </div>
-    `, 'Seguridad y Protección de Cuenta');
+    `, 'Seguridad y Protección de Cuenta', baseUrl);
   }
 }
 
@@ -207,7 +221,8 @@ async function renderPasswordChangedEmail(props) {
     return await render(e(PasswordChangedEmail, props));
   } catch (err) {
     console.warn('Fallback a plantilla estática para PasswordChangedEmail:', err.message);
-    const { nombre = 'Usuario', apellidos = '', supportLink = 'http://localhost:5173' } = props;
+    const baseUrl = normalizeEmailBaseUrl(props?.frontendUrl);
+    const { nombre = 'Usuario', apellidos = '', supportLink = `${baseUrl}/login` } = props;
     const fullName = `${nombre} ${apellidos}`.trim() || 'Usuario';
     return wrapEmailContainer(`
       <div style="text-align:center;margin-bottom:20px;">
@@ -216,9 +231,12 @@ async function renderPasswordChangedEmail(props) {
         <p style="color:${colors.textBody};font-size:14.5px;line-height:1.6;margin:0;">Te confirmamos que la contraseña asociada a tu cuenta ha sido modificada con éxito.</p>
       </div>
       <div style="text-align:center;margin:22px 0 26px;">
-        <a href="${supportLink}/login" style="background:${colors.flameGradient};color:#FFFFFF;padding:15px 36px;border-radius:12px;font-size:15px;font-weight:700;text-decoration:none;display:inline-block;box-shadow:0 6px 18px -2px rgba(220, 38, 38, 0.35);">Ir al Portal Chazin Food</a>
+        <a href="${supportLink}" style="background:${colors.flameGradient};color:#FFFFFF;padding:15px 36px;border-radius:12px;font-size:15px;font-weight:700;text-decoration:none;display:inline-block;box-shadow:0 6px 18px -2px rgba(220, 38, 38, 0.35);">Iniciar Sesión en Chazin Food</a>
       </div>
-    `, 'Seguridad y Notificaciones');
+      <div style="background-color:${colors.crimsonLight};border:1px solid ${colors.crimsonBorder};border-radius:10px;padding:12px 14px;">
+        <p style="color:${colors.crimson};font-size:12px;line-height:1.5;margin:0;"><strong>¿No reconoces esta actividad?</strong> Si no realizaste este cambio, comunícate de inmediato con nosotros por <a href="${WHATSAPP_SECURITY_URL}" style="color:${colors.crimson};font-weight:700;">WhatsApp</a> para proteger tu cuenta.</p>
+      </div>
+    `, 'Seguridad y Notificaciones', baseUrl);
   }
 }
 
@@ -230,7 +248,8 @@ async function renderUserUpdatedEmail(props) {
     return await render(e(UserUpdatedEmail, props));
   } catch (err) {
     console.warn('Fallback a plantilla estática para UserUpdatedEmail:', err.message);
-    const { nombre = 'Usuario', apellidos = '', modifiedFields = 'Perfil actualizado', portalLink = 'http://localhost:5173/perfil', camposPendientes = [] } = props;
+    const baseUrl = normalizeEmailBaseUrl(props?.frontendUrl);
+    const { nombre = 'Usuario', apellidos = '', modifiedFields = 'Perfil actualizado', portalLink = `${baseUrl}/perfil`, editProfileLink = `${baseUrl}/perfil?tab=editar`, camposPendientes = [] } = props;
     const fullName = `${nombre} ${apellidos}`.trim() || 'Usuario';
     const pendingHtml = Array.isArray(camposPendientes) && camposPendientes.length > 0
       ? `
@@ -241,7 +260,7 @@ async function renderUserUpdatedEmail(props) {
             ${camposPendientes.map(c => `<li style="margin-bottom:4px;font-weight:600;">${c}</li>`).join('')}
           </ul>
           <div style="text-align:center;">
-            <a href="${portalLink}" style="display:inline-block;background-color:#F59E0B;color:#FFFFFF;padding:9px 20px;border-radius:8px;font-size:12.5px;font-weight:700;text-decoration:none;">Completar datos pendientes</a>
+            <a href="${editProfileLink}" style="display:inline-block;background-color:#F59E0B;color:#FFFFFF;padding:9px 20px;border-radius:8px;font-size:12.5px;font-weight:700;text-decoration:none;">Completar datos pendientes</a>
           </div>
         </div>
       `
@@ -254,9 +273,12 @@ async function renderUserUpdatedEmail(props) {
       </div>
       ${pendingHtml}
       <div style="text-align:center;margin:22px 0 26px;">
-        <a href="${portalLink}" style="background:${colors.flameGradient};color:#FFFFFF;padding:15px 36px;border-radius:12px;font-size:15px;font-weight:700;text-decoration:none;display:inline-block;box-shadow:0 6px 18px -2px rgba(220, 38, 38, 0.35);">Ver Mi Perfil</a>
+        <a href="${portalLink}" style="background:${colors.flameGradient};color:#FFFFFF;padding:15px 36px;border-radius:12px;font-size:15px;font-weight:700;text-decoration:none;display:inline-block;box-shadow:0 6px 18px -2px rgba(220, 38, 38, 0.35);">Ver Mi Perfil en Chazin Food</a>
       </div>
-    `, 'Actualización de Perfil');
+      <div style="background-color:${colors.cardSubtle};border:1px solid ${colors.borderLight};border-radius:10px;padding:12px 14px;">
+        <p style="color:${colors.textMuted};font-size:12px;line-height:1.5;margin:0;"><strong>Protección de datos:</strong> Si no autorizaste esta modificación, ingresa inmediatamente a <a href="${portalLink}" style="color:${colors.crimson};font-weight:600;">tu perfil</a> o comunícate con nosotros por <a href="${WHATSAPP_SECURITY_URL}" style="color:${colors.emeraldText};font-weight:700;">WhatsApp</a> para verificar la seguridad de tu cuenta.</p>
+      </div>
+    `, 'Actualización de Perfil', baseUrl);
   }
 }
 

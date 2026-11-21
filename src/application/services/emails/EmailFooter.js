@@ -1,13 +1,13 @@
 const React = require('react');
 const { Section, Text, Link, Hr } = require('@react-email/components');
-const { colors } = require('./EmailStyles');
+const { colors, WHATSAPP_SUPPORT_URL, normalizeEmailBaseUrl } = require('./EmailStyles');
 const { getColombiaYear } = require('../../../infrastructure/utils/colombiaDateUtils');
 
 const e = React.createElement;
 
-function EmailFooter() {
+function EmailFooter({ frontendUrl = '' } = {}) {
   const currentYear = getColombiaYear();
-  const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+  const baseUrl = normalizeEmailBaseUrl(frontendUrl);
 
   return e(
     Section,
@@ -28,7 +28,7 @@ function EmailFooter() {
       e(
         Link,
         {
-          href: frontendUrl,
+          href: `${baseUrl}/menu`,
           style: {
             backgroundColor: '#FFFFFF',
             border: `1px solid ${colors.borderLight}`,
@@ -47,7 +47,7 @@ function EmailFooter() {
       e(
         Link,
         {
-          href: `${frontendUrl}/login`,
+          href: `${baseUrl}/perfil`,
           style: {
             backgroundColor: '#FFFFFF',
             border: `1px solid ${colors.borderLight}`,
@@ -66,7 +66,7 @@ function EmailFooter() {
       e(
         Link,
         {
-          href: 'https://wa.me/573192028562',
+          href: WHATSAPP_SUPPORT_URL,
           style: {
             backgroundColor: '#FFFFFF',
             border: `1px solid ${colors.borderLight}`,

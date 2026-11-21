@@ -404,8 +404,9 @@ class ClienteService {
       if (data.email && data.email.trim()) {
         try {
           const activationToken = AuthService.generateActivationToken(user);
-          const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+          const frontendUrl = EmailService.resolveFrontendUrl();
           const activationLink = `${frontendUrl}/activar-cuenta?token=${encodeURIComponent(activationToken)}`;
+          const userPlain = typeof user.toJSON === 'function' ? user.toJSON() : { ...user };
 
           await EmailService.sendActivationEmail({
             email: userEmail,
@@ -413,7 +414,7 @@ class ClienteService {
             apellidos: cleanApe,
             password: '', // Sin contraseña en texto claro
             activationLink,
-            usuario: user
+            usuario: { ...userPlain, direccion: String(data.direccion || '').trim() }
           });
         } catch (mailErr) {
           console.error('Error enviando correo de activación:', mailErr.message);
@@ -565,6 +566,17 @@ class ClienteService {
     await c.save();
 
     if (c.usuario) {
+      // Snapshot previo para reportar estrictamente los campos que cambiaron realmente
+      const prevCliSnapshot = {
+        nombre: String(c.usuario.nombre || '').trim(),
+        apellidos: String(c.usuario.apellidos || '').trim(),
+        email: String(c.usuario.email || '').trim().toLowerCase(),
+        telefono: String(c.usuario.telefono || '').trim(),
+        estado: String(c.usuario.estado || '').trim().toUpperCase(),
+        direccion: String(existingMeta.direccion || '').trim(),
+        tipo: String(existingMeta.tipo || 'Nuevo').trim()
+      };
+
       const nameChanged = data.nombre !== undefined || data.apellidos !== undefined;
       if (nameChanged) {
         const newFullName = formatNombreCompleto(cleanNom, cleanApe).toLowerCase();
@@ -611,15 +623,27 @@ class ClienteService {
       }
       await c.usuario.save();
 
-      // Send update notification email
+      // Send update notification email solo con los campos realmente modificados
       if (data.notificarEmail !== false) {
-        EmailService.sendUserUpdatedEmail({
-          email: c.usuario.email,
-          nombre: c.usuario.nombre,
-          apellidos: c.usuario.apellidos,
-          modifiedFields: nameChanged ? 'Nombre / Apellidos' : 'Información de cuenta',
-          usuario: c.usuario
-        }).catch(err => console.error('Background email notification error in cliente update:', err.message));
+        const modifiedList = [];
+        if (String(c.usuario.nombre || '').trim() !== prevCliSnapshot.nombre) modifiedList.push('Nombre');
+        if (String(c.usuario.apellidos || '').trim() !== prevCliSnapshot.apellidos) modifiedList.push('Apellidos');
+        if (String(c.usuario.telefono || '').trim() !== prevCliSnapshot.telefono) modifiedList.push('Teléfono');
+        if (String(c.usuario.email || '').trim().toLowerCase() !== prevCliSnapshot.email) modifiedList.push('Correo Electrónico');
+        if (String(newDireccionStr || '').trim() !== prevCliSnapshot.direccion) modifiedList.push('Dirección');
+        if (String(c.usuario.estado || '').trim().toUpperCase() !== prevCliSnapshot.estado) modifiedList.push('Estado de Cuenta');
+        if (String(newTipo || 'Nuevo').trim() !== prevCliSnapshot.tipo) modifiedList.push('Nivel de Fidelidad');
+
+        if (modifiedList.length > 0) {
+          const userPlain = typeof c.usuario.toJSON === 'function' ? c.usuario.toJSON() : { ...c.usuario };
+          EmailService.sendUserUpdatedEmail({
+            email: c.usuario.email,
+            nombre: c.usuario.nombre,
+            apellidos: c.usuario.apellidos,
+            modifiedFields: modifiedList.join(', '),
+            usuario: { ...userPlain, direccion: String(newDireccionStr || '').trim() }
+          }).catch(err => console.error('Background email notification error in cliente update:', err.message));
+        }
       }
     }
 

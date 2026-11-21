@@ -13,15 +13,18 @@ const {
 } = require('@react-email/components');
 const EmailHeader = require('./EmailHeader');
 const EmailFooter = require('./EmailFooter');
-const { colors, commonStyles } = require('./EmailStyles');
+const { colors, commonStyles, WHATSAPP_SECURITY_URL, normalizeEmailBaseUrl } = require('./EmailStyles');
 
 const e = React.createElement;
 
 function PasswordResetEmail({
   nombre = 'Usuario',
   apellidos = '',
-  resetLink = 'http://localhost:5173/login'
+  resetLink = '',
+  frontendUrl = ''
 }) {
+  const baseUrl = normalizeEmailBaseUrl(frontendUrl);
+  const resolvedResetLink = resetLink || `${baseUrl}/login`;
   const fullName = `${nombre} ${apellidos}`.trim() || 'Usuario';
 
   return e(
@@ -113,7 +116,7 @@ function PasswordResetEmail({
             e(
               Button,
               {
-                href: resetLink,
+                href: resolvedResetLink,
                 style: commonStyles.ctaButton
               },
               'Restablecer Mi Contraseña'
@@ -157,7 +160,7 @@ function PasswordResetEmail({
               e(
                 Link,
                 {
-                  href: resetLink,
+                  href: resolvedResetLink,
                   style: {
                     color: colors.crimson,
                     fontSize: '11px',
@@ -165,7 +168,7 @@ function PasswordResetEmail({
                     textDecoration: 'none'
                   }
                 },
-                resetLink
+                resolvedResetLink
               )
             )
           ),
@@ -191,11 +194,20 @@ function PasswordResetEmail({
                 }
               },
               e('strong', null, '¿No reconoces esta solicitud? '),
-              'Puedes descartar este mensaje. Tu contraseña actual permanecerá intacta y nadie podrá acceder a tu cuenta.'
+              'Puedes descartar este mensaje. Tu contraseña actual permanecerá intacta y nadie podrá acceder a tu cuenta. Si necesitas ayuda, escríbenos por ',
+              e(
+                Link,
+                {
+                  href: WHATSAPP_SECURITY_URL,
+                  style: { color: colors.emeraldText, fontWeight: '700', textDecoration: 'underline' }
+                },
+                'WhatsApp'
+              ),
+              '.'
             )
           )
         ),
-        e(EmailFooter)
+        e(EmailFooter, { frontendUrl: baseUrl })
       )
     )
   );

@@ -243,9 +243,9 @@ class UserService {
       fechaRegistro: new Date()
     });
 
+    const cleanCreatedDir = direccion ? getCleanDireccion(direccion) : '';
     if (direccion) {
-      const cleanDir = getCleanDireccion(direccion);
-      const metaStr = JSON.stringify({ direccion: cleanDir, tipo: 'Nuevo', descuentoPorcentaje: 0, nombre: cleanNom, apellidos: cleanApe, telefono: cleanTel });
+      const metaStr = JSON.stringify({ direccion: cleanCreatedDir, tipo: 'Nuevo', descuentoPorcentaje: 0, nombre: cleanNom, apellidos: cleanApe, telefono: cleanTel });
       await Cliente.create({
         idUsuario: user.idUsuario,
         direccion: metaStr
@@ -254,11 +254,12 @@ class UserService {
 
     // Send welcome email if requested (sin contraseña en texto plano)
     if (userData.enviarCorreoBienvenida || userData.notificarEmail) {
+      const userPlain = typeof user.toJSON === 'function' ? user.toJSON() : { ...user };
       EmailService.sendWelcomeEmail({
         email: user.email,
         nombre: user.nombre,
         apellidos: user.apellidos,
-        usuario: user
+        usuario: { ...userPlain, direccion: cleanCreatedDir }
       }).catch(err => console.error('Background welcome email error:', err.message));
     }
 
@@ -273,9 +274,23 @@ class UserService {
       throw error;
     }
 
+    // Capturar snapshot exacto ANTES de aplicar cambios para notificar SOLO los campos realmente modificados
+    const existingCliente = await Cliente.findOne({ where: { idUsuario: id } }).catch(() => null);
+    const prevSnapshot = {
+      nombre: String(user.nombre || '').trim(),
+      apellidos: String(user.apellidos || '').trim(),
+      email: String(user.email || '').trim().toLowerCase(),
+      tipoDocumento: String(user.tipoDocumento || '').trim(),
+      numeroDocumento: String(user.numeroDocumento || '').trim(),
+      telefono: String(user.telefono || '').trim(),
+      idRol: Number(user.idRol),
+      estado: String(user.estado || '').trim().toUpperCase(),
+      foto: String(user.foto || '').trim(),
+      direccion: existingCliente ? getCleanDireccion(existingCliente.direccion || '') : ''
+    };
+
     const { nombre, apellidos, apellido, email, correo, contrasena, contraseña, password, idRol, rol_id, tipoDocumento, documento, numeroDocumento, telefono, direccion, estado, foto, avatar } = userData;
-    const isPasswordOnly = Boolean((contrasena || contraseña || password) && !nombre && !email && !correo && !telefono && !idRol && !estado);
-    
+
     // 1. Name & Uniqueness Check (ignoring current user)
     if (nombre !== undefined || apellidos !== undefined || apellido !== undefined) {
       const rawNom = nombre !== undefined ? nombre : user.nombre;
@@ -374,13 +389,15 @@ class UserService {
 
     await user.save();
 
-    if (passwordUpdated || user.idRol !== prevRol || user.estado !== prevEstado) {
+    if (passwordUpdated || Number(user.idRol) !== Number(prevRol) || String(user.estado || '').toUpperCase() !== String(prevEstado || '').toUpperCase()) {
       revokeAllUserTokens(id);
     }
 
+    let currentDireccion = prevSnapshot.direccion;
     if (direccion !== undefined || foto !== undefined || avatar !== undefined) {
       const cleanDir = direccion !== undefined ? getCleanDireccion(direccion) : undefined;
-      let cliente = await Cliente.findOne({ where: { idUsuario: id } });
+      if (cleanDir !== undefined) currentDireccion = cleanDir;
+      let cliente = existingCliente;
       if (cliente) {
         let meta = {};
         if (cliente.direccion && cliente.direccion.trim().startsWith('{')) {
@@ -394,7 +411,7 @@ class UserService {
         if (user.foto !== undefined) meta.foto = user.foto;
         cliente.direccion = JSON.stringify(meta);
         await cliente.save();
-      } else {
+      } else if (cleanDir || Number(user.idRol) === 4) {
         const metaStr = JSON.stringify({
           direccion: cleanDir || '',
           tipo: 'Nuevo',
@@ -411,10 +428,7 @@ class UserService {
 
     // Send notification email unless explicitly set to false
     if (userData.notificarEmail !== false && userData.notificarEmail !== 0) {
-      const finalNewPassword = contrasena || contraseña || password;
-      const isPasswordChanged = Boolean(finalNewPassword);
-
-      if (isPasswordChanged) {
+      if (passwordUpdated) {
         EmailService.sendPasswordChangedEmail({
           email: user.email,
           nombre: user.nombre,
@@ -422,25 +436,27 @@ class UserService {
         }).catch(err => console.error('Background password email error:', err.message));
       }
 
-      // Detect modified profile fields
+      // Comparar valores reales ANTES vs DESPUÉS para reportar estrictamente los campos modificados
       const modifiedList = [];
-      if (userData.nombre !== undefined) modifiedList.push('Nombre');
-      if (userData.apellidos !== undefined || userData.apellido !== undefined) modifiedList.push('Apellidos');
-      if (userData.telefono !== undefined) modifiedList.push('Teléfono');
-      if (userData.email !== undefined || userData.correo !== undefined) modifiedList.push('Correo Electrónico');
-      if (userData.numeroDocumento !== undefined || userData.documento !== undefined) modifiedList.push('Número de Documento');
-      if (userData.idRol !== undefined || userData.rol_id !== undefined) modifiedList.push('Rol de Usuario');
-      if (userData.estado !== undefined) modifiedList.push('Estado de Cuenta');
-      if (userData.direccion !== undefined) modifiedList.push('Dirección');
-      if (userData.foto !== undefined || userData.avatar !== undefined) modifiedList.push('Foto de Perfil');
+      if (String(user.nombre || '').trim() !== prevSnapshot.nombre) modifiedList.push('Nombre');
+      if (String(user.apellidos || '').trim() !== prevSnapshot.apellidos) modifiedList.push('Apellidos');
+      if (String(user.telefono || '').trim() !== prevSnapshot.telefono) modifiedList.push('Teléfono');
+      if (String(user.email || '').trim().toLowerCase() !== prevSnapshot.email) modifiedList.push('Correo Electrónico');
+      if (String(user.tipoDocumento || '').trim() !== prevSnapshot.tipoDocumento) modifiedList.push('Tipo de Documento');
+      if (String(user.numeroDocumento || '').trim() !== prevSnapshot.numeroDocumento) modifiedList.push('Número de Documento');
+      if (Number(user.idRol) !== prevSnapshot.idRol) modifiedList.push('Rol de Usuario');
+      if (String(user.estado || '').trim().toUpperCase() !== prevSnapshot.estado) modifiedList.push('Estado de Cuenta');
+      if (String(currentDireccion || '').trim() !== prevSnapshot.direccion) modifiedList.push('Dirección');
+      if (String(user.foto || '').trim() !== prevSnapshot.foto) modifiedList.push('Foto de Perfil');
 
-      if (modifiedList.length > 0 && !isPasswordOnly) {
+      if (modifiedList.length > 0) {
+        const userPlain = typeof user.toJSON === 'function' ? user.toJSON() : { ...user };
         EmailService.sendUserUpdatedEmail({
           email: user.email,
           nombre: user.nombre,
           apellidos: user.apellidos,
           modifiedFields: modifiedList.join(', '),
-          usuario: user
+          usuario: { ...userPlain, direccion: currentDireccion }
         }).catch(err => console.error('Background user update email error:', err.message));
       }
     }
