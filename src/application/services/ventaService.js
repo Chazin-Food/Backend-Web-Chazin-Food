@@ -666,7 +666,9 @@ class VentaService {
       responsable,
       clienteFidelidad: {
         tipo: isMostradorSale ? null : fidelidadInfo.tipo,
-        descuentoPorcentaje: isMostradorSale ? 0 : (fidelidadInfo.descuentoPorcentaje || 0),
+        descuentoPorcentaje: isMostradorSale
+          ? 0
+          : Math.max(Number(fidelidadInfo.descuentoPorcentaje || 0), Number(fidelidadInfo.descuentoNivel || 0)),
         comprasCiclo: isMostradorSale ? 0 : (fidelidadInfo.comprasCiclo || 0),
         enGracia: isMostradorSale ? false : !!fidelidadInfo.enGracia,
         tieneCuenta: !isMostradorSale && !!clienteObj.idUsuario

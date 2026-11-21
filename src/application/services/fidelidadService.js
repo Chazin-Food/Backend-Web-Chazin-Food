@@ -18,6 +18,14 @@ function resolveTierLabel(comprasTotales = 0) {
   return 'Nuevo';
 }
 
+function resolveTierDiscount(tipo = 'Nuevo') {
+  const t = String(tipo || 'Nuevo').toLowerCase();
+  if (t.includes('vip')) return 15;
+  if (t.includes('frecuente')) return 10;
+  if (t.includes('regular')) return 5;
+  return 0;
+}
+
 class FidelidadService {
   /**
    * Evalúa el estado actual de fidelidad de un cliente según la regla oficial (15% tras cada 3 compras).
@@ -63,12 +71,14 @@ class FidelidadService {
       : Math.min(100, Math.round((comprasCiclo / COMPRAS_PARA_BENEFICIO) * 100));
 
     const tipo = descuentoDisponible ? 'VIP' : resolveTierLabel(comprasTotales);
+    const descuentoNivel = resolveTierDiscount(tipo);
 
     return {
       tipo,
       nivelHistorial: resolveTierLabel(comprasTotales),
       descuentoDisponible,
       descuentoPorcentaje,
+      descuentoNivel,
       comprasCiclo,
       comprasTotales,
       comprasFaltantes,
@@ -118,11 +128,15 @@ class FidelidadService {
       ? 100
       : Math.round((comprasCiclo / COMPRAS_PARA_BENEFICIO) * 100);
 
+    const tipoNuevo = descuentoDisponible ? 'VIP' : resolveTierLabel(comprasTotales);
+    const descuentoNivel = resolveTierDiscount(tipoNuevo);
+
     return {
-      tipo: descuentoDisponible ? 'VIP' : resolveTierLabel(comprasTotales),
+      tipo: tipoNuevo,
       nivelHistorial: resolveTierLabel(comprasTotales),
       descuentoDisponible,
       descuentoPorcentaje,
+      descuentoNivel,
       comprasCiclo,
       comprasTotales,
       comprasFaltantes,

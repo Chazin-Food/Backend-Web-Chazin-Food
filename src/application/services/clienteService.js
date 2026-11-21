@@ -135,7 +135,10 @@ class ClienteService {
 
       fidelidadEvaluada = FidelidadService.evaluarEstadoFidelidad(fidelidadActual, comprasCount);
       tipo = fidelidadEvaluada.tipo;
-      descuentoPorcentaje = fidelidadEvaluada.descuentoPorcentaje;
+      descuentoPorcentaje = Math.max(
+        Number(fidelidadEvaluada.descuentoPorcentaje || 0),
+        Number(fidelidadEvaluada.descuentoNivel || 0)
+      );
     }
 
     // Determine state: if user account linked and not active, client state is Inactivo or Pendiente

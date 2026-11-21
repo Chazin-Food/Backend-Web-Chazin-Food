@@ -1,6 +1,6 @@
 const { Devolucion, Venta, DetalleVentaProducto, Variante, Product, Cliente, User, sequelize } = require('../../persistence/models');
 const TrazabilidadService = require('./trazabilidadService');
-const { ensureDevolucionSchema } = require('../../infrastructure/utils/dbUtils');
+const { ensureDevolucionSchema, ensureValidationPendingDevolucionOnce } = require('../../infrastructure/utils/dbUtils');
 
 let _devolucionSchemaPromise = null;
 function ensureDevolucionSchemaReady() {
@@ -346,6 +346,7 @@ class DevolucionService {
 
   static async getAll(filters = {}) {
     await ensureDevolucionSchemaReady();
+    await ensureValidationPendingDevolucionOnce();
     const where = {};
     if (filters.estado && filters.estado !== 'TODOS') {
       where.estado = filters.estado;
@@ -496,6 +497,7 @@ class DevolucionService {
 
   static async getStats() {
     await ensureDevolucionSchemaReady();
+    await ensureValidationPendingDevolucionOnce();
     const devoluciones = await Devolucion.findAll({
       attributes: ['estado', 'valorDevuelto']
     });

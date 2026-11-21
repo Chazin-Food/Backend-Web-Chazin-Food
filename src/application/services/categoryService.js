@@ -1,8 +1,10 @@
 const { fn, col } = require('sequelize');
 const { CategoriaInsumo, Insumo } = require('../../persistence/models');
+const { ensureZanahoriaInsumoRealOnce } = require('../../infrastructure/utils/dbUtils');
 
 class CategoryService {
   static async getAllCategories() {
+    await ensureZanahoriaInsumoRealOnce();
     const [categories, conteos] = await Promise.all([
       CategoriaInsumo.findAll(),
       Insumo.findAll({

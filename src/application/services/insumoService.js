@@ -2,6 +2,7 @@ const { Op } = require('sequelize');
 const { Insumo, CategoriaInsumo, Proveedor, FichaTecnica, DetalleFichaInsumo, Trazabilidad, DetalleInsumoPreparadoInsumo, LoteInsumo, DetalleCompraInsumo } = require('../../persistence/models');
 const database = require('../../persistence/config/db');
 const { parsePaginationParams, buildPaginatedResponse } = require('../../infrastructure/utils/paginationUtils');
+const { ensureZanahoriaInsumoRealOnce } = require('../../infrastructure/utils/dbUtils');
 const {
   getColombiaDateISO,
   extractDateOnlyISO,
@@ -227,6 +228,7 @@ class InsumoService {
   }
 
   static async getAll(filterObj = {}) {
+    await ensureZanahoriaInsumoRealOnce();
     const nowTs = Date.now();
     if (!this._lastVencimientoCheckAt || nowTs - this._lastVencimientoCheckAt >= 3 * 60 * 1000) {
       await this.checkVencimientos();

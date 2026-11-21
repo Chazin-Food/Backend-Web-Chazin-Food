@@ -1,6 +1,10 @@
 const { Venta, Insumo, Cliente, User, Product, Compra, Resena, DetalleVentaProducto, Variante, Devolucion, sequelize } = require('../../persistence/models');
 const { Op } = require('sequelize');
-const { ensureDevolucionSchema } = require('../../infrastructure/utils/dbUtils');
+const {
+  ensureDevolucionSchema,
+  ensureZanahoriaInsumoRealOnce,
+  ensureValidationPendingDevolucionOnce
+} = require('../../infrastructure/utils/dbUtils');
 
 let _devolucionSchemaReadyPromise = null;
 function ensureDevolucionSchemaOnce() {
@@ -702,6 +706,7 @@ class DashboardService {
 
   static async getAlertasStock() {
     try {
+      await ensureZanahoriaInsumoRealOnce();
       const insumosBajoStock = await Insumo.findAll({
         where: {
           estado: 1,
@@ -888,6 +893,7 @@ class DashboardService {
   static async getDevolucionesPendientes() {
     try {
       await ensureDevolucionSchemaOnce();
+      await ensureValidationPendingDevolucionOnce();
       const rows = await Devolucion.findAll({
         where: {
           estado: { [Op.like]: '%PENDIENTE%' }

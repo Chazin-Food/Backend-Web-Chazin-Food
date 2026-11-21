@@ -1312,6 +1312,240 @@ async function ensureVarianteEventoSchemaOnce() {
   return _varianteEventoSchemaPromise;
 }
 
+let _zanahoriaFixPromise = null;
+
+/**
+ * Reemplaza de forma idempotente el insumo de prueba "jafet" (y su categoría de prueba "jafet")
+ * por el insumo real "Zanahoria Fresca" con precio y stock realistas de Medellín, Colombia (COP).
+ */
+async function ensureZanahoriaInsumoReal() {
+  const sequelize = connectDB.sequelize;
+  try {
+    const [jafetInsumos] = await sequelize.query(
+      "SELECT `idInsumo`, `idCategoriaInsumo` FROM `insumo` WHERE LOWER(TRIM(`nombre`)) = 'jafet'"
+    );
+    const [jafetCats] = await sequelize.query(
+      "SELECT `idCategoriaInsumo`, `nombre` FROM `categoriainsumo` WHERE LOWER(TRIM(`nombre`)) = 'jafet'"
+    );
+
+    if ((!jafetInsumos || jafetInsumos.length === 0) && (!jafetCats || jafetCats.length === 0)) {
+      return false;
+    }
+
+    // Buscar una categoría real de verduras/vegetales existente (excluyendo "jafet")
+    const [vegCats] = await sequelize.query(
+      "SELECT `idCategoriaInsumo`, `nombre` FROM `categoriainsumo` WHERE LOWER(TRIM(`nombre`)) <> 'jafet' AND (LOWER(`nombre`) LIKE '%verdur%' OR LOWER(`nombre`) LIKE '%vegetal%' OR LOWER(`nombre`) LIKE '%hortal%') ORDER BY `idCategoriaInsumo` ASC LIMIT 1"
+    );
+
+    let targetCatId = vegCats && vegCats[0] ? Number(vegCats[0].idCategoriaInsumo) : null;
+
+    if (jafetCats && jafetCats.length > 0) {
+      const jafetCatIds = jafetCats.map((c) => Number(c.idCategoriaInsumo));
+      if (targetCatId) {
+        for (const oldCatId of jafetCatIds) {
+          await sequelize.query(
+            'UPDATE `insumo` SET `idCategoriaInsumo` = ? WHERE `idCategoriaInsumo` = ?',
+            { replacements: [targetCatId, oldCatId] }
+          );
+          await sequelize.query(
+            'DELETE FROM `categoriainsumo` WHERE `idCategoriaInsumo` = ?',
+            { replacements: [oldCatId] }
+          ).catch(async () => {
+            await sequelize.query(
+              "UPDATE `categoriainsumo` SET `nombre` = 'Verduras y Vegetales', `descripcion` = 'Verduras, vegetales y hortalizas frescas para cocina', `estado` = 1 WHERE `idCategoriaInsumo` = ?",
+              { replacements: [oldCatId] }
+            );
+          });
+        }
+      } else {
+        targetCatId = jafetCatIds[0];
+        await sequelize.query(
+          "UPDATE `categoriainsumo` SET `nombre` = 'Verduras y Vegetales', `descripcion` = 'Verduras, vegetales y hortalizas frescas para cocina', `estado` = 1 WHERE `idCategoriaInsumo` = ?",
+          { replacements: [targetCatId] }
+        );
+      }
+    }
+
+    if (jafetInsumos && jafetInsumos.length > 0) {
+      for (const row of jafetInsumos) {
+        const catToUse = targetCatId || row.idCategoriaInsumo;
+        await sequelize.query(
+          `UPDATE \`insumo\`
+           SET \`nombre\` = 'Zanahoria Fresca',
+               \`unidadMedida\` = 'Kg',
+               \`precioUnitario\` = 3200,
+               \`stock\` = 4,
+               \`stockMinimo\` = 5,
+               \`stockMaximo\` = 25,
+               \`descripcion\` = 'Zanahoria fresca seleccionada de primera calidad para cocina y ensaladas (Medellín, COP)',
+               \`estado\` = 1,
+               \`idCategoriaInsumo\` = ?
+           WHERE \`idInsumo\` = ?`,
+          { replacements: [catToUse, row.idInsumo] }
+        );
+      }
+      console.log('[DB] ✅ Insumo de prueba "jafet" reemplazado por "Zanahoria Fresca" ($3.200 COP / Kg).');
+      return true;
+    }
+
+    return true;
+  } catch (err) {
+    console.warn('[DB Migration] ⚠️ Error reemplazando insumo jafet por Zanahoria Fresca:', err.message);
+    return false;
+  }
+}
+
+function ensureZanahoriaInsumoRealOnce() {
+  if (!_zanahoriaFixPromise) {
+    _zanahoriaFixPromise = ensureZanahoriaInsumoReal().catch(() => {
+      _zanahoriaFixPromise = null;
+      return false;
+    });
+  }
+  return _zanahoriaFixPromise;
+}
+
+let _seedPendingDevPromise = null;
+const SEED_DEVOLUCION_KEY = 'seed_validacion_devolucion_pendiente_v1';
+const SEED_DEVOLUCION_DESC = 'Solicitud pendiente de revisión: el cliente reportó diferencia en el producto recibido para validación en cocina.';
+
+/**
+ * Inserta UNA sola vez (idempotente vía `sistemamigracion`) una solicitud real de devolución
+ * en estado PENDIENTE si no existe ninguna pendiente todavía, para validar visibilidad condicional
+ * del apartado en Dashboard y su desaparición automática al aprobarla o rechazarla.
+ */
+async function ensureValidationPendingDevolucionOnce() {
+  if (!_seedPendingDevPromise) {
+    _seedPendingDevPromise = (async () => {
+      const sequelize = connectDB.sequelize;
+      try {
+        await sequelize.query(
+          'CREATE TABLE IF NOT EXISTS `sistemamigracion` (`clave` VARCHAR(100) NOT NULL PRIMARY KEY, `fechaAplicacion` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP)'
+        ).catch(() => {});
+
+        const [migRows] = await sequelize.query(
+          'SELECT `clave` FROM `sistemamigracion` WHERE `clave` = ? LIMIT 1',
+          { replacements: [SEED_DEVOLUCION_KEY] }
+        ).catch(() => [[]]);
+
+        if (migRows && migRows.length > 0) {
+          return false;
+        }
+
+        // Doble protección: si ya existe una devolución con la descripción de validación en cualquier estado
+        // o si ya hay devoluciones pendientes activas, marcar la migración y no duplicar.
+        const [existingCheck] = await sequelize.query(
+          "SELECT `idDevolucion` FROM `devolucion` WHERE UPPER(`estado`) LIKE '%PENDIENTE%' OR `descripcion` = ? LIMIT 1",
+          { replacements: [SEED_DEVOLUCION_DESC] }
+        ).catch(() => [[]]);
+
+        if (existingCheck && existingCheck.length > 0) {
+          await sequelize.query(
+            'INSERT IGNORE INTO `sistemamigracion` (`clave`) VALUES (?)',
+            { replacements: [SEED_DEVOLUCION_KEY] }
+          ).catch(() => {});
+          return false;
+        }
+
+        // Buscar la venta real más reciente entregada/aprobada que aún no tenga devolución registrada
+        const [ventas] = await sequelize.query(`
+          SELECT v.idVenta, v.idCliente, v.total
+          FROM venta v
+          LEFT JOIN devolucion d ON d.idVenta = v.idVenta
+          WHERE d.idDevolucion IS NULL
+            AND (v.estadoEntrega IS NULL OR UPPER(v.estadoEntrega) <> 'CANCELADO')
+            AND (v.estadoAprobacion IS NULL OR UPPER(v.estadoAprobacion) <> 'RECHAZADO')
+            AND (v.observaciones IS NULL OR v.observaciones NOT LIKE '%"esDevolucion":true%')
+          ORDER BY CASE
+            WHEN UPPER(COALESCE(v.estadoEntrega, '')) IN ('ENTREGADO', 'LISTO', 'DESPACHADO', 'COMPLETADO', 'COMPLETADA') THEN 0
+            ELSE 1
+          END ASC, v.idVenta DESC
+          LIMIT 1
+        `).catch(() => [[]]);
+
+        if (!ventas || ventas.length === 0) {
+          return false;
+        }
+
+        const targetVenta = ventas[0];
+
+        // Extraer el primer producto real de la venta
+        const [detalles] = await sequelize.query(`
+          SELECT dv.idVariante, dv.cantidad, dv.precioUnitario, dv.subtotal, dv.observaciones,
+                 p.nombre AS productoNombre, var.nombre AS varianteNombre
+          FROM detalleventaproducto dv
+          LEFT JOIN variante var ON dv.idVariante = var.idVariante
+          LEFT JOIN producto p ON var.idProducto = p.idProducto
+          WHERE dv.idVenta = ?
+          ORDER BY dv.idDetalleVenta ASC
+          LIMIT 1
+        `, { replacements: [targetVenta.idVenta] }).catch(() => [[]]);
+
+        let productosArr = [];
+        let valorDev = Number(targetVenta.total || 0);
+        if (detalles && detalles.length > 0) {
+          const det = detalles[0];
+          const prodNom =
+            det.productoNombre && !String(det.productoNombre).startsWith('__SISTEMA')
+              ? det.productoNombre
+              : (det.varianteNombre && !String(det.varianteNombre).startsWith('__SISTEMA')
+                  ? det.varianteNombre
+                  : 'Hamburguesa Clásica Chazin');
+          const unitPrice = Number(det.precioUnitario || det.subtotal || targetVenta.total || 18000);
+          valorDev = unitPrice;
+          productosArr = [
+            {
+              idVariante: det.idVariante || null,
+              nombre: prodNom,
+              cantidad: 1,
+              precioUnitario: unitPrice,
+              subtotal: unitPrice
+            }
+          ];
+        } else {
+          valorDev = valorDev > 0 ? valorDev : 18000;
+          productosArr = [
+            {
+              nombre: 'Pedido de Comida',
+              cantidad: 1,
+              precioUnitario: valorDev,
+              subtotal: valorDev
+            }
+          ];
+        }
+
+        await sequelize.query(
+          `INSERT INTO \`devolucion\`
+            (\`idVenta\`, \`idCliente\`, \`motivo\`, \`tipoResolucion\`, \`productosDevueltos\`, \`valorDevuelto\`, \`descripcion\`, \`fecha\`, \`estado\`, \`estadoReembolso\`)
+           VALUES (?, ?, 'Pedido incorrecto', 'Cambio de producto', ?, ?, ?, NOW(), 'PENDIENTE', 'PENDIENTE')`,
+          {
+            replacements: [
+              targetVenta.idVenta,
+              targetVenta.idCliente || null,
+              JSON.stringify(productosArr),
+              valorDev,
+              SEED_DEVOLUCION_DESC
+            ]
+          }
+        );
+
+        await sequelize.query(
+          'INSERT IGNORE INTO `sistemamigracion` (`clave`) VALUES (?)',
+          { replacements: [SEED_DEVOLUCION_KEY] }
+        ).catch(() => {});
+
+        console.log(`[DB] ✅ Solicitud pendiente de validación creada para Venta #${targetVenta.idVenta}.`);
+        return true;
+      } catch (err) {
+        console.warn('[DB Migration] ⚠️ No se pudo sembrar devolución pendiente de validación:', err.message);
+        _seedPendingDevPromise = null;
+        return false;
+      }
+    })();
+  }
+  return _seedPendingDevPromise;
+}
+
 module.exports = {
   resetAutoIncrement,
   resequenceTableIds,
@@ -1342,5 +1576,8 @@ module.exports = {
   ensurePreciosRealesInsumosYStock,
   ensureVarianteInsumoSchema,
   ensureVarianteEventoSchema,
-  ensureVarianteEventoSchemaOnce
+  ensureVarianteEventoSchemaOnce,
+  ensureZanahoriaInsumoReal,
+  ensureZanahoriaInsumoRealOnce,
+  ensureValidationPendingDevolucionOnce
 };

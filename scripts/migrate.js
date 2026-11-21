@@ -29,7 +29,9 @@ const {
   ensureInsumoIvaManualSchema,
   ensurePreciosRealesInsumosYStock,
   ensureVarianteInsumoSchema,
-  ensureVarianteEventoSchema
+  ensureVarianteEventoSchema,
+  ensureZanahoriaInsumoReal,
+  ensureValidationPendingDevolucionOnce
 } = require('../src/infrastructure/utils/dbUtils');
 const { ensureCatalogVariantsAndDrinkFichas } = require('../src/infrastructure/utils/catalogVariantsSync');
 
@@ -62,6 +64,8 @@ async function initializeDatabaseSchema() {
     await ensureDevolucionSchema();
     await ensureInsumoIvaManualSchema();
     await ensurePreciosRealesInsumosYStock();
+    await ensureZanahoriaInsumoReal();
+    await ensureValidationPendingDevolucionOnce();
     await ensureCatalogVariantsAndDrinkFichas();
     try {
       const [results] = await sequelize.query(
