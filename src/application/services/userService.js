@@ -394,7 +394,7 @@ class UserService {
     }
 
     let currentDireccion = prevSnapshot.direccion;
-    if (direccion !== undefined || foto !== undefined || avatar !== undefined) {
+    if (direccion !== undefined || foto !== undefined || avatar !== undefined || (Number(user.idRol) === 4 && !existingCliente)) {
       const cleanDir = direccion !== undefined ? getCleanDireccion(direccion) : undefined;
       if (cleanDir !== undefined) currentDireccion = cleanDir;
       let cliente = existingCliente;
