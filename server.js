@@ -62,9 +62,9 @@ const allowedOrigins = new Set([
     : [])
 ]);
 
-// Permitir únicamente URLs inmutables de despliegue del propio proyecto/equipo Vercel `chazin-food`
-// (cualquier otro *.vercel.app externo continúa bloqueado con 403 — AUD-019)
-const CHAZIN_VERCEL_TEAM_DEPLOY_RE = /^https:\/\/frontend-web-chazin-food-[a-z0-9]{6,20}-chazin-food\.vercel\.app$/i;
+// Permitir únicamente URLs del propio proyecto/equipo Vercel `chazin-food`
+// (alias de equipo, alias de rama git-main y despliegues inmutables; bloquea cualquier otro *.vercel.app externo — AUD-019)
+const CHAZIN_VERCEL_TEAM_DEPLOY_RE = /^https:\/\/frontend-web-chazin-food(?:-(?:[a-z0-9]{6,20}|git-[a-z0-9-]+))?-chazin-food\.vercel\.app$/i;
 
 const corsOptions = {
   origin: function (origin, callback) {
