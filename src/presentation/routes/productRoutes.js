@@ -15,8 +15,8 @@ const { protect, requirePrivilege } = require('../../infrastructure/middlewares/
 const { cacheResponse } = require('../../infrastructure/utils/apiCache');
 
 const cacheProductos = cacheResponse('productos', {
-  ttlMs: 30000,
-  cacheControl: 'public, max-age=15, stale-while-revalidate=30'
+  ttlMs: 60000,
+  cacheControl: 'public, max-age=30, stale-while-revalidate=60'
 });
 
 router.get('/papelera', protect, requirePrivilege('Productos', 'Ver'), getProductsPapelera);

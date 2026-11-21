@@ -1299,6 +1299,10 @@ async function ensureVarianteEventoSchema() {
  * Runs ensureVarianteEventoSchema once per server process (safe lazy guard for queries).
  */
 async function ensureVarianteEventoSchemaOnce() {
+  // En producción no se ejecutan DDL/SHOW COLUMNS en tiempo de petición (las migraciones corren vía `npm run migrate`)
+  if (process.env.NODE_ENV === 'production') {
+    return;
+  }
   if (!_varianteEventoSchemaPromise) {
     _varianteEventoSchemaPromise = ensureVarianteEventoSchema().catch((err) => {
       _varianteEventoSchemaPromise = null;

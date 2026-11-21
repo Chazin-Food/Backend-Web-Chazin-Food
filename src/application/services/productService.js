@@ -747,14 +747,17 @@ class ProductService {
 
   static async getProducts({ onlyActiveVariants = false } = {}) {
     await ensureVarianteEventoSchemaOnce();
-    if (!ProductService._catalogVariantsSyncTriggered) {
+    // Evitar bloqueo de ~20s en el primer GET /api/productos tras cold-start en producción:
+    // las migraciones/sync de variantes corren en scripts aparte (`npm run migrate`), no bloqueando lecturas HTTP.
+    if (process.env.NODE_ENV !== 'production' && !ProductService._catalogVariantsSyncTriggered) {
       ProductService._catalogVariantsSyncTriggered = true;
       const { ensureCatalogVariantsAndDrinkFichas } = require('../../infrastructure/utils/catalogVariantsSync');
       const { invalidateNamespaces } = require('../../infrastructure/utils/apiCache');
-      const changed = await ensureCatalogVariantsAndDrinkFichas().catch(() => false);
-      if (changed) {
-        invalidateNamespaces(['productos', 'fichas']);
-      }
+      ensureCatalogVariantsAndDrinkFichas()
+        .then((changed) => {
+          if (changed) invalidateNamespaces(['productos', 'fichas']);
+        })
+        .catch(() => {});
     }
     return this._queryFormattedProducts({ eliminado: 0, order: [['idProducto', 'ASC']], onlyActiveVariants });
   }
