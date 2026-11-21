@@ -937,7 +937,7 @@ class DashboardService {
         ],
         order: [['fecha', 'DESC'], ['idDevolucion', 'DESC']],
         limit: 20
-      }).catch(() => []);
+      });
 
       return (rows || []).map((row) => {
         const plain = typeof row.get === 'function' ? row.get({ plain: true }) : row;
