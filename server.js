@@ -62,13 +62,21 @@ const allowedOrigins = new Set([
     : [])
 ]);
 
+// Permitir únicamente URLs inmutables de despliegue del propio proyecto/equipo Vercel `chazin-food`
+// (cualquier otro *.vercel.app externo continúa bloqueado con 403 — AUD-019)
+const CHAZIN_VERCEL_TEAM_DEPLOY_RE = /^https:\/\/frontend-web-chazin-food-[a-z0-9]{6,20}-chazin-food\.vercel\.app$/i;
+
 const corsOptions = {
   origin: function (origin, callback) {
     // Permitir peticiones sin origen (webhooks, health checks o servidor a servidor)
     if (!origin) return callback(null, true);
     const normalized = String(origin).trim().replace(/\/+$/, '');
     const isLocalDev = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(normalized);
-    if (allowedOrigins.has(normalized) || (!isProduction && isLocalDev)) {
+    if (
+      allowedOrigins.has(normalized) ||
+      CHAZIN_VERCEL_TEAM_DEPLOY_RE.test(normalized) ||
+      (!isProduction && isLocalDev)
+    ) {
       return callback(null, true);
     }
     const corsErr = new Error(`Origen CORS no autorizado: ${origin}`);
