@@ -74,6 +74,7 @@ class ClienteService {
     let comprasCount = 0;
     let totalGastadoSum = 0;
     let ticketPromedioVal = 0;
+    let ultimaCompraFecha = null;
 
     try {
       const rawVentasDB = Array.isArray(preloadedVentas)
@@ -95,6 +96,15 @@ class ClienteService {
       comprasCount = ventasDB.length;
       totalGastadoSum = ventasDB.reduce((sum, v) => sum + Number(v.total || 0), 0);
       ticketPromedioVal = comprasCount > 0 ? Math.round(totalGastadoSum / comprasCount) : 0;
+
+      for (const v of ventasDB) {
+        if (v.fechaVenta) {
+          const dt = new Date(v.fechaVenta);
+          if (!Number.isNaN(dt.getTime()) && (!ultimaCompraFecha || dt.getTime() > ultimaCompraFecha.getTime())) {
+            ultimaCompraFecha = dt;
+          }
+        }
+      }
 
       transacciones = ventasDB.map(v => {
         let prodNombre = "Pedido de Comida";
@@ -154,7 +164,8 @@ class ClienteService {
         manualTipo: Boolean(meta.manualTipo),
         comprasTotales: comprasCount,
         inicio: meta.inicio || meta.fechaInicioNivel || null,
-        vence: meta.vence || meta.fechaVencimientoNivel || null
+        vence: meta.vence || meta.fechaVencimientoNivel || null,
+        ultimaCompraFecha: ultimaCompraFecha ? ultimaCompraFecha.toISOString() : null
       };
 
       fidelidadEvaluada = FidelidadService.evaluarEstadoFidelidad(fidelidadActual, comprasCount);
@@ -731,6 +742,7 @@ class ClienteService {
 
       // Recalcular estrictamente desde ventas reales aprobadas y no canceladas de este cliente
       let approvedPurchases = 0;
+      let latestApprovedDate = null;
       try {
         const { Venta } = require('../../persistence/models');
         const approvedRows = await Venta.findAll({
@@ -742,26 +754,42 @@ class ClienteService {
             estadoEntrega: { [Op.ne]: 'CANCELADO' },
             estadoAprobacion: 'APROBADO'
           },
-          attributes: ['idVenta', 'estadoEntrega', 'estadoAprobacion', 'observaciones']
+          attributes: ['idVenta', 'fechaVenta', 'estadoEntrega', 'estadoAprobacion', 'observaciones']
         });
-        approvedPurchases = approvedRows.filter(isApprovedClientPurchase).length;
+        const validRows = approvedRows.filter(isApprovedClientPurchase);
+        approvedPurchases = validRows.length;
+        for (const r of validRows) {
+          if (r.fechaVenta) {
+            const dt = new Date(r.fechaVenta);
+            if (!Number.isNaN(dt.getTime()) && (!latestApprovedDate || dt.getTime() > latestApprovedDate.getTime())) {
+              latestApprovedDate = dt;
+            }
+          }
+        }
       } catch (_) {}
 
+      const nowRef = latestApprovedDate || new Date();
       const fidelidadActual = {
         tipo: meta.tipo || 'Nuevo',
         manualTipo: Boolean(meta.manualTipo),
         comprasTotales: Math.max(0, approvedPurchases - 1),
         inicio: meta.inicio || meta.fechaInicioNivel || null,
-        vence: meta.vence || meta.fechaVencimientoNivel || null
+        vence: meta.vence || meta.fechaVencimientoNivel || null,
+        ultimaCompraFecha: nowRef.toISOString()
       };
 
       const nuevaFidelidad = FidelidadService.registrarCompra(fidelidadActual, approvedPurchases);
+      const compactVence =
+        nuevaFidelidad.tipo !== 'Nuevo' && nuevaFidelidad.fechaVencimientoNivel
+          ? String(nuevaFidelidad.fechaVencimientoNivel).slice(0, 10)
+          : null;
 
       // Keep metadata compact to strictly fit inside VARCHAR(255)
       const compactMeta = {
         direccion: cleanDir,
         tipo: nuevaFidelidad.tipo,
         ciclo: nuevaFidelidad.comprasCiclo,
+        ...(compactVence ? { vence: compactVence } : {}),
         ...(meta.manualTipo ? { manualTipo: true } : {})
       };
 

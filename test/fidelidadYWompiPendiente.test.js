@@ -125,3 +125,36 @@ test('VentaService.registrarFidelidadUnaVez: rechaza ventas PENDIENTE, CANCELADO
     ClienteService.registrarCompraFidelidad = origRegCli;
   }
 });
+
+test('FidelidadService: calcula dinámicamente los días reales restantes de vigencia, gracia y vencimiento', () => {
+  const now = new Date('2026-11-22T15:00:00.000Z');
+  const daysAgo = (d) => new Date(now.getTime() - d * 86400000).toISOString();
+
+  // Frecuente con última compra hace 12 días -> 18 días restantes (no fijo en 30)
+  const frecActivo = FidelidadService.evaluarEstadoFidelidad({ ultimaCompraFecha: daysAgo(12) }, 6, now);
+  assert.equal(frecActivo.tipo, 'Frecuente');
+  assert.equal(frecActivo.diasRestantes, 18);
+  assert.equal(frecActivo.enGracia, false);
+  assert.equal(frecActivo.expirado, false);
+  assert.ok(frecActivo.fechaVencimientoNivel);
+
+  // VIP con última compra hace 35 días -> 5 días vencido dentro de 15d de gracia -> Gracia: 10d
+  const vipGracia = FidelidadService.evaluarEstadoFidelidad({ ultimaCompraFecha: daysAgo(35) }, 10, now);
+  assert.equal(vipGracia.tipo, 'VIP');
+  assert.equal(vipGracia.diasRestantes, 0);
+  assert.equal(vipGracia.enGracia, true);
+  assert.equal(vipGracia.diasGraciaRestantes, 10);
+  assert.equal(vipGracia.expirado, false);
+
+  // Frecuente con última compra hace 45 días -> superó 30d + 10d de gracia -> expirado
+  const frecExp = FidelidadService.evaluarEstadoFidelidad({ ultimaCompraFecha: daysAgo(45) }, 6, now);
+  assert.equal(frecExp.diasRestantes, 0);
+  assert.equal(frecExp.enGracia, false);
+  assert.equal(frecExp.expirado, true);
+
+  // Nuevo -> sin vencimiento (null)
+  const nuevo = FidelidadService.evaluarEstadoFidelidad({ ultimaCompraFecha: daysAgo(5) }, 1, now);
+  assert.equal(nuevo.tipo, 'Nuevo');
+  assert.equal(nuevo.diasRestantes, null);
+  assert.equal(nuevo.fechaVencimientoNivel, null);
+});

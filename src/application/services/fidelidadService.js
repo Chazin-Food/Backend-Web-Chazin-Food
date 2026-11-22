@@ -8,6 +8,8 @@
  */
 
 const COMPRAS_PARA_BENEFICIO = 3;
+const VIGENCIA_NIVEL_DIAS = 30;
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 const TIER_RANK = {
   Nuevo: 0,
@@ -15,6 +17,19 @@ const TIER_RANK = {
   Frecuente: 2,
   VIP: 3
 };
+
+function parseDateSafe(val) {
+  if (!val) return null;
+  if (val instanceof Date) return Number.isNaN(val.getTime()) ? null : val;
+  const s = String(val).trim();
+  if (!s) return null;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+    const d = new Date(`${s}T23:59:59-05:00`);
+    return Number.isNaN(d.getTime()) ? null : d;
+  }
+  const d = new Date(s);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
 
 function normalizeTierLabel(tipo = 'Nuevo') {
   const t = String(tipo || 'Nuevo').toLowerCase().trim();
@@ -51,9 +66,10 @@ function resolveNextLevelLabel(tipo = 'Nuevo') {
 class FidelidadService {
   /**
    * Evalúa el estado actual de fidelidad de un cliente usando estrictamente
-   * el total de compras reales aprobadas (nunca órdenes pendientes de pago o canceladas).
+   * el total de compras reales aprobadas (nunca órdenes pendientes de pago o canceladas)
+   * y calcula dinámicamente los días reales restantes de vigencia (30d) y periodo de gracia.
    */
-  static evaluarEstadoFidelidad(fidelidadData = {}, totalVentasReales = undefined) {
+  static evaluarEstadoFidelidad(fidelidadData = {}, totalVentasReales = undefined, nowDate = new Date()) {
     const rawCount =
       totalVentasReales !== undefined && totalVentasReales !== null && Number.isFinite(Number(totalVentasReales))
         ? Number(totalVentasReales)
@@ -79,6 +95,54 @@ class FidelidadService {
     const comprasFaltantes = COMPRAS_PARA_BENEFICIO - comprasCiclo;
     const progresoPorcentaje = Math.min(100, Math.round((comprasCiclo / COMPRAS_PARA_BENEFICIO) * 100));
 
+    // Cálculo dinámico real de vigencia (30 días desde última compra aprobada o fecha de inicio/vencimiento del nivel)
+    let fechaInicioNivel = null;
+    let fechaVencimientoNivel = null;
+    let diasRestantes = null;
+    let enGracia = false;
+    let diasGraciaRestantes = 0;
+    let expirado = false;
+
+    if (tipo !== 'Nuevo') {
+      const nowMs = (nowDate instanceof Date ? nowDate : new Date(nowDate || Date.now())).getTime();
+      const explicitVence = parseDateSafe(fidelidadData?.fechaVencimientoNivel || fidelidadData?.vence);
+      const explicitInicio = parseDateSafe(fidelidadData?.fechaInicioNivel || fidelidadData?.inicio);
+      const ultimaCompra = parseDateSafe(fidelidadData?.ultimaCompraFecha);
+
+      const candidateVences = [];
+      if (explicitVence) candidateVences.push(explicitVence.getTime());
+      if (explicitInicio) candidateVences.push(explicitInicio.getTime() + VIGENCIA_NIVEL_DIAS * MS_PER_DAY);
+      if (ultimaCompra) candidateVences.push(ultimaCompra.getTime() + VIGENCIA_NIVEL_DIAS * MS_PER_DAY);
+
+      if (candidateVences.length > 0) {
+        const venceMs = Math.max(...candidateVences);
+        const inicioMs = ultimaCompra
+          ? Math.max(ultimaCompra.getTime(), explicitInicio ? explicitInicio.getTime() : 0)
+          : (explicitInicio ? explicitInicio.getTime() : venceMs - VIGENCIA_NIVEL_DIAS * MS_PER_DAY);
+
+        fechaInicioNivel = new Date(inicioMs).toISOString();
+        fechaVencimientoNivel = new Date(venceMs).toISOString();
+
+        const diffMs = venceMs - nowMs;
+        if (diffMs > 0) {
+          diasRestantes = Math.min(VIGENCIA_NIVEL_DIAS, Math.max(1, Math.ceil(diffMs / MS_PER_DAY)));
+        } else {
+          const limiteGraciaDias = tipo === 'VIP' ? 15 : (tipo === 'Frecuente' ? 10 : 0);
+          const msExpirado = Math.abs(diffMs);
+          const limiteGraciaMs = limiteGraciaDias * MS_PER_DAY;
+          diasRestantes = 0;
+          if (limiteGraciaDias > 0 && msExpirado < limiteGraciaMs) {
+            enGracia = true;
+            diasGraciaRestantes = Math.max(1, Math.ceil((limiteGraciaMs - msExpirado) / MS_PER_DAY));
+          } else {
+            expirado = true;
+          }
+        }
+      } else {
+        diasRestantes = VIGENCIA_NIVEL_DIAS;
+      }
+    }
+
     return {
       tipo,
       nivelHistorial: tierByPurchases,
@@ -91,12 +155,13 @@ class FidelidadService {
       comprasMeta: COMPRAS_PARA_BENEFICIO,
       progresoPorcentaje,
       siguienteNivel: resolveNextLevelLabel(tipo),
-      fechaInicioNivel: tipo !== 'Nuevo' ? (fidelidadData?.fechaInicioNivel || fidelidadData?.inicio || null) : null,
-      fechaVencimientoNivel: tipo !== 'Nuevo' ? (fidelidadData?.fechaVencimientoNivel || fidelidadData?.vence || null) : null,
-      diasRestantes: tipo !== 'Nuevo' ? 30 : null,
-      enGracia: false,
-      diasGraciaRestantes: 0,
-      estadoCiclo: descuentoDisponible ? 'BENEFICIO_DISPONIBLE' : 'ACUMULANDO'
+      fechaInicioNivel,
+      fechaVencimientoNivel,
+      diasRestantes,
+      enGracia,
+      diasGraciaRestantes,
+      expirado,
+      estadoCiclo: expirado ? 'VENCIDO' : enGracia ? 'EN_GRACIA' : (descuentoDisponible ? 'BENEFICIO_DISPONIBLE' : 'ACUMULANDO')
     };
   }
 
