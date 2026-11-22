@@ -283,7 +283,7 @@ class ProductService {
   static async _queryFormattedProducts({ eliminado = 0, order = [['idProducto', 'ASC']], onlyActiveVariants = false } = {}) {
     await ensureVarianteEventoSchemaOnce();
     const todayCol = getColombiaDateISO();
-    const [products, fichas, allInsumos, allLotes, ventasPorVariante] = await Promise.all([
+    const [products, fichas, allInsumos, allLotes, ventasPorVariante, activeAssocEvents] = await Promise.all([
       Product.findAll({
         where: {
           eliminado,
@@ -397,8 +397,43 @@ class ProductService {
         attributes: ['idVariante', [DetalleVentaProducto.sequelize.fn('COUNT', DetalleVentaProducto.sequelize.col('idDetalleVenta')), 'totalVentas']],
         group: ['idVariante'],
         raw: true
+      }).catch(() => []),
+
+      // Cargar en una sola consulta los eventos vigentes con productosAsociados (multi-producto) para mostrarlos también en las tarjetas del menú
+      Evento.findAll({
+        where: {
+          estado: 1,
+          productosAsociados: { [Op.ne]: null },
+          [Op.and]: [
+            {
+              [Op.or]: [
+                { fechaInicio: null },
+                { fechaInicio: { [Op.lte]: todayCol } }
+              ]
+            },
+            {
+              [Op.or]: [
+                { fechaFin: null },
+                { fechaFin: { [Op.gte]: todayCol } }
+              ]
+            }
+          ]
+        }
       }).catch(() => [])
     ]);
+
+    const assocEventsByProdId = new Map();
+    if (Array.isArray(activeAssocEvents)) {
+      for (const ev of activeAssocEvents) {
+        const asociados = EventoService.parseJsonArray(ev.productosAsociados);
+        for (const item of asociados) {
+          const pid = Number(item?.idProducto ?? item?.id ?? 0);
+          if (!pid) continue;
+          if (!assocEventsByProdId.has(pid)) assocEventsByProdId.set(pid, []);
+          assocEventsByProdId.get(pid).push(ev);
+        }
+      }
+    }
     const fichaMap = new Map();
     const varFichaMap = new Map();
     fichas.forEach(f => {
@@ -778,7 +813,29 @@ class ProductService {
           tieneVariantes: variantes.length > 0,
           fichaTecnica: formattedBaseFicha,
           adiciones,
-          eventos: Array.isArray(p.eventos) ? p.eventos.map(ev => EventoService.serializeEventoRelation(ev)) : []
+          eventos: (() => {
+            const directEvents = Array.isArray(p.eventos) ? p.eventos : [];
+            const assocEvents = assocEventsByProdId.get(Number(p.idProducto)) || [];
+            const seenIds = new Set();
+            const merged = [];
+            for (const ev of [...directEvents, ...assocEvents]) {
+              const evId = Number(ev?.idEvento ?? ev?.id ?? 0);
+              if (evId && seenIds.has(evId)) continue;
+              if (evId) seenIds.add(evId);
+              merged.push(EventoService.serializeEventoRelation(ev, p.idProducto, realPrecio));
+            }
+            const getEffectiveEventPrice = (evObj) => {
+              const np = Number(evObj?.nuevoPrecio || 0);
+              if (np > 0) return np;
+              const desc = Number(evObj?.descuento || 0);
+              if (desc > 0 && desc < 100 && realPrecio > 0) {
+                return Math.round(realPrecio * (1 - desc / 100));
+              }
+              return realPrecio;
+            };
+            merged.sort((a, b) => getEffectiveEventPrice(a) - getEffectiveEventPrice(b));
+            return merged;
+          })()
         };
       });
   }

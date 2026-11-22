@@ -399,13 +399,39 @@ class EventoService {
       });
   }
 
-  static serializeEventoRelation(ev) {
+  static serializeEventoRelation(ev, targetProductId = null, targetProductBasePrice = null) {
     const plain = ev && typeof ev.get === 'function' ? ev.get({ plain: true }) : { ...ev };
+    const productosAsociados = this.parseJsonArray(plain.productosAsociados);
+    let nuevoPrecio = plain.nuevoPrecio;
+    let descuento = plain.descuento;
+
+    if (targetProductId !== null && targetProductId !== undefined) {
+      const assocMatch = productosAsociados.find(
+        (a) => a && Number(a.idProducto ?? a.id) === Number(targetProductId)
+      );
+      if (assocMatch) {
+        const matchDesc = assocMatch.descuento !== undefined && assocMatch.descuento !== null
+          ? Number(assocMatch.descuento)
+          : (plain.descuento !== undefined && plain.descuento !== null ? Number(plain.descuento) : 0);
+        const matchPrecio = Number(assocMatch.precioPromocional || assocMatch.nuevoPrecio || 0);
+        descuento = matchDesc;
+        if (matchPrecio > 0) {
+          nuevoPrecio = matchPrecio;
+        } else if (matchDesc > 0 && matchDesc < 100 && Number(targetProductBasePrice) > 0) {
+          nuevoPrecio = Math.round(Number(targetProductBasePrice) * (1 - matchDesc / 100));
+        } else {
+          nuevoPrecio = Number(plain.idProducto) === Number(targetProductId) ? plain.nuevoPrecio : null;
+        }
+      }
+    }
+
     return {
       ...plain,
+      descuento,
+      nuevoPrecio,
       accionInsumo: plain.accionInsumo || null,
       insumosAsociados: this.normalizeInsumos(plain.insumosAsociados),
-      productosAsociados: this.parseJsonArray(plain.productosAsociados)
+      productosAsociados
     };
   }
 

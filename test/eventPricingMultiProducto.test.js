@@ -3,6 +3,7 @@ const {
   resolveEventUnitPriceForProduct,
   resolveBestEventUnitPrice
 } = require('../src/infrastructure/utils/eventPricingUtils');
+const EventoService = require('../src/application/services/eventoService');
 
 const superFinDeSemana = {
   idEvento: 3,
@@ -105,6 +106,16 @@ test('Evento de un solo producto sin productosAsociados aplica nuevoPrecio solo 
     resolveEventUnitPriceForProduct({ evento: singleEvt, idProducto: 6, precioBase: 23000, prodBasePrice: 23000 }),
     null
   );
+});
+
+test('EventoService.serializeEventoRelation entrega el precio específico de cada producto asociado para el menú', () => {
+  const paraSalchipapa = EventoService.serializeEventoRelation(superFinDeSemana, 6, 23000);
+  const paraClasica = EventoService.serializeEventoRelation(superFinDeSemana, 1, 18000);
+  const paraPerro = EventoService.serializeEventoRelation(superFinDeSemana, 4, 14000);
+  assert.strictEqual(Number(paraSalchipapa.nuevoPrecio), 19550);
+  assert.strictEqual(Number(paraSalchipapa.descuento), 15);
+  assert.strictEqual(Number(paraClasica.nuevoPrecio), 15300);
+  assert.strictEqual(Number(paraPerro.nuevoPrecio), 11900);
 });
 
 console.log(`Todas las pruebas pasaron (${passed}/${passed}).`);
