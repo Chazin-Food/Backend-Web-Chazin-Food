@@ -236,6 +236,9 @@ class WompiService {
       if (ventaRow) {
         let obs = {};
         try { obs = JSON.parse(ventaRow.observaciones || '{}'); } catch (e) { obs = {}; }
+        obs.wompiReference = referencia;
+        obs.moneda = moneda;
+        obs.esIntencionWompi = true;
         obs.montoEnCentavos = montoEnCentavos;
         ventaRow.observaciones = JSON.stringify(obs);
         await ventaRow.save();

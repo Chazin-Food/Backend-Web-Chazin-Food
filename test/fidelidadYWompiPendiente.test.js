@@ -182,6 +182,18 @@ test('VentaService.isUnpaidWompiIntention y _applyFilters excluyen intenciones W
     true
   );
 
+  // 2b. Intención Wompi legacy (sin wompiReference porque create la omitía, solo montoEnCentavos/Wompi/ONLINE)
+  assert.equal(
+    VentaService.isUnpaidWompiIntention({
+      tipoVenta: 'DOMICILIO',
+      origen: 'ONLINE',
+      estadoEntrega: 'CANCELADO',
+      estadoAprobacion: 'RECHAZADO',
+      observaciones: JSON.stringify({ origen: 'ONLINE', metodoPago: 'Wompi', montoEnCentavos: 1955000, estadoPago: 'Pendiente' })
+    }),
+    true
+  );
+
   // 3. Pago Wompi real aprobado -> NO se excluye
   assert.equal(
     VentaService.isUnpaidWompiIntention({

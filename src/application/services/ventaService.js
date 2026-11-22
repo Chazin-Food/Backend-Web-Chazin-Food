@@ -43,10 +43,20 @@ function isUnpaidWompiIntention(v) {
     }
   }
   if (obs.wompiAbandonada === true) return true;
+  if (obs.esDevolucion === true) return false;
   const aprob = String(v.estadoAprobacion || obs.estadoAprobacion || '').toUpperCase().trim();
   if (aprob === 'APROBADO') return false;
-  if (obs.wompiReference && !obs.wompiTransactionId) return true;
-  return false;
+  if (obs.wompiTransactionId) return false;
+
+  const isWompiOrOnline =
+    Boolean(obs.wompiReference) ||
+    Boolean(obs.esIntencionWompi) ||
+    Boolean(obs.montoEnCentavos) ||
+    String(obs.metodoPago || v.metodoPago || '').toLowerCase().includes('wompi') ||
+    String(v.origen || obs.origen || '').toUpperCase() === 'ONLINE' ||
+    String(v.tipoVenta || '').toUpperCase() === 'DOMICILIO';
+
+  return isWompiOrOnline;
 }
 
 function buildExcludeUnpaidWompiClauses(Op) {
@@ -60,9 +70,32 @@ function buildExcludeUnpaidWompiClauses(Op) {
     {
       [Op.or]: [
         { estadoAprobacion: 'APROBADO' },
-        { observaciones: null },
-        { observaciones: { [Op.notLike]: '%"wompiReference"%' } },
-        { observaciones: { [Op.like]: '%"wompiTransactionId"%' } }
+        { observaciones: { [Op.like]: '%"wompiTransactionId"%' } },
+        { observaciones: { [Op.like]: '%"esDevolucion":true%' } },
+        {
+          [Op.and]: [
+            { tipoVenta: { [Op.ne]: 'DOMICILIO' } },
+            {
+              [Op.or]: [
+                { origen: null },
+                { origen: { [Op.ne]: 'ONLINE' } }
+              ]
+            },
+            {
+              [Op.or]: [
+                { observaciones: null },
+                {
+                  [Op.and]: [
+                    { observaciones: { [Op.notLike]: '%"wompiReference"%' } },
+                    { observaciones: { [Op.notLike]: '%"montoEnCentavos"%' } },
+                    { observaciones: { [Op.notLike]: '%"metodoPago":"Wompi%' } },
+                    { observaciones: { [Op.notLike]: '%"origen":"ONLINE"%' } }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
       ]
     }
   ];
@@ -1569,6 +1602,9 @@ class VentaService {
       idVentaOriginal: data.idVentaOriginal || parsedObs.idVentaOriginal || null,
       codigoVentaOriginal: data.codigoVentaOriginal || parsedObs.codigoVentaOriginal || null,
       aprobadoPorUsuarioId: data.aprobadoPorUsuarioId || parsedObs.aprobadoPorUsuarioId || null,
+      ...(parsedObs.wompiReference ? { wompiReference: parsedObs.wompiReference, esIntencionWompi: true } : {}),
+      ...(parsedObs.moneda ? { moneda: parsedObs.moneda } : {}),
+      ...(parsedObs.fechaIntencion ? { fechaIntencion: parsedObs.fechaIntencion } : {}),
       origen: origenVenta,
       tiempoEstimadoEntrega: tiempoEstimadoEntregaVenta,
       empaqueParaLlevar,
@@ -2305,7 +2341,14 @@ class VentaService {
 
     if (estadoEnum === 'CANCELADO') {
       obsData.estadoAprobacion = 'RECHAZADO';
-      if (obsData.wompiReference && !obsData.wompiTransactionId && String(aprobacionAnterior || '').toUpperCase() === 'PENDIENTE') {
+      const isOnlineOrWompi =
+        Boolean(obsData.wompiReference) ||
+        Boolean(obsData.esIntencionWompi) ||
+        Boolean(obsData.montoEnCentavos) ||
+        String(obsData.metodoPago || '').toLowerCase().includes('wompi') ||
+        String(v.origen || obsData.origen || '').toUpperCase() === 'ONLINE' ||
+        String(v.tipoVenta || '').toUpperCase() === 'DOMICILIO';
+      if (isOnlineOrWompi && !obsData.wompiTransactionId && String(aprobacionAnterior || '').toUpperCase() === 'PENDIENTE') {
         obsData.estadoPago = 'Cancelado';
         obsData.wompiAbandonada = true;
       }
@@ -3108,7 +3151,23 @@ class VentaService {
           estadoEntrega: 'PENDIENTE',
           estadoAprobacion: 'PENDIENTE',
           fechaVenta: { [Op.lt]: cutoff },
-          observaciones: { [Op.like]: '%"wompiReference"%' }
+          [Op.and]: [
+            {
+              [Op.or]: [
+                { origen: 'ONLINE' },
+                { tipoVenta: 'DOMICILIO' },
+                { observaciones: { [Op.like]: '%"wompiReference"%' } },
+                { observaciones: { [Op.like]: '%"montoEnCentavos"%' } },
+                { observaciones: { [Op.like]: '%"metodoPago":"Wompi%' } }
+              ]
+            },
+            {
+              [Op.or]: [
+                { observaciones: null },
+                { observaciones: { [Op.notLike]: '%"wompiTransactionId"%' } }
+              ]
+            }
+          ]
         },
         attributes: ['idVenta'],
         limit: 25
