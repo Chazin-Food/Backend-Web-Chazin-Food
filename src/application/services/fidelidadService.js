@@ -1,14 +1,28 @@
 /**
- * Servicio Centralizado de Fidelización de Clientes (Ficha de Proyecto Chazin Food — SENA 3209616)
- * Regla oficial aprobada:
- * - Por cada 3 compras acumuladas (3ª, 6ª, 9ª, ...), el cliente desbloquea un descuento del 15%
- *   aplicable automáticamente en su siguiente compra (4ª, 7ª, 10ª, ...).
- * - Al utilizar el 15% en esa siguiente compra, el beneficio se consume y comienza un nuevo ciclo de 3 compras.
- * - Conserva etiquetas de nivel (Nuevo / Regular / Frecuente / VIP) por historial acumulado para la UI.
+ * Servicio Centralizado de Fidelización de Clientes (Chazin Food)
+ * Progresión oficial estricta basada únicamente en compras reales pagadas y aprobadas:
+ * - Nuevo:     0 a 2 compras aprobadas ->  0% OFF (3 compras para ascender a Regular 5%)
+ * - Regular:   3 a 5 compras aprobadas ->  5% OFF (3 compras para ascender a Frecuente 10%)
+ * - Frecuente: 6 a 8 compras aprobadas -> 10% OFF (3 compras para ascender a VIP 15%)
+ * - VIP:       9+ compras aprobadas    -> 15% OFF (3 compras para renovar ciclo VIP)
  */
 
 const COMPRAS_PARA_BENEFICIO = 3;
-const DESCUENTO_OFICIAL_PCT = 15;
+
+const TIER_RANK = {
+  Nuevo: 0,
+  Regular: 1,
+  Frecuente: 2,
+  VIP: 3
+};
+
+function normalizeTierLabel(tipo = 'Nuevo') {
+  const t = String(tipo || 'Nuevo').toLowerCase().trim();
+  if (t.includes('vip')) return 'VIP';
+  if (t.includes('frecuente')) return 'Frecuente';
+  if (t.includes('regular')) return 'Regular';
+  return 'Nuevo';
+}
 
 function resolveTierLabel(comprasTotales = 0) {
   const n = Math.max(0, Number(comprasTotales || 0));
@@ -19,71 +33,55 @@ function resolveTierLabel(comprasTotales = 0) {
 }
 
 function resolveTierDiscount(tipo = 'Nuevo') {
-  const t = String(tipo || 'Nuevo').toLowerCase();
-  if (t.includes('vip')) return 15;
-  if (t.includes('frecuente')) return 10;
-  if (t.includes('regular')) return 5;
+  const t = normalizeTierLabel(tipo);
+  if (t === 'VIP') return 15;
+  if (t === 'Frecuente') return 10;
+  if (t === 'Regular') return 5;
   return 0;
 }
 
 function resolveNextLevelLabel(tipo = 'Nuevo') {
-  const t = String(tipo || 'Nuevo').toLowerCase();
-  if (t.includes('vip')) return 'nivel VIP 15% OFF';
-  if (t.includes('frecuente')) return 'nivel VIP 15% OFF al completar 3 compras';
-  if (t.includes('regular')) return 'nivel Frecuente 10% OFF al completar 3 compras';
+  const t = normalizeTierLabel(tipo);
+  if (t === 'VIP') return 'nivel VIP 15% OFF';
+  if (t === 'Frecuente') return 'nivel VIP 15% OFF al completar 3 compras';
+  if (t === 'Regular') return 'nivel Frecuente 10% OFF al completar 3 compras';
   return 'nivel Regular 5% OFF al completar 3 compras';
 }
 
 class FidelidadService {
   /**
-   * Evalúa el estado actual de fidelidad de un cliente según la regla oficial (15% tras cada 3 compras).
+   * Evalúa el estado actual de fidelidad de un cliente usando estrictamente
+   * el total de compras reales aprobadas (nunca órdenes pendientes de pago o canceladas).
    */
-  static evaluarEstadoFidelidad(fidelidadData = {}, totalVentasReales = 0) {
-    const comprasTotales = Math.max(
-      0,
-      Number(
-        fidelidadData?.comprasTotales !== undefined
-          ? fidelidadData.comprasTotales
-          : totalVentasReales || 0
-      )
-    );
+  static evaluarEstadoFidelidad(fidelidadData = {}, totalVentasReales = undefined) {
+    const rawCount =
+      totalVentasReales !== undefined && totalVentasReales !== null && Number.isFinite(Number(totalVentasReales))
+        ? Number(totalVentasReales)
+        : Number(fidelidadData?.comprasTotales || 0);
+    const comprasTotales = Math.max(0, Math.floor(Number.isFinite(rawCount) ? rawCount : 0));
 
-    const hasExplicitD15 =
-      fidelidadData?.descuentoDisponible !== undefined ||
-      fidelidadData?.d15 !== undefined;
+    const tierByPurchases = resolveTierLabel(comprasTotales);
 
-    let descuentoDisponible = hasExplicitD15
-      ? Boolean(
-          fidelidadData.descuentoDisponible !== undefined
-            ? fidelidadData.descuentoDisponible
-            : fidelidadData.d15
-        )
-      : comprasTotales > 0 && comprasTotales % COMPRAS_PARA_BENEFICIO === 0;
+    // Respetar un nivel manual únicamente cuando fue asignado explícitamente por un administrador (manualTipo === true)
+    let tipo = tierByPurchases;
+    if (fidelidadData?.manualTipo === true && fidelidadData?.tipo) {
+      const manualNormalized = normalizeTierLabel(fidelidadData.tipo);
+      if ((TIER_RANK[manualNormalized] ?? 0) > (TIER_RANK[tierByPurchases] ?? 0)) {
+        tipo = manualNormalized;
+      }
+    }
 
-    let comprasCiclo =
-      fidelidadData?.comprasCiclo !== undefined
-        ? Number(fidelidadData.comprasCiclo)
-        : fidelidadData?.ciclo !== undefined
-        ? Number(fidelidadData.ciclo)
-        : comprasTotales % COMPRAS_PARA_BENEFICIO;
-
-    if (!Number.isFinite(comprasCiclo) || comprasCiclo < 0) comprasCiclo = 0;
-    comprasCiclo = comprasCiclo % COMPRAS_PARA_BENEFICIO;
-
-    const descuentoPorcentaje = descuentoDisponible ? DESCUENTO_OFICIAL_PCT : 0;
-    const comprasFaltantes = descuentoDisponible
-      ? 0
-      : COMPRAS_PARA_BENEFICIO - comprasCiclo;
-    const progresoPorcentaje = descuentoDisponible
-      ? 100
-      : Math.min(100, Math.round((comprasCiclo / COMPRAS_PARA_BENEFICIO) * 100));
-
-    const tipo = descuentoDisponible ? 'VIP' : resolveTierLabel(comprasTotales);
     const descuentoNivel = resolveTierDiscount(tipo);
+    const descuentoPorcentaje = descuentoNivel;
+    const descuentoDisponible = descuentoPorcentaje > 0;
+
+    const comprasCiclo = comprasTotales % COMPRAS_PARA_BENEFICIO;
+    const comprasFaltantes = COMPRAS_PARA_BENEFICIO - comprasCiclo;
+    const progresoPorcentaje = Math.min(100, Math.round((comprasCiclo / COMPRAS_PARA_BENEFICIO) * 100));
 
     return {
       tipo,
-      nivelHistorial: resolveTierLabel(comprasTotales),
+      nivelHistorial: tierByPurchases,
       descuentoDisponible,
       descuentoPorcentaje,
       descuentoNivel,
@@ -92,10 +90,10 @@ class FidelidadService {
       comprasFaltantes,
       comprasMeta: COMPRAS_PARA_BENEFICIO,
       progresoPorcentaje,
-      siguienteNivel: descuentoDisponible ? '15% OFF disponible en tu próxima compra' : resolveNextLevelLabel(tipo),
-      fechaInicioNivel: null,
-      fechaVencimientoNivel: null,
-      diasRestantes: null,
+      siguienteNivel: resolveNextLevelLabel(tipo),
+      fechaInicioNivel: tipo !== 'Nuevo' ? (fidelidadData?.fechaInicioNivel || fidelidadData?.inicio || null) : null,
+      fechaVencimientoNivel: tipo !== 'Nuevo' ? (fidelidadData?.fechaVencimientoNivel || fidelidadData?.vence || null) : null,
+      diasRestantes: tipo !== 'Nuevo' ? 30 : null,
       enGracia: false,
       diasGraciaRestantes: 0,
       estadoCiclo: descuentoDisponible ? 'BENEFICIO_DISPONIBLE' : 'ACUMULANDO'
@@ -103,62 +101,27 @@ class FidelidadService {
   }
 
   /**
-   * Registra una compra aprobada/completada y actualiza el contador de ciclo (3 compras → 15% siguiente compra).
+   * Registra una compra aprobada/completada y actualiza la progresión progresiva por niveles.
    */
-  static registrarCompra(fidelidadActual = {}, nowOrOptions = new Date()) {
-    const estado = this.evaluarEstadoFidelidad(fidelidadActual, fidelidadActual?.comprasTotales || 0);
-    const comprasTotales = estado.comprasTotales + 1;
+  static registrarCompra(fidelidadActual = {}, totalVentasRealesOverride = undefined) {
+    const prevCompras = Math.max(0, Math.floor(Number(fidelidadActual?.comprasTotales || 0)));
+    const estadoPrevio = this.evaluarEstadoFidelidad(fidelidadActual, prevCompras);
 
-    let descuentoDisponible = estado.descuentoDisponible;
-    let comprasCiclo = estado.comprasCiclo;
-    let desbloqueoBeneficio = false;
-    let consumioBeneficio = false;
+    const comprasTotales =
+      totalVentasRealesOverride !== undefined &&
+      totalVentasRealesOverride !== null &&
+      Number.isFinite(Number(totalVentasRealesOverride))
+        ? Math.max(0, Math.floor(Number(totalVentasRealesOverride)))
+        : prevCompras + 1;
 
-    if (descuentoDisponible) {
-      // Esta compra utilizó el 15% desbloqueado tras las 3 compras anteriores;
-      // cuenta como compra 1 de 3 del nuevo ciclo.
-      consumioBeneficio = true;
-      descuentoDisponible = false;
-      comprasCiclo = 1;
-    } else {
-      comprasCiclo += 1;
-      if (comprasCiclo >= COMPRAS_PARA_BENEFICIO) {
-        // Completó 3 compras → desbloquea 15% para la siguiente compra
-        descuentoDisponible = true;
-        desbloqueoBeneficio = true;
-        comprasCiclo = 0;
-      }
-    }
-
-    const descuentoPorcentaje = descuentoDisponible ? DESCUENTO_OFICIAL_PCT : 0;
-    const comprasFaltantes = descuentoDisponible ? 0 : COMPRAS_PARA_BENEFICIO - comprasCiclo;
-    const progresoPorcentaje = descuentoDisponible
-      ? 100
-      : Math.round((comprasCiclo / COMPRAS_PARA_BENEFICIO) * 100);
-
-    const tipoNuevo = descuentoDisponible ? 'VIP' : resolveTierLabel(comprasTotales);
-    const descuentoNivel = resolveTierDiscount(tipoNuevo);
+    const nuevoEstado = this.evaluarEstadoFidelidad(fidelidadActual, comprasTotales);
+    const ascendio = (TIER_RANK[nuevoEstado.tipo] ?? 0) > (TIER_RANK[estadoPrevio.tipo] ?? 0);
+    const renovo = nuevoEstado.tipo === 'VIP' && comprasTotales > 9 && comprasTotales % COMPRAS_PARA_BENEFICIO === 0;
 
     return {
-      tipo: tipoNuevo,
-      nivelHistorial: resolveTierLabel(comprasTotales),
-      descuentoDisponible,
-      descuentoPorcentaje,
-      descuentoNivel,
-      comprasCiclo,
-      comprasTotales,
-      comprasFaltantes,
-      comprasMeta: COMPRAS_PARA_BENEFICIO,
-      progresoPorcentaje,
-      siguienteNivel: descuentoDisponible ? '15% OFF disponible en tu próxima compra' : resolveNextLevelLabel(tipoNuevo),
-      fechaInicioNivel: null,
-      fechaVencimientoNivel: null,
-      diasRestantes: null,
-      enGracia: false,
-      diasGraciaRestantes: 0,
-      estadoCiclo: descuentoDisponible ? 'BENEFICIO_DISPONIBLE' : 'ACUMULANDO',
-      ascendio: desbloqueoBeneficio,
-      renovo: consumioBeneficio
+      ...nuevoEstado,
+      ascendio,
+      renovo
     };
   }
 

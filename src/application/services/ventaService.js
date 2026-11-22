@@ -2245,6 +2245,7 @@ class VentaService {
     else if (estado === 'Anulada' || estado === 'CANCELADO') estadoEnum = 'CANCELADO';
 
     const estadoAnterior = v.estadoEntrega;
+    const aprobacionAnterior = v.estadoAprobacion;
     v.estadoEntrega = estadoEnum;
     if (estadoEnum === 'CANCELADO') {
       v.estadoAprobacion = 'RECHAZADO';
@@ -2260,6 +2261,14 @@ class VentaService {
         : { nota: v.observaciones || '' };
     } catch (e) {
       obsData = { nota: v.observaciones || '' };
+    }
+
+    if (estadoEnum === 'CANCELADO') {
+      obsData.estadoAprobacion = 'RECHAZADO';
+      if (obsData.wompiReference && !obsData.wompiTransactionId && String(aprobacionAnterior || '').toUpperCase() === 'PENDIENTE') {
+        obsData.estadoPago = 'Cancelado';
+        obsData.wompiAbandonada = true;
+      }
     }
 
     const ahoraEstado = new Date();
@@ -2937,7 +2946,15 @@ class VentaService {
         obsData = { nota: v.observaciones || '' };
       }
       const clienteNombre = String(obsData.clienteNombre || '').toLowerCase();
-      if (obsData.fidelidadContabilizada || clienteNombre.includes('mostrador')) {
+      const entregaUpper = String(v.estadoEntrega || '').toUpperCase();
+      const aprobacionUpper = String(v.estadoAprobacion || '').toUpperCase();
+      if (
+        obsData.fidelidadContabilizada ||
+        obsData.esDevolucion === true ||
+        clienteNombre.includes('mostrador') ||
+        entregaUpper === 'CANCELADO' ||
+        aprobacionUpper !== 'APROBADO'
+      ) {
         await transaction.commit();
         return false;
       }

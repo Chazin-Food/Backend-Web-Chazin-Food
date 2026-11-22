@@ -160,14 +160,15 @@ const cancelarVenta = async (req, res, next) => {
   try {
     const canManageSales = userHasPrivilege(req.user, 'Gestión de Ventas', 'Editar');
     if (!canManageSales) {
-      if (!isClienteRole(req.user)) {
-        return res.status(403).json({ message: 'No tienes privilegios para cancelar ventas.' });
-      }
-      // Un cliente solo puede cancelar sus propios pedidos y mientras sigan pendientes
+      // Un usuario autenticado solo puede cancelar sus propios pedidos mientras sigan pendientes
+      // (incluye intenciones Wompi no pagadas cerradas antes de confirmar)
       const venta = await VentaService.getById(req.params.id);
       const idUsuario = req.user.idUsuario || req.user.id;
       const idCliente = await getClienteIdDeUsuario(idUsuario);
-      if (!ventaPerteneceAlCliente(venta, idUsuario, idCliente)) {
+      const esPropietario =
+        ventaPerteneceAlCliente(venta, idUsuario, idCliente) ||
+        (idUsuario && Number(venta?.idUsuario) === Number(idUsuario));
+      if (!esPropietario) {
         return res.status(403).json({ message: 'No tienes permiso para cancelar este pedido.' });
       }
       if (String(venta.estadoEntrega || '').toUpperCase() !== 'PENDIENTE') {

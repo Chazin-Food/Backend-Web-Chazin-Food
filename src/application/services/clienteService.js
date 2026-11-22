@@ -9,6 +9,30 @@ const AuthService = require('./authService');
 const { formatColombiaDateES } = require('../../infrastructure/utils/colombiaDateUtils');
 const { parsePaginationParams, buildPaginatedResponse } = require('../../infrastructure/utils/paginationUtils');
 
+/**
+ * Determina si una fila de Venta corresponde a una compra real pagada/aprobada
+ * válida para estadísticas y progresión de fidelidad del cliente.
+ * Excluye explícitamente intenciones Wompi no pagadas (PENDIENTE), canceladas,
+ * rechazadas y órdenes de reposición por devolución.
+ */
+function isApprovedClientPurchase(v) {
+  if (!v) return false;
+  const entrega = String(v.estadoEntrega || '').toUpperCase().trim();
+  const aprobacion = String(v.estadoAprobacion || '').toUpperCase().trim();
+  if (entrega === 'CANCELADO' || entrega === 'ANULADA') return false;
+  if (aprobacion !== 'APROBADO') return false;
+  if (v.observaciones) {
+    try {
+      const obs =
+        typeof v.observaciones === 'string' && v.observaciones.trim().startsWith('{')
+          ? JSON.parse(v.observaciones)
+          : (typeof v.observaciones === 'object' ? v.observaciones : null);
+      if (obs && obs.esDevolucion === true) return false;
+    } catch (_) {}
+  }
+  return true;
+}
+
 class ClienteService {
   static async formatCliente(c, preloadedVentas = null) {
     let meta = {};
@@ -52,21 +76,22 @@ class ClienteService {
     let ticketPromedioVal = 0;
 
     try {
-      const ventasDB = Array.isArray(preloadedVentas)
+      const rawVentasDB = Array.isArray(preloadedVentas)
         ? preloadedVentas
         : await Venta.findAll({
             where: {
               [Op.or]: [
                 { idCliente: c.idCliente },
-                ...(c.idUsuario ? [{ idUsuario: c.idUsuario }] : [])
+                ...(c.idUsuario ? [{ idUsuario: c.idUsuario, idCliente: { [Op.is]: null } }] : [])
               ],
               estadoEntrega: { [Op.ne]: 'CANCELADO' },
-              estadoAprobacion: { [Op.ne]: 'RECHAZADO' }
+              estadoAprobacion: 'APROBADO'
             },
             order: [['idVenta', 'DESC']],
             include: [{ model: DetalleVentaProducto, as: 'detalles' }]
           });
 
+      const ventasDB = rawVentasDB.filter(isApprovedClientPurchase);
       comprasCount = ventasDB.length;
       totalGastadoSum = ventasDB.reduce((sum, v) => sum + Number(v.total || 0), 0);
       ticketPromedioVal = comprasCount > 0 ? Math.round(totalGastadoSum / comprasCount) : 0;
@@ -123,22 +148,18 @@ class ClienteService {
         tieneCuenta: false
       };
     } else {
-      const calculatedCicloFromPurchases = comprasCount % 3;
-
-      // Regla oficial Ficha SENA 3209616: 15% de descuento en la siguiente compra tras cada 3 compras
-      const fidelidadActual = meta.fidelidad || {
+      // Evaluar fidelidad estrictamente a partir de las compras reales aprobadas en BD
+      const fidelidadActual = {
         tipo: meta.tipo || 'Nuevo',
-        comprasCiclo: meta.ciclo !== undefined ? Number(meta.ciclo) : (meta.comprasCiclo !== undefined ? Number(meta.comprasCiclo) : calculatedCicloFromPurchases),
+        manualTipo: Boolean(meta.manualTipo),
         comprasTotales: comprasCount,
-        d15: meta.d15 !== undefined ? Boolean(meta.d15) : undefined
+        inicio: meta.inicio || meta.fechaInicioNivel || null,
+        vence: meta.vence || meta.fechaVencimientoNivel || null
       };
 
       fidelidadEvaluada = FidelidadService.evaluarEstadoFidelidad(fidelidadActual, comprasCount);
       tipo = fidelidadEvaluada.tipo;
-      descuentoPorcentaje = Math.max(
-        Number(fidelidadEvaluada.descuentoPorcentaje || 0),
-        Number(fidelidadEvaluada.descuentoNivel || 0)
-      );
+      descuentoPorcentaje = Number(fidelidadEvaluada.descuentoPorcentaje || 0);
     }
 
     // Determine state: if user account linked and not active, client state is Inactivo or Pendiente
@@ -210,11 +231,11 @@ class ClienteService {
           }
         ]
       }),
-      // Elimina N+1: una única consulta por lotes para todas las ventas no anuladas
+      // Elimina N+1: una única consulta por lotes únicamente para compras reales aprobadas y no canceladas
       Venta.findAll({
         where: {
           estadoEntrega: { [Op.ne]: 'CANCELADO' },
-          estadoAprobacion: { [Op.ne]: 'RECHAZADO' }
+          estadoAprobacion: 'APROBADO'
         },
         order: [['idVenta', 'DESC']],
         include: [{ model: DetalleVentaProducto, as: 'detalles', separate: true }]
@@ -224,11 +245,11 @@ class ClienteService {
     const ventasByCliente = new Map();
     const ventasByUsuario = new Map();
     for (const v of allVentas) {
+      if (!isApprovedClientPurchase(v)) continue;
       if (v.idCliente) {
         if (!ventasByCliente.has(v.idCliente)) ventasByCliente.set(v.idCliente, []);
         ventasByCliente.get(v.idCliente).push(v);
-      }
-      if (v.idUsuario) {
+      } else if (v.idUsuario) {
         if (!ventasByUsuario.has(v.idUsuario)) ventasByUsuario.set(v.idUsuario, []);
         ventasByUsuario.get(v.idUsuario).push(v);
       }
@@ -552,12 +573,17 @@ class ClienteService {
     }
 
     const finalEstado = (!c.idUsuario || data.estado === 'Inactivo' || data.estado === 0) ? 0 : 1;
+    const isManualTipoOverride =
+      data.tipo !== undefined
+        ? newTipo !== 'Nuevo'
+        : Boolean(existingMeta.manualTipo);
     c.direccion = JSON.stringify({
       direccion: newDireccionStr,
       tipo: newTipo,
       ciclo: newCiclo,
       inicio: newInicio,
       vence: newVence,
+      ...(isManualTipoOverride ? { manualTipo: true } : {}),
       ...(existingMeta.tipoDocumento ? { tipoDocumento: existingMeta.tipoDocumento } : {}),
       ...(existingMeta.documento ? { documento: existingMeta.documento } : {})
     });
@@ -703,41 +729,40 @@ class ClienteService {
         }
       }
 
-      let prevPurchases = 0;
-      if (meta.ciclo === undefined || !meta.tipo) {
-        try {
-          const { Venta } = require('../../persistence/models');
-          prevPurchases = await Venta.count({
-            where: {
-              [Op.or]: [
-                { idCliente: c.idCliente },
-                ...(c.idUsuario ? [{ idUsuario: c.idUsuario }] : [])
-              ],
-              estadoEntrega: { [Op.ne]: 'CANCELADO' },
-              estadoAprobacion: { [Op.ne]: 'RECHAZADO' }
-            }
-          });
-        } catch (_) {}
-      }
+      // Recalcular estrictamente desde ventas reales aprobadas y no canceladas de este cliente
+      let approvedPurchases = 0;
+      try {
+        const { Venta } = require('../../persistence/models');
+        const approvedRows = await Venta.findAll({
+          where: {
+            [Op.or]: [
+              { idCliente: c.idCliente },
+              ...(c.idUsuario ? [{ idUsuario: c.idUsuario, idCliente: { [Op.is]: null } }] : [])
+            ],
+            estadoEntrega: { [Op.ne]: 'CANCELADO' },
+            estadoAprobacion: 'APROBADO'
+          },
+          attributes: ['idVenta', 'estadoEntrega', 'estadoAprobacion', 'observaciones']
+        });
+        approvedPurchases = approvedRows.filter(isApprovedClientPurchase).length;
+      } catch (_) {}
 
-      const calculatedTier = prevPurchases >= 9 ? 'VIP' : prevPurchases >= 6 ? 'Frecuente' : prevPurchases >= 3 ? 'Regular' : 'Nuevo';
-      const calculatedCiclo = prevPurchases % 3;
-
-      const fidelidadActual = meta.fidelidad || {
+      const fidelidadActual = {
         tipo: meta.tipo || 'Nuevo',
-        comprasCiclo: meta.ciclo !== undefined ? Number(meta.ciclo) : (meta.comprasCiclo !== undefined ? Number(meta.comprasCiclo) : calculatedCiclo),
-        comprasTotales: meta.comprasTotales !== undefined ? Number(meta.comprasTotales) : prevPurchases,
-        d15: meta.d15 !== undefined ? Boolean(meta.d15) : undefined
+        manualTipo: Boolean(meta.manualTipo),
+        comprasTotales: Math.max(0, approvedPurchases - 1),
+        inicio: meta.inicio || meta.fechaInicioNivel || null,
+        vence: meta.vence || meta.fechaVencimientoNivel || null
       };
 
-      const nuevaFidelidad = FidelidadService.registrarCompra(fidelidadActual);
+      const nuevaFidelidad = FidelidadService.registrarCompra(fidelidadActual, approvedPurchases);
 
       // Keep metadata compact to strictly fit inside VARCHAR(255)
       const compactMeta = {
         direccion: cleanDir,
         tipo: nuevaFidelidad.tipo,
         ciclo: nuevaFidelidad.comprasCiclo,
-        d15: Boolean(nuevaFidelidad.descuentoDisponible)
+        ...(meta.manualTipo ? { manualTipo: true } : {})
       };
 
       c.direccion = JSON.stringify(compactMeta);
