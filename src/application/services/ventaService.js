@@ -646,11 +646,16 @@ class VentaService {
       (tipoEntrega === 'Domicilio' && (!v.usuario || v.usuario.idRol === 4))
     );
 
+    const {
+      normalizePrincipalPaymentMethod,
+      resolveMetodoPagoDetalle
+    } = require('../../infrastructure/utils/paymentMethodUtils');
     const origen = isOnline ? 'ONLINE' : 'PUNTO_FISICO';
     const origenNombre = isOnline ? 'Venta Online' : 'Punto Físico';
-    const metodoPagoFinal = (isOnline && !esDevolucion && (!metodoPago || String(metodoPago).toLowerCase().trim() === 'efectivo'))
-      ? 'Wompi'
-      : metodoPago;
+    const metodoPagoDetalle = resolveMetodoPagoDetalle(obsData, metodoPago);
+    const metodoPagoFinal = esDevolucion
+      ? metodoPago
+      : normalizePrincipalPaymentMethod(metodoPago, isOnline);
 
     const hybridEst = computeHybridDeliveryEstimate({
       productos,
@@ -703,6 +708,9 @@ class VentaService {
       empaqueParaLlevar,
       tipoEntrega,
       metodoPago: metodoPagoFinal,
+      metodo_pago: metodoPagoFinal,
+      metodoPagoDetalle: metodoPagoDetalle || null,
+      metodo_pago_detalle: metodoPagoDetalle || null,
       metodoPagoNombre: String(metodoPagoFinal || '').toLowerCase().includes('wompi') ? 'Wompi (Pago en Línea)' : metodoPagoFinal,
       estadoPago,
       estadoAprobacion: v.estadoAprobacion || obsData.estadoAprobacion || 'PENDIENTE',

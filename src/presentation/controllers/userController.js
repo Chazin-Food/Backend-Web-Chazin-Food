@@ -79,19 +79,29 @@ const changeUserPassword = async (req, res, next) => {
       return res.status(400).json({ message: 'La nueva contraseña debe tener al menos 6 caracteres' });
     }
 
-    // Seguridad (AUD-018): si un usuario cambia su propia contraseña sin privilegio Usuarios:Editar, exigir contraseña actual
+    // Seguridad (AUD-018): si un usuario cambia su propia contraseña sin privilegio Usuarios:Editar,
+    // exigir contraseña actual salvo cuando es usuario Google OAuth sin contraseña local asignada aún.
     if (req.isSelfOnlyEdit) {
-      const providedCurrent = passwordActual || currentPassword;
-      if (!providedCurrent) {
-        return res.status(400).json({ message: 'Debes ingresar tu contraseña actual para cambiarla' });
-      }
-      const dbUser = await User.findByPk(req.params.id);
+      const AuthService = require('../../application/services/authService');
+      const { Cliente } = require('../../persistence/models');
+      const dbUser = await User.findByPk(req.params.id, {
+        include: [{ model: Cliente, as: 'clienteInfo' }]
+      });
       if (!dbUser) {
         return res.status(404).json({ message: 'Usuario no encontrado' });
       }
-      const isMatch = await bcrypt.compare(String(providedCurrent), dbUser.contrasena);
-      if (!isMatch) {
-        return res.status(400).json({ message: 'La contraseña actual es incorrecta' });
+      const authFlags = AuthService.resolveUserAuthFlags(dbUser, dbUser.clienteInfo);
+      const canCreateFirstLocalPassword = authFlags.esUsuarioGoogle && !authFlags.tienePassword;
+
+      if (!canCreateFirstLocalPassword) {
+        const providedCurrent = passwordActual || currentPassword;
+        if (!providedCurrent) {
+          return res.status(400).json({ message: 'Debes ingresar tu contraseña actual para cambiarla' });
+        }
+        const isMatch = await bcrypt.compare(String(providedCurrent), dbUser.contrasena);
+        if (!isMatch) {
+          return res.status(400).json({ message: 'La contraseña actual es incorrecta' });
+        }
       }
     }
 

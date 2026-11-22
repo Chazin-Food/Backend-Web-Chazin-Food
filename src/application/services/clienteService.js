@@ -8,6 +8,7 @@ const FidelidadService = require('./fidelidadService');
 const AuthService = require('./authService');
 const { formatColombiaDateES } = require('../../infrastructure/utils/colombiaDateUtils');
 const { parsePaginationParams, buildPaginatedResponse } = require('../../infrastructure/utils/paginationUtils');
+const { computeClientPurchasePreferences } = require('../../infrastructure/utils/paymentMethodUtils');
 
 /**
  * Determina si una fila de Venta corresponde a una compra real pagada/aprobada
@@ -75,6 +76,7 @@ class ClienteService {
     let totalGastadoSum = 0;
     let ticketPromedioVal = 0;
     let ultimaCompraFecha = null;
+    let preferenciasCompra = computeClientPurchasePreferences([]);
 
     try {
       const rawVentasDB = Array.isArray(preloadedVentas)
@@ -96,6 +98,7 @@ class ClienteService {
       comprasCount = ventasDB.length;
       totalGastadoSum = ventasDB.reduce((sum, v) => sum + Number(v.total || 0), 0);
       ticketPromedioVal = comprasCount > 0 ? Math.round(totalGastadoSum / comprasCount) : 0;
+      preferenciasCompra = computeClientPurchasePreferences(ventasDB);
 
       for (const v of ventasDB) {
         if (v.fechaVenta) {
@@ -204,6 +207,7 @@ class ClienteService {
       tipo,
       descuentoPorcentaje,
       fidelidad: fidelidadEvaluada,
+      preferenciasCompra,
       nombre: cleanNombre,
       apellidos: cleanApellidos,
       email: c.usuario ? c.usuario.email : (meta.email || ''),

@@ -394,7 +394,7 @@ class UserService {
     }
 
     let currentDireccion = prevSnapshot.direccion;
-    if (direccion !== undefined || foto !== undefined || avatar !== undefined || (Number(user.idRol) === 4 && !existingCliente)) {
+    if (passwordUpdated || direccion !== undefined || foto !== undefined || avatar !== undefined || (Number(user.idRol) === 4 && !existingCliente)) {
       const cleanDir = direccion !== undefined ? getCleanDireccion(direccion) : undefined;
       if (cleanDir !== undefined) currentDireccion = cleanDir;
       let cliente = existingCliente;
@@ -409,6 +409,7 @@ class UserService {
         meta.email = user.email;
         meta.telefono = user.telefono;
         if (user.foto !== undefined) meta.foto = user.foto;
+        if (passwordUpdated) meta.tienePasswordLocal = true;
         cliente.direccion = JSON.stringify(meta);
         await cliente.save();
       } else if (cleanDir || Number(user.idRol) === 4) {
@@ -420,7 +421,8 @@ class UserService {
           apellidos: user.apellidos,
           email: user.email,
           telefono: user.telefono,
-          foto: user.foto || null
+          foto: user.foto || null,
+          ...(passwordUpdated ? { tienePasswordLocal: true } : {})
         });
         await Cliente.create({ idUsuario: id, direccion: metaStr });
       }

@@ -303,9 +303,11 @@ class WompiService {
       throw new Error('Respuesta inválida de Wompi');
     }
 
+    const { mapWompiPaymentMethodType } = require('../../infrastructure/utils/paymentMethodUtils');
     const referencia = String(tx.reference || '').trim();
     const estadoWompi = tx.status;
-    const metodoPagoTipo = tx.payment_method_type || 'Wompi';
+    const metodoPagoTipoRaw = tx.payment_method_type || tx.payment_method?.type || null;
+    const metodoPagoDetalle = mapWompiPaymentMethodType(metodoPagoTipoRaw, tx.payment_method);
 
     // Buscar candidatas y exigir coincidencia EXACTA de wompiReference en JSON
     const { Op } = require('sequelize');
@@ -358,8 +360,12 @@ class WompiService {
 
       obsObj.wompiTransactionId = tx.id;
       obsObj.wompiStatus = estadoWompi;
-      obsObj.paymentMethodType = metodoPagoTipo;
+      obsObj.paymentMethodType = metodoPagoTipoRaw || 'Wompi';
       obsObj.wompiPaymentMethod = tx.payment_method;
+      if (metodoPagoDetalle) {
+        obsObj.metodoPagoDetalle = metodoPagoDetalle;
+        obsObj.metodo_pago_detalle = metodoPagoDetalle;
+      }
 
       if (estadoWompi === 'APPROVED' && montoCoincide) {
         const yaCancelada = String(ventaEncontrada.estadoEntrega || '').toUpperCase() === 'CANCELADO';
@@ -371,7 +377,8 @@ class WompiService {
         } else {
           const yaAprobada = ventaEncontrada.estadoAprobacion === 'APROBADO';
           obsObj.estadoPago = 'Pagado';
-          obsObj.metodoPago = `Wompi (${metodoPagoTipo})`;
+          // Mantener el campo principal como "Wompi" para no alterar los filtros de Ventas del Admin
+          obsObj.metodoPago = 'Wompi';
           obsObj.estadoAprobacion = 'APROBADO';
           if (!yaAprobada) {
             obsObj.horaEstado = formatColombiaTime12(new Date());
@@ -410,7 +417,9 @@ class WompiService {
         aprobado: estadoWompi === 'APPROVED' && montoCoincide && String(ventaEncontrada.estadoEntrega || '').toUpperCase() !== 'CANCELADO',
         referencia,
         transaccionId: tx.id,
-        metodoPago: metodoPagoTipo,
+        metodoPago: 'Wompi',
+        metodoPagoDetalle: metodoPagoDetalle || null,
+        metodo_pago_detalle: metodoPagoDetalle || null,
         ventaId: ventaEncontrada.idVenta,
         numeroVenta: obsObj.codigoPedido || `VEN-${String(ventaEncontrada.idVenta).padStart(4, '0')}`
       };
@@ -422,7 +431,9 @@ class WompiService {
       aprobado: false,
       referencia,
       transaccionId: tx.id,
-      metodoPago: metodoPagoTipo
+      metodoPago: 'Wompi',
+      metodoPagoDetalle: metodoPagoDetalle || null,
+      metodo_pago_detalle: metodoPagoDetalle || null
     };
   }
 

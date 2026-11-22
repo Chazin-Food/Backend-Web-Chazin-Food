@@ -14,6 +14,76 @@ const {
 
 // Hash dummy para igualar el tiempo de respuesta cuando el correo no existe (mitigación de timing oracle)
 const DUMMY_BCRYPT_HASH = '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy';
+const GOOGLE_OAUTH_NO_PASSWORD_PREFIX = 'OAUTH_GOOGLE_UNSET_';
+
+function isBcryptHash(value) {
+  return /^\$2[aby]\$\d{2}\$.{53}$/.test(String(value || ''));
+}
+
+function parseClienteMeta(clienteInfo) {
+  const raw = clienteInfo?.direccion;
+  if (!raw || typeof raw !== 'string') return {};
+  const trimmed = raw.trim();
+  if (!trimmed.startsWith('{')) return {};
+  try {
+    const parsed = JSON.parse(trimmed);
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch (_) {
+    return {};
+  }
+}
+
+function resolveUserAuthFlags(user, clienteInfo = null) {
+  const rawPass = String(user?.contrasena || '');
+  const hasUnsetMarker = !rawPass || rawPass.startsWith(GOOGLE_OAUTH_NO_PASSWORD_PREFIX) || !isBcryptHash(rawPass);
+  const meta = parseClienteMeta(clienteInfo || user?.clienteInfo);
+  const esUsuarioGoogle = Boolean(
+    meta.googleVinculado === true ||
+    meta.authProvider === 'google' ||
+    rawPass.startsWith(GOOGLE_OAUTH_NO_PASSWORD_PREFIX) ||
+    (user?.foto && String(user.foto).includes('googleusercontent.com'))
+  );
+
+  let tienePassword = true;
+  if (hasUnsetMarker) {
+    tienePassword = false;
+  } else if (meta.tienePasswordLocal === true) {
+    tienePassword = true;
+  } else if (meta.tienePasswordLocal === false) {
+    tienePassword = false;
+  } else if (esUsuarioGoogle) {
+    // Usuarios Google creados previamente con hash aleatorio placeholder que aún no han creado contraseña local
+    tienePassword = false;
+  }
+
+  return {
+    esUsuarioGoogle,
+    tienePassword,
+    tiene_password: tienePassword
+  };
+}
+
+async function persistClienteAuthMeta(user, patch = {}) {
+  if (!user || !user.idUsuario || !patch || Object.keys(patch).length === 0) return;
+  try {
+    let cliente = user.clienteInfo || await Cliente.findOne({ where: { idUsuario: user.idUsuario } });
+    if (cliente) {
+      const existingRaw = typeof cliente.direccion === 'string' ? cliente.direccion.trim() : '';
+      let meta = parseClienteMeta(cliente);
+      if (Object.keys(meta).length === 0 && existingRaw && !existingRaw.startsWith('{')) {
+        meta = { direccion: existingRaw };
+      }
+      const nextMeta = { ...meta, ...patch };
+      cliente.direccion = JSON.stringify(nextMeta);
+      await cliente.save();
+      if (user.clienteInfo) {
+        user.clienteInfo.direccion = cliente.direccion;
+      }
+    }
+  } catch (err) {
+    console.warn('Advertencia actualizando metadata auth en cliente:', err.message);
+  }
+}
 
 function getCleanDireccion(raw) {
   if (!raw) return '';
@@ -142,7 +212,8 @@ class AuthService {
           nombre: cleanNom,
           apellidos: cleanApe,
           telefono: cleanTel,
-          ciclo: 0
+          ciclo: 0,
+          tienePasswordLocal: true
         });
         createdCliente = await Cliente.create({
           idUsuario: user.idUsuario,
@@ -178,6 +249,9 @@ class AuthService {
       numeroDocumento: (finalDocumento && String(finalDocumento).trim().length >= 6) ? String(finalDocumento).trim() : '',
       documento: (finalDocumento && String(finalDocumento).trim().length >= 6) ? String(finalDocumento).trim() : '',
       tieneCedulaRegistrada: Boolean(finalDocumento && String(finalDocumento).trim().length >= 6),
+      esUsuarioGoogle: false,
+      tienePassword: true,
+      tiene_password: true,
       telefono: user.telefono || '',
       email: user.email,
       correo: user.email,
@@ -238,11 +312,21 @@ class AuthService {
     }
 
     // Verificar contraseña ANTES de revelar estados de cuenta (mitiga enumeración pre-bcrypt)
-    const isMatch = await bcrypt.compare(password, user.contrasena);
+    const isMatch = isBcryptHash(user.contrasena)
+      ? await bcrypt.compare(password, user.contrasena)
+      : await bcrypt.compare(String(password), DUMMY_BCRYPT_HASH).then(() => false);
     if (!isMatch) {
       const error = new Error('Credenciales inválidas');
       error.statusCode = 401;
       throw error;
+    }
+
+    // Confirmar bandera de contraseña local tras login exitoso con correo/contraseña
+    if (user.clienteInfo) {
+      const loginMeta = parseClienteMeta(user.clienteInfo);
+      if (loginMeta.tienePasswordLocal !== true) {
+        await persistClienteAuthMeta(user, { tienePasswordLocal: true });
+      }
     }
 
     if (user.estado === 'PENDIENTE') {
@@ -271,6 +355,7 @@ class AuthService {
       : [];
 
     let fidelidadObj = null;
+    let preferenciasCompra = null;
     let idCliente = null;
     let tipoCliente = 'Nuevo';
     let descuentoPorcentaje = 0;
@@ -288,7 +373,8 @@ class AuthService {
               nombre: user.nombre,
               apellidos: user.apellidos,
               telefono: user.telefono,
-              estado: 'Activo'
+              estado: 'Activo',
+              tienePasswordLocal: true
             }),
             estado: 1
           }
@@ -306,6 +392,7 @@ class AuthService {
         const formattedCliente = await ClienteService.formatCliente(user.clienteInfo);
         idCliente = formattedCliente.id;
         fidelidadObj = formattedCliente.fidelidad;
+        preferenciasCompra = formattedCliente.preferenciasCompra || null;
         tipoCliente = formattedCliente.tipo;
         descuentoPorcentaje = formattedCliente.descuentoPorcentaje;
       } catch (e) {
@@ -321,6 +408,7 @@ class AuthService {
       } catch (e) {}
     }
     const finalFoto = user.foto || metaFoto || null;
+    const authFlags = resolveUserAuthFlags(user, user.clienteInfo);
 
     return {
       _id: user.idUsuario,
@@ -333,7 +421,9 @@ class AuthService {
       tipoDocumento: user.tipoDocumento || 'C.C.',
       numeroDocumento: (user.numeroDocumento && String(user.numeroDocumento).trim().length >= 6) ? String(user.numeroDocumento).trim() : '',
       tieneCedulaRegistrada: Boolean(user.numeroDocumento && String(user.numeroDocumento).trim().length >= 6),
-      esUsuarioGoogle: Boolean(user.foto && user.foto.includes('googleusercontent.com')),
+      esUsuarioGoogle: authFlags.esUsuarioGoogle,
+      tienePassword: authFlags.tienePassword,
+      tiene_password: authFlags.tiene_password,
       documento: (user.numeroDocumento && String(user.numeroDocumento).trim().length >= 6) ? String(user.numeroDocumento).trim() : '',
       telefono: user.telefono,
       email: user.email,
@@ -345,6 +435,7 @@ class AuthService {
       tipo: tipoCliente,
       descuentoPorcentaje,
       fidelidad: fidelidadObj,
+      preferenciasCompra,
       foto: finalFoto,
       avatar: finalFoto,
       token: this.generateToken(user.idUsuario)
@@ -370,6 +461,7 @@ class AuthService {
       : [];
 
     let fidelidadObj = null;
+    let preferenciasCompra = null;
     let idCliente = null;
     let tipoCliente = 'Nuevo';
     let descuentoPorcentaje = 0;
@@ -405,6 +497,7 @@ class AuthService {
         const formattedCliente = await ClienteService.formatCliente(user.clienteInfo);
         idCliente = formattedCliente.id;
         fidelidadObj = formattedCliente.fidelidad;
+        preferenciasCompra = formattedCliente.preferenciasCompra || null;
         tipoCliente = formattedCliente.tipo;
         descuentoPorcentaje = formattedCliente.descuentoPorcentaje;
       } catch (e) {
@@ -422,6 +515,7 @@ class AuthService {
       } catch (e) {}
     }
     const finalFoto = user.foto || metaFoto || null;
+    const authFlags = resolveUserAuthFlags(user, user.clienteInfo);
 
     return {
       _id: user.idUsuario,
@@ -435,7 +529,9 @@ class AuthService {
       numeroDocumento: docVal,
       documento: docVal,
       tieneCedulaRegistrada: Boolean(docVal && docVal.length >= 6),
-      esUsuarioGoogle: Boolean(user.foto && user.foto.includes('googleusercontent.com')),
+      esUsuarioGoogle: authFlags.esUsuarioGoogle,
+      tienePassword: authFlags.tienePassword,
+      tiene_password: authFlags.tiene_password,
       telefono: user.telefono,
       email: user.email,
       correo: user.email,
@@ -448,6 +544,7 @@ class AuthService {
       tipo: tipoCliente,
       descuentoPorcentaje,
       fidelidad: fidelidadObj,
+      preferenciasCompra,
       foto: finalFoto,
       avatar: finalFoto
     };
@@ -456,14 +553,17 @@ class AuthService {
   static async updateProfile(userId, profileData = {}) {
     const { passwordActual, passwordNueva } = profileData || {};
 
-    const user = await User.findByPk(userId);
+    const user = await User.findByPk(userId, {
+      include: [{ model: Cliente, as: 'clienteInfo' }]
+    });
     if (!user) {
       const error = new Error('Usuario no encontrado');
       error.statusCode = 404;
       throw error;
     }
 
-    // Seguridad (AUD-018): exigir siempre passwordActual para cambiar contraseña en perfil (sin crearPasswordDirecta ni bypass por URL de foto)
+    const authFlags = resolveUserAuthFlags(user, user.clienteInfo);
+
     if (passwordNueva) {
       if (String(passwordNueva).length < 6) {
         const error = new Error('La nueva contraseña debe tener al menos 6 caracteres');
@@ -471,23 +571,36 @@ class AuthService {
         throw error;
       }
 
-      if (!passwordActual) {
-        const error = new Error('Debes ingresar tu contraseña actual para cambiarla. Si accedes con Google y aún no tienes contraseña local, usa "Olvidé mi contraseña".');
-        error.statusCode = 400;
-        throw error;
-      }
+      const canCreateFirstLocalPassword = authFlags.esUsuarioGoogle && !authFlags.tienePassword;
 
-      const isMatch = await bcrypt.compare(String(passwordActual), user.contrasena);
-      if (!isMatch) {
-        const error = new Error('La contraseña actual es incorrecta');
-        error.statusCode = 400;
-        throw error;
+      if (!canCreateFirstLocalPassword) {
+        if (!passwordActual) {
+          const error = new Error('Debes ingresar tu contraseña actual para cambiarla.');
+          error.statusCode = 400;
+          throw error;
+        }
+
+        const isMatch = isBcryptHash(user.contrasena)
+          ? await bcrypt.compare(String(passwordActual), user.contrasena)
+          : false;
+        if (!isMatch) {
+          const error = new Error('La contraseña actual es incorrecta');
+          error.statusCode = 400;
+          throw error;
+        }
       }
 
       const salt = await bcrypt.genSalt(10);
       const hashed = await bcrypt.hash(String(passwordNueva), salt);
       await user.update({ contrasena: hashed });
+      await persistClienteAuthMeta(user, { tienePasswordLocal: true });
       revokeAllUserTokens(userId);
+
+      EmailService.sendPasswordChangedEmail({
+        email: user.email,
+        nombre: user.nombre,
+        apellidos: user.apellidos
+      }).catch(err => console.warn('Error notificando cambio de contraseña:', err.message));
     }
 
     // Seguridad (AUD-002): lista blanca estricta de campos de perfil editables por el propio usuario (prohibido idRol, rol_id, estado, contrasena)
@@ -495,6 +608,13 @@ class AuthService {
     const selfAllowedKeys = ['nombre', 'apellidos', 'apellido', 'telefono', 'direccion', 'foto', 'avatar'];
     for (const key of selfAllowedKeys) {
       if (profileData[key] !== undefined) {
+        // Evitar spoofing de URL de Google OAuth en foto/avatar por usuarios locales (AUD-018)
+        if ((key === 'foto' || key === 'avatar') && typeof profileData[key] === 'string') {
+          const candidateUrl = profileData[key].trim();
+          if (candidateUrl.includes('googleusercontent.com') && candidateUrl !== String(user.foto || '').trim()) {
+            continue;
+          }
+        }
         allowedProfileUpdate[key] = profileData[key];
       }
     }
@@ -707,6 +827,7 @@ class AuthService {
     const hashedPassword = await bcrypt.hash(String(newPassword), salt);
 
     await user.update({ contrasena: hashedPassword });
+    await persistClienteAuthMeta(user, { tienePasswordLocal: true });
     revokeAllUserTokens(user.idUsuario);
 
     // Notificar al usuario por correo sin incluir la contraseña en texto plano
@@ -811,6 +932,13 @@ class AuthService {
           console.warn('No se pudo actualizar foto de Google:', e.message);
         }
       }
+
+      if (user.clienteInfo) {
+        const existingMeta = parseClienteMeta(user.clienteInfo);
+        if (existingMeta.googleVinculado !== true) {
+          await persistClienteAuthMeta(user, { googleVinculado: true });
+        }
+      }
     } else {
       if (!allowRegister && mode !== 'register') {
         const error = new Error('La cuenta no existe');
@@ -818,11 +946,8 @@ class AuthService {
         throw error;
       }
 
-      // Registrar automáticamente nuevo usuario con rol Cliente
-      const crypto = require('crypto');
-      const randomPassword = crypto.randomBytes(16).toString('hex') + 'A1!';
-      const salt = await bcrypt.genSalt(10);
-      const hashedPassword = await bcrypt.hash(randomPassword, salt);
+      // Registrar automáticamente nuevo usuario con rol Cliente sin contraseña local (solo Google OAuth)
+      const unsetPasswordMarker = `${GOOGLE_OAUTH_NO_PASSWORD_PREFIX}${crypto.randomBytes(16).toString('hex')}`;
 
       const { nombre: cleanNom, apellidos: cleanApe } = cleanNameAndLastName(givenName, familyName);
 
@@ -838,7 +963,7 @@ class AuthService {
         numeroDocumento: null,
         telefono: null,
         email,
-        contrasena: hashedPassword,
+        contrasena: unsetPasswordMarker,
         idRol: finalRolId,
         estado: 'ACTIVO',
         foto: picture,
@@ -855,7 +980,10 @@ class AuthService {
           apellidos: cleanApe,
           telefono: '',
           ciclo: 0,
-          foto: picture
+          foto: picture,
+          authProvider: 'google',
+          googleVinculado: true,
+          tienePasswordLocal: false
         });
         await Cliente.create({
           idUsuario: user.idUsuario,
@@ -893,6 +1021,7 @@ class AuthService {
       : [];
 
     let fidelidadObj = null;
+    let preferenciasCompra = null;
     let idCliente = null;
     let tipoCliente = 'Nuevo';
     let descuentoPorcentaje = 0;
@@ -910,7 +1039,8 @@ class AuthService {
               nombre: user.nombre,
               apellidos: user.apellidos,
               telefono: user.telefono || '',
-              estado: 'Activo'
+              estado: 'Activo',
+              googleVinculado: true
             }),
             estado: 1
           }
@@ -928,6 +1058,7 @@ class AuthService {
         const formattedCliente = await ClienteService.formatCliente(user.clienteInfo);
         idCliente = formattedCliente.id;
         fidelidadObj = formattedCliente.fidelidad;
+        preferenciasCompra = formattedCliente.preferenciasCompra || null;
         tipoCliente = formattedCliente.tipo;
         descuentoPorcentaje = formattedCliente.descuentoPorcentaje;
       } catch (e) {
@@ -943,6 +1074,7 @@ class AuthService {
       } catch (e) {}
     }
     const finalFoto = user.foto || metaFoto || picture || null;
+    const authFlags = resolveUserAuthFlags(user, user.clienteInfo);
 
     return {
       _id: user.idUsuario,
@@ -955,7 +1087,9 @@ class AuthService {
       tipoDocumento: user.tipoDocumento || 'C.C.',
       numeroDocumento: (user.numeroDocumento && String(user.numeroDocumento).trim().length >= 6) ? String(user.numeroDocumento).trim() : '',
       tieneCedulaRegistrada: Boolean(user.numeroDocumento && String(user.numeroDocumento).trim().length >= 6),
-      esUsuarioGoogle: Boolean(user.foto && user.foto.includes('googleusercontent.com')),
+      esUsuarioGoogle: true,
+      tienePassword: authFlags.tienePassword,
+      tiene_password: authFlags.tiene_password,
       documento: (user.numeroDocumento && String(user.numeroDocumento).trim().length >= 6) ? String(user.numeroDocumento).trim() : '',
       telefono: user.telefono || '',
       email: user.email,
@@ -968,6 +1102,7 @@ class AuthService {
       tipo: tipoCliente,
       descuentoPorcentaje,
       fidelidad: fidelidadObj,
+      preferenciasCompra,
       foto: finalFoto,
       avatar: finalFoto,
       token: this.generateToken(user.idUsuario)
@@ -1105,6 +1240,7 @@ class AuthService {
           meta = JSON.parse(user.clienteInfo.direccion);
         }
         meta.estado = 'Activo';
+        meta.tienePasswordLocal = true;
         await user.clienteInfo.update({ direccion: JSON.stringify(meta), estado: 1 });
       } catch (e) {}
     }
@@ -1117,5 +1253,8 @@ class AuthService {
     };
   }
 }
+
+AuthService.resolveUserAuthFlags = resolveUserAuthFlags;
+AuthService.GOOGLE_OAUTH_NO_PASSWORD_PREFIX = GOOGLE_OAUTH_NO_PASSWORD_PREFIX;
 
 module.exports = AuthService;
