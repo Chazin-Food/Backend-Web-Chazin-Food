@@ -1281,10 +1281,12 @@ class VentaService {
           }
         }
         let precioBase = null;
+        let prodBasePrice = null;
         if (idProd) {
           const prodRow = await Product.findByPk(idProd).catch(() => null);
           if (prodRow) {
-            precioBase = precioVar !== null ? precioVar : Number(prodRow.precio || 0);
+            prodBasePrice = Number(prodRow.precio || 0);
+            precioBase = precioVar !== null ? precioVar : prodBasePrice;
           }
         } else if (precioVar !== null) {
           precioBase = precioVar;
@@ -1296,29 +1298,13 @@ class VentaService {
           throw error;
         }
 
-        serverUnitPrice = precioBase;
-        for (const ev of eventosVigentesVenta) {
-          let aplica = Number(ev.idProducto) === Number(idProd);
-          if (!aplica && ev.productosAsociados) {
-            try {
-              const asociados = JSON.parse(ev.productosAsociados);
-              if (Array.isArray(asociados)) {
-                const match = asociados.find(p => Number(p.idProducto || p.id) === Number(idProd));
-                if (match) {
-                  aplica = true;
-                  const pAsoc = Number(match.precioPromocional || match.nuevoPrecio || match.precio || 0);
-                  if (pAsoc > 0) serverUnitPrice = Math.min(serverUnitPrice, pAsoc);
-                }
-              }
-            } catch (_) {}
-          }
-          if (!aplica) continue;
-          if (Number(ev.nuevoPrecio) > 0) {
-            serverUnitPrice = Math.min(serverUnitPrice, Number(ev.nuevoPrecio));
-          } else if (Number(ev.descuento) > 0) {
-            serverUnitPrice = Math.min(serverUnitPrice, Math.round(precioBase * (1 - Number(ev.descuento) / 100)));
-          }
-        }
+        const { resolveBestEventUnitPrice } = require('../../infrastructure/utils/eventPricingUtils');
+        serverUnitPrice = resolveBestEventUnitPrice({
+          eventosVigentes: eventosVigentesVenta,
+          idProducto: idProd,
+          precioBase,
+          prodBasePrice
+        });
 
         const rawAdics = Array.isArray(it.adiciones) ? it.adiciones : (Array.isArray(it.idAdiciones) ? it.idAdiciones : []);
         for (const a of rawAdics) {

@@ -117,39 +117,25 @@ class WompiService {
           }
         }
       }
+      let prodBasePrice = null;
       if (idProducto) {
         const producto = await Product.findByPk(idProducto).catch(() => null);
         if (producto) {
-          precioBase = precioVariante !== null ? precioVariante : Number(producto.precio || 0);
+          prodBasePrice = Number(producto.precio || 0);
+          precioBase = precioVariante !== null ? precioVariante : prodBasePrice;
         }
       } else if (precioVariante !== null) {
         precioBase = precioVariante;
       }
       if (precioBase === null || !(precioBase > 0)) return null;
 
-      let precioUnitario = precioBase;
-      for (const ev of eventosVigentes) {
-        let aplica = Number(ev.idProducto) === Number(idProducto);
-        if (!aplica && ev.productosAsociados) {
-          try {
-            const asociados = JSON.parse(ev.productosAsociados);
-            if (Array.isArray(asociados)) {
-              const match = asociados.find(p => Number(p.idProducto || p.id) === Number(idProducto));
-              if (match) {
-                aplica = true;
-                const precioAsoc = Number(match.precioPromocional || match.nuevoPrecio || match.precio || 0);
-                if (precioAsoc > 0) precioUnitario = Math.min(precioUnitario, precioAsoc);
-              }
-            }
-          } catch (e) { /* ignorar */ }
-        }
-        if (!aplica) continue;
-        if (Number(ev.nuevoPrecio) > 0) {
-          precioUnitario = Math.min(precioUnitario, Number(ev.nuevoPrecio));
-        } else if (Number(ev.descuento) > 0) {
-          precioUnitario = Math.min(precioUnitario, Math.round(precioBase * (1 - Number(ev.descuento) / 100)));
-        }
-      }
+      const { resolveBestEventUnitPrice } = require('../../infrastructure/utils/eventPricingUtils');
+      const precioUnitario = resolveBestEventUnitPrice({
+        eventosVigentes,
+        idProducto,
+        precioBase,
+        prodBasePrice
+      });
 
       let adicionesTotal = 0;
       if (Array.isArray(it.adiciones)) {
