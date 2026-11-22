@@ -54,7 +54,7 @@ function isValidCompletedOrApprovedSale(v) {
   if (aprob === 'PENDIENTE' || aprob === 'RECHAZADO') return false;
   if (v.observaciones) {
     const rawObs = typeof v.observaciones === 'string' ? v.observaciones : JSON.stringify(v.observaciones);
-    if (rawObs.includes('"esDevolucion":true')) return false;
+    if (rawObs.includes('"esDevolucion":true') || rawObs.includes('"wompiAbandonada":true')) return false;
   }
   return true;
 }

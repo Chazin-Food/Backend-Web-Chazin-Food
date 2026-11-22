@@ -7,6 +7,7 @@ const {
   extractDateOnlyISO,
   formatColombiaTime12
 } = require('../../infrastructure/utils/colombiaDateUtils');
+const { invalidateNamespaces } = require('../../infrastructure/utils/apiCache');
 
 const VALID_TX_ID_RE = /^[a-zA-Z0-9_-]{4,80}$/;
 const MAX_WEBHOOK_AGE_MS = 24 * 60 * 60 * 1000; // 24 horas
@@ -392,11 +393,13 @@ class WompiService {
           });
 
           await VentaService.registrarFidelidadUnaVez(ventaEncontrada.idVenta);
+          invalidateNamespaces(['ventas', 'productos', 'insumos', 'dashboard', 'produccion']);
         }
       } else if (estadoWompi === 'APPROVED' && !montoCoincide) {
         obsObj.estadoPago = 'En revisión';
         obsObj.alertaMonto = `Monto pagado (${montoPagado}) distinto al esperado (${montoEsperado})`;
         await ventaEncontrada.update({ observaciones: JSON.stringify(obsObj) });
+        invalidateNamespaces(['ventas', 'dashboard']);
       } else if (estadoWompi === 'DECLINED' || estadoWompi === 'ERROR' || estadoWompi === 'VOIDED') {
         obsObj.estadoPago = 'Rechazado';
         obsObj.estadoAprobacion = 'RECHAZADO';
@@ -409,6 +412,7 @@ class WompiService {
             console.warn('Error reintegrando inventario por pago rechazado:', err.message)
           );
         }
+        invalidateNamespaces(['ventas', 'productos', 'insumos', 'dashboard', 'produccion']);
       }
 
       return {

@@ -26,6 +26,48 @@ const { invalidateNamespaces } = require('../../infrastructure/utils/apiCache');
 let lastWompiExpirationSweepMs = 0;
 const WOMPI_SWEEP_INTERVAL_MS = 5 * 60 * 1000;
 
+/**
+ * Identifica intenciones de pago Wompi abandonadas o aún no completadas en pasarela
+ * (el cliente abrió el widget y lo cerró sin elegir medio de pago ni completar transacción).
+ * Estas intenciones temporales NO son ventas reales y no deben aparecer en
+ * Gestión de Ventas, Mis Pedidos, Dashboard ni estadísticas.
+ */
+function isUnpaidWompiIntention(v) {
+  if (!v) return false;
+  let obs = {};
+  if (v.observaciones) {
+    if (typeof v.observaciones === 'object') {
+      obs = v.observaciones;
+    } else if (typeof v.observaciones === 'string' && v.observaciones.trim().startsWith('{')) {
+      try { obs = JSON.parse(v.observaciones); } catch (_) { obs = {}; }
+    }
+  }
+  if (obs.wompiAbandonada === true) return true;
+  const aprob = String(v.estadoAprobacion || obs.estadoAprobacion || '').toUpperCase().trim();
+  if (aprob === 'APROBADO') return false;
+  if (obs.wompiReference && !obs.wompiTransactionId) return true;
+  return false;
+}
+
+function buildExcludeUnpaidWompiClauses(Op) {
+  return [
+    {
+      [Op.or]: [
+        { observaciones: null },
+        { observaciones: { [Op.notLike]: '%"wompiAbandonada":true%' } }
+      ]
+    },
+    {
+      [Op.or]: [
+        { estadoAprobacion: 'APROBADO' },
+        { observaciones: null },
+        { observaciones: { [Op.notLike]: '%"wompiReference"%' } },
+        { observaciones: { [Op.like]: '%"wompiTransactionId"%' } }
+      ]
+    }
+  ];
+}
+
 function convertUnits(amount, fromUnit, toUnit) {
   if (!amount || isNaN(amount)) return 0;
   if (!fromUnit || !toUnit) return Number(amount);
@@ -780,6 +822,9 @@ class VentaService {
     }
 
     const andClauses = [];
+    if (!filterObj.includeAbandonedWompi) {
+      andClauses.push(...buildExcludeUnpaidWompiClauses(Op));
+    }
     if (filterObj.scopeClienteId) {
       andClauses.push({ idCliente: Number(filterObj.scopeClienteId) });
     } else if (filterObj.scopeUsuarioId) {
@@ -931,7 +976,7 @@ class VentaService {
     // Consulta ligera sin JOINs para estadísticas (evita consumo innecesario de RAM en Render)
     const rows = await Venta.findAll({
       where,
-      attributes: ['idVenta', 'idCliente', 'subtotal', 'total', 'descuentoAplicado', 'observaciones'],
+      attributes: ['idVenta', 'idCliente', 'subtotal', 'total', 'descuentoAplicado', 'estadoEntrega', 'estadoAprobacion', 'observaciones'],
       raw: true
     });
 
@@ -941,6 +986,7 @@ class VentaService {
     const uniqueClients = new Set();
 
     for (const v of rows) {
+      if (isUnpaidWompiIntention(v)) continue;
       let obsData = {};
       if (v.observaciones && typeof v.observaciones === 'string' && v.observaciones.trim().startsWith('{')) {
         try {
@@ -2528,6 +2574,7 @@ class VentaService {
       }
     }
 
+    invalidateNamespaces(['ventas', 'productos', 'insumos', 'insumos-preparados', 'adiciones', 'dashboard', 'produccion']);
     return this.getById(id);
   }
 
@@ -3194,5 +3241,8 @@ class VentaService {
     return this.getById(v.idVenta);
   }
 }
+
+VentaService.isUnpaidWompiIntention = isUnpaidWompiIntention;
+VentaService.buildExcludeUnpaidWompiClauses = buildExcludeUnpaidWompiClauses;
 
 module.exports = VentaService;

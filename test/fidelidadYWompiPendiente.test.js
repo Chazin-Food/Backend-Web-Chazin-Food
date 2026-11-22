@@ -158,3 +158,62 @@ test('FidelidadService: calcula dinámicamente los días reales restantes de vig
   assert.equal(nuevo.diasRestantes, null);
   assert.equal(nuevo.fechaVencimientoNivel, null);
 });
+
+test('VentaService.isUnpaidWompiIntention y _applyFilters excluyen intenciones Wompi no pagadas/abandonadas', () => {
+  const { Op } = require('sequelize');
+
+  // 1. Intención Wompi recién abierta sin elegir método de pago (PENDIENTE, sin wompiTransactionId)
+  assert.equal(
+    VentaService.isUnpaidWompiIntention({
+      estadoEntrega: 'PENDIENTE',
+      estadoAprobacion: 'PENDIENTE',
+      observaciones: JSON.stringify({ wompiReference: 'CHAZIN-1234', estadoPago: 'Pendiente' })
+    }),
+    true
+  );
+
+  // 2. Intención Wompi cerrada por el usuario (cancelada y marcada wompiAbandonada: true)
+  assert.equal(
+    VentaService.isUnpaidWompiIntention({
+      estadoEntrega: 'CANCELADO',
+      estadoAprobacion: 'RECHAZADO',
+      observaciones: JSON.stringify({ wompiReference: 'CHAZIN-1235', wompiAbandonada: true, estadoPago: 'Cancelado' })
+    }),
+    true
+  );
+
+  // 3. Pago Wompi real aprobado -> NO se excluye
+  assert.equal(
+    VentaService.isUnpaidWompiIntention({
+      estadoEntrega: 'PENDIENTE',
+      estadoAprobacion: 'APROBADO',
+      observaciones: JSON.stringify({ wompiReference: 'CHAZIN-1236', wompiTransactionId: '112233-tx', estadoPago: 'Pagado' })
+    }),
+    false
+  );
+
+  // 4. Pago Wompi real en verificación bancaria (tiene wompiTransactionId) -> NO se excluye
+  assert.equal(
+    VentaService.isUnpaidWompiIntention({
+      estadoEntrega: 'PENDIENTE',
+      estadoAprobacion: 'PENDIENTE',
+      observaciones: JSON.stringify({ wompiReference: 'CHAZIN-1237', wompiTransactionId: '445566-tx', wompiStatus: 'PENDING' })
+    }),
+    false
+  );
+
+  // 5. Venta presencial POS en Efectivo -> NO se excluye
+  assert.equal(
+    VentaService.isUnpaidWompiIntention({
+      estadoEntrega: 'ENTREGADO',
+      estadoAprobacion: 'APROBADO',
+      observaciones: JSON.stringify({ origen: 'PUNTO_FISICO', metodoPago: 'Efectivo', estadoPago: 'Pagado' })
+    }),
+    false
+  );
+
+  // 6. _applyFilters inyecta las cláusulas SQL de exclusión por defecto
+  const where = {};
+  VentaService._applyFilters(where, {}, Op);
+  assert.ok(Array.isArray(where[Op.and]) && where[Op.and].length >= 2);
+});
