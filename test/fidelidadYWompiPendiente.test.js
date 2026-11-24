@@ -378,3 +378,43 @@ test('DashboardService.getStats alinea clientes reales (sin Mostrador/Staff) y S
     Product.count = origProductCount;
   }
 });
+
+test('CategoryService.updateCategory habilita e inhabilita categorias de insumo correctamente', async () => {
+  const CategoryService = require('../src/application/services/categoryService');
+  const { CategoriaInsumo, Insumo } = require('../src/persistence/models');
+
+  const origFindByPk = CategoriaInsumo.findByPk;
+  const origInsumoCount = Insumo.count;
+
+  const mockCat = {
+    id: 7,
+    idCategoriaInsumo: 7,
+    nombre: 'Salsas',
+    descripcion: 'Salsas y aderezos',
+    icon: 'sauce',
+    estado: 1,
+    saveCalled: 0,
+    async save() {
+      this.saveCalled++;
+      return this;
+    }
+  };
+
+  CategoriaInsumo.findByPk = async (id) => (Number(id) === 7 ? mockCat : null);
+  Insumo.count = async () => 3;
+
+  try {
+    const disabled = await CategoryService.updateCategory(7, { estado: 'Inactivo' });
+    assert.equal(mockCat.estado, 0);
+    assert.equal(disabled.estado, 'Inactivo');
+    assert.equal(disabled.cantidad, 3);
+
+    const enabled = await CategoryService.updateCategory(7, { estado: 'Activo' });
+    assert.equal(mockCat.estado, 1);
+    assert.equal(enabled.estado, 'Activo');
+    assert.equal(mockCat.saveCalled, 2);
+  } finally {
+    CategoriaInsumo.findByPk = origFindByPk;
+    Insumo.count = origInsumoCount;
+  }
+});

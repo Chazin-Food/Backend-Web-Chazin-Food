@@ -390,8 +390,12 @@ class InsumoService {
     if (idCategoriaInsumo) {
       const catExists = await CategoriaInsumo.findByPk(parseInt(idCategoriaInsumo));
       if (!catExists) {
-        const firstCat = await CategoriaInsumo.findOne();
+        const firstCat = (await CategoriaInsumo.findOne({ where: { estado: 1 } })) || (await CategoriaInsumo.findOne());
         idCategoriaInsumo = firstCat ? (firstCat.idCategoriaInsumo || firstCat.id) : null;
+      } else if (catExists.estado === 0 || catExists.estado === false || String(catExists.estado).toLowerCase() === 'inactivo') {
+        const error = new Error(`La categoría "${catExists.nombre}" está inhabilitada. Habilítala o selecciona una categoría activa.`);
+        error.statusCode = 400;
+        throw error;
       }
     }
 

@@ -68,11 +68,19 @@ class CategoryService {
       throw error;
     }
 
+    const estadoNorm = estado !== undefined ? String(estado).toLowerCase().trim() : 'activo';
+    const isInactivoCreate =
+      estado === false ||
+      estado === 0 ||
+      estadoNorm === '0' ||
+      estadoNorm === 'inactivo' ||
+      estadoNorm === 'false';
+
     const category = await CategoriaInsumo.create({
       nombre: trimmedNombre,
       descripcion: descripcion || '',
       icon: icon || null,
-      estado: estado === 'Inactivo' || estado === 0 ? 0 : 1
+      estado: isInactivoCreate ? 0 : 1
     });
 
     return this.getCategoryById(category.id);
@@ -109,7 +117,14 @@ class CategoryService {
     if (data.descripcion !== undefined) cat.descripcion = data.descripcion;
     if (data.icon !== undefined) cat.icon = data.icon;
     if (data.estado !== undefined) {
-      cat.estado = data.estado === 'Activo' || data.estado === 1 ? 1 : 0;
+      const estadoNorm = String(data.estado).toLowerCase().trim();
+      const isActivo =
+        data.estado === true ||
+        data.estado === 1 ||
+        estadoNorm === '1' ||
+        estadoNorm === 'activo' ||
+        estadoNorm === 'true';
+      cat.estado = isActivo ? 1 : 0;
     }
 
     await cat.save();

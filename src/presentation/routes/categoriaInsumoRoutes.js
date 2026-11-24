@@ -13,11 +13,14 @@ const { protect, authorize, requirePrivilege } = require('../../infrastructure/m
 
 router.route('/')
   .get(protect, requirePrivilege(['Categoría Insumos', 'Insumos', 'Gestión de Compras'], 'Ver'), cacheCatInsumo, getCategoriasInsumo)
-  .post(protect, authorize('Administrador'), createCategoriaInsumo);
+  .post(protect, requirePrivilege(['Categoría Insumos', 'Insumos'], 'Crear'), createCategoriaInsumo);
 
 router.route('/:id')
   .get(protect, requirePrivilege(['Categoría Insumos', 'Insumos', 'Gestión de Compras'], 'Ver'), cacheCatInsumo, getCategoriaInsumoById)
-  .put(protect, authorize('Administrador'), updateCategoriaInsumo)
-  .delete(protect, authorize('Administrador'), deleteCategoriaInsumo);
+  .put(protect, requirePrivilege('Categoría Insumos', 'Editar'), updateCategoriaInsumo)
+  .delete(protect, requirePrivilege('Categoría Insumos', 'Eliminar'), deleteCategoriaInsumo);
+
+router.put('/:id/estado', protect, requirePrivilege('Categoría Insumos', 'Editar'), updateCategoriaInsumo);
+router.patch('/:id/estado', protect, requirePrivilege('Categoría Insumos', 'Editar'), updateCategoriaInsumo);
 
 module.exports = router;
