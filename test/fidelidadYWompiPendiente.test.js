@@ -229,3 +229,36 @@ test('VentaService.isUnpaidWompiIntention y _applyFilters excluyen intenciones W
   VentaService._applyFilters(where, {}, Op);
   assert.ok(Array.isArray(where[Op.and]) && where[Op.and].length >= 2);
 });
+
+test('VentaService.getStats se alinea con Dashboard (excluye anuladas/pendientes/devoluciones) y devuelve frecuenciaDiaria', async () => {
+  const { Venta } = require('../src/persistence/models');
+  const origFindAll = Venta.findAll;
+  const nowIso = new Date().toISOString();
+  const sampleRows = [
+    // Válida aprobada POS
+    { idVenta: 1, idCliente: 10, fechaVenta: nowIso, tipoVenta: 'PUNTO_DE_VENTA', origen: 'PUNTO_FISICO', subtotal: 30000, total: 27000, descuentoAplicado: 3000, estadoEntrega: 'ENTREGADO', estadoAprobacion: 'APROBADO', observaciones: JSON.stringify({ metodoPago: 'Efectivo' }) },
+    // Válida aprobada Wompi
+    { idVenta: 2, idCliente: 10, fechaVenta: nowIso, tipoVenta: 'DOMICILIO', origen: 'ONLINE', subtotal: 20000, total: 20000, descuentoAplicado: 0, estadoEntrega: 'PREPARANDO', estadoAprobacion: 'APROBADO', observaciones: JSON.stringify({ metodoPago: 'Wompi', wompiTransactionId: 'tx-1' }) },
+    // Anulada (NO debe sumar)
+    { idVenta: 3, idCliente: 11, fechaVenta: nowIso, tipoVenta: 'PUNTO_DE_VENTA', origen: 'PUNTO_FISICO', subtotal: 50000, total: 50000, descuentoAplicado: 0, estadoEntrega: 'CANCELADO', estadoAprobacion: 'RECHAZADO', observaciones: JSON.stringify({ metodoPago: 'Efectivo' }) },
+    // Pendiente de aprobación (NO debe sumar)
+    { idVenta: 4, idCliente: 12, fechaVenta: nowIso, tipoVenta: 'DOMICILIO', origen: 'ONLINE', subtotal: 40000, total: 40000, descuentoAplicado: 0, estadoEntrega: 'PENDIENTE', estadoAprobacion: 'PENDIENTE', observaciones: JSON.stringify({ metodoPago: 'Wompi', wompiTransactionId: 'tx-pending' }) },
+    // Devolución (NO debe sumar)
+    { idVenta: 5, idCliente: 10, fechaVenta: nowIso, tipoVenta: 'PUNTO_DE_VENTA', origen: 'PUNTO_FISICO', subtotal: 15000, total: 15000, descuentoAplicado: 0, estadoEntrega: 'ENTREGADO', estadoAprobacion: 'APROBADO', observaciones: JSON.stringify({ esDevolucion: true }) }
+  ];
+
+  Venta.findAll = async () => sampleRows;
+  try {
+    const stats = await VentaService.getStats({ periodo: '7_dias' });
+    assert.equal(stats.totalVentas, 47000);
+    assert.equal(stats.pedidosCount, 2);
+    assert.equal(stats.ticketPromedio, 23500);
+    assert.equal(stats.totalDescuentos, 3000);
+    assert.equal(stats.tasaDescuento, 6.0);
+    assert.equal(stats.frecuenciaCompra, 2.0);
+    assert.equal(stats.frecuenciaDiaria, '0.3');
+    assert.equal(stats.uniqueDays, 1);
+  } finally {
+    Venta.findAll = origFindAll;
+  }
+});

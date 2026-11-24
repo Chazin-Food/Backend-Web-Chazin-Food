@@ -8,6 +8,9 @@ const {
   getColombiaDateISO,
   extractDateOnlyISO,
   getColombiaPeriodRange,
+  diffCalendarDaysColombia,
+  getDaysInMonth,
+  shiftMonthYear,
   formatColombiaDateES,
   formatColombiaTime12,
   formatColombiaTimeWithSeconds12
@@ -46,6 +49,8 @@ function isUnpaidWompiIntention(v) {
   if (obs.esDevolucion === true) return false;
   const aprob = String(v.estadoAprobacion || obs.estadoAprobacion || '').toUpperCase().trim();
   if (aprob === 'APROBADO') return false;
+  const entrega = String(v.estadoEntrega || '').toUpperCase().trim();
+  if (!aprob && ['PREPARANDO', 'LISTO', 'EN_CAMINO', 'ENTREGADO'].includes(entrega)) return false;
   if (obs.wompiTransactionId) return false;
 
   const isWompiOrOnline =
@@ -70,11 +75,22 @@ function buildExcludeUnpaidWompiClauses(Op) {
     {
       [Op.or]: [
         { estadoAprobacion: 'APROBADO' },
+        {
+          [Op.and]: [
+            { estadoAprobacion: null },
+            { estadoEntrega: { [Op.in]: ['PREPARANDO', 'LISTO', 'EN_CAMINO', 'ENTREGADO'] } }
+          ]
+        },
         { observaciones: { [Op.like]: '%"wompiTransactionId"%' } },
         { observaciones: { [Op.like]: '%"esDevolucion":true%' } },
         {
           [Op.and]: [
-            { tipoVenta: { [Op.ne]: 'DOMICILIO' } },
+            {
+              [Op.or]: [
+                { tipoVenta: null },
+                { tipoVenta: { [Op.ne]: 'DOMICILIO' } }
+              ]
+            },
             {
               [Op.or]: [
                 { origen: null },
@@ -1006,17 +1022,44 @@ class VentaService {
     const where = {};
     this._applyFilters(where, filterObj, Op);
 
+    const range = getColombiaPeriodRange(filterObj.periodo, {
+      year: filterObj.year,
+      startDate: filterObj.fechaInicio || filterObj.startDate || filterObj.desde,
+      endDate: filterObj.fechaFin || filterObj.endDate || filterObj.hasta
+    });
+
     // Consulta ligera sin JOINs para estadísticas (evita consumo innecesario de RAM en Render)
     const rows = await Venta.findAll({
       where,
-      attributes: ['idVenta', 'idCliente', 'subtotal', 'total', 'descuentoAplicado', 'estadoEntrega', 'estadoAprobacion', 'observaciones'],
+      attributes: [
+        'idVenta',
+        'idCliente',
+        'fechaVenta',
+        'tipoVenta',
+        'origen',
+        'subtotal',
+        'total',
+        'descuentoAplicado',
+        'estadoEntrega',
+        'estadoAprobacion',
+        'observaciones'
+      ],
       raw: true
     });
+
+    const estadoFiltroNorm = String(filterObj.estado || '').toLowerCase().trim();
+    const includeNonApprovedByExplicitFilter =
+      estadoFiltroNorm === 'anulada' ||
+      estadoFiltroNorm === 'cancelada' ||
+      estadoFiltroNorm === 'pendiente' ||
+      estadoFiltroNorm === 'pendientes';
 
     let totalVentasSum = 0;
     let descOtorgadosSum = 0;
     let pedidosCount = 0;
     const uniqueClients = new Set();
+    const uniqueDaysSet = new Set();
+    let earliestMs = Infinity;
 
     for (const v of rows) {
       if (isUnpaidWompiIntention(v)) continue;
@@ -1028,7 +1071,16 @@ class VentaService {
           obsData = {};
         }
       }
-      if (obsData.esDevolucion) continue;
+      if (obsData.esDevolucion || obsData.wompiAbandonada === true) continue;
+
+      // Alinear contablemente con DashboardService.isValidCompletedOrApprovedSale:
+      // excluir ventas anuladas/canceladas y ventas con pago pendiente o rechazado
+      if (!includeNonApprovedByExplicitFilter) {
+        const entrega = String(v.estadoEntrega || '').toUpperCase().trim();
+        if (entrega === 'CANCELADO' || entrega === 'RECHAZADO') continue;
+        const aprob = String(v.estadoAprobacion || '').toUpperCase().trim();
+        if (aprob === 'PENDIENTE' || aprob === 'RECHAZADO') continue;
+      }
 
       pedidosCount++;
       const subtotal = parseFloat(v.subtotal || 0);
@@ -1040,24 +1092,64 @@ class VentaService {
       descOtorgadosSum += Math.max(0, desc);
       const clientKey = v.idCliente || obsData.clienteNombre;
       if (clientKey) uniqueClients.add(String(clientKey));
+
+      if (v.fechaVenta) {
+        const dayIso = getColombiaDateISO(v.fechaVenta);
+        if (dayIso) uniqueDaysSet.add(dayIso);
+        const t = new Date(v.fechaVenta).getTime();
+        if (!Number.isNaN(t) && t < earliestMs) earliestMs = t;
+      }
     }
 
+    const totalVentasRounded = Math.round(totalVentasSum);
+    const descOtorgadosRounded = Math.round(descOtorgadosSum);
     const ticketPromedioVal = pedidosCount > 0 ? Math.round(totalVentasSum / pedidosCount) : 0;
     const uniqueClientsCount = uniqueClients.size || 1;
+    const uniqueDays = uniqueDaysSet.size || 1;
     const frecuenciaVal = pedidosCount > 0 ? parseFloat((pedidosCount / uniqueClientsCount).toFixed(1)) : 0.0;
     const tasaDescuentoVal = (totalVentasSum + descOtorgadosSum) > 0
       ? parseFloat(((descOtorgadosSum / (totalVentasSum + descOtorgadosSum)) * 100).toFixed(1))
       : 0.0;
 
+    // Frecuencia diaria alineada con DashboardService (horario Colombia)
+    const pNorm = String(range.periodo || filterObj.periodo || '').toLowerCase().trim();
+    let frecuenciaDiariaNum = 0;
+    if (pedidosCount > 0) {
+      if (pNorm === 'hoy') {
+        frecuenciaDiariaNum = pedidosCount;
+      } else if (pNorm === '7_dias' || pNorm === '7dias' || pNorm === 'ultima_semana' || pNorm === 'semana') {
+        frecuenciaDiariaNum = parseFloat((pedidosCount / 7).toFixed(1));
+      } else if (pNorm === 'este_mes' || pNorm === 'mes' || pNorm === 'mes_actual' || pNorm === 'mes actual') {
+        frecuenciaDiariaNum = parseFloat((pedidosCount / Math.max(1, range.day)).toFixed(1));
+      } else if (pNorm === 'mes_anterior' || pNorm === 'mes anterior') {
+        const prevMY = shiftMonthYear(range.currentYear, range.month, -1);
+        const daysPrevMonth = getDaysInMonth(prevMY.year, prevMY.month);
+        frecuenciaDiariaNum = parseFloat((pedidosCount / Math.max(1, daysPrevMonth)).toFixed(1));
+      } else if (range.start && range.end) {
+        const endIso = getColombiaDateISO(range.end);
+        const effectiveEndISO = endIso > range.todayISO ? range.todayISO : endIso;
+        const startIso = getColombiaDateISO(range.start);
+        const spanDays = Math.max(1, (diffCalendarDaysColombia(effectiveEndISO, startIso) ?? 0) + 1);
+        frecuenciaDiariaNum = parseFloat((pedidosCount / spanDays).toFixed(1));
+      } else if (Number.isFinite(earliestMs)) {
+        const spanAll = Math.max(1, (diffCalendarDaysColombia(range.todayISO, getColombiaDateISO(earliestMs)) ?? 0) + 1);
+        frecuenciaDiariaNum = parseFloat((pedidosCount / spanAll).toFixed(1));
+      } else {
+        frecuenciaDiariaNum = parseFloat((pedidosCount / uniqueDays).toFixed(1));
+      }
+    }
+
     return {
-      totalVentas: totalVentasSum,
-      totalVentasFormatted: `$${totalVentasSum.toLocaleString('es-CO')}`,
+      totalVentas: totalVentasRounded,
+      totalVentasFormatted: `$${totalVentasRounded.toLocaleString('es-CO')}`,
       pedidosCount,
       ticketPromedio: ticketPromedioVal,
       ticketPromedioFormatted: `$${ticketPromedioVal.toLocaleString('es-CO')}`,
-      totalDescuentos: descOtorgadosSum,
-      totalDescuentosFormatted: `$${descOtorgadosSum.toLocaleString('es-CO')}`,
+      totalDescuentos: descOtorgadosRounded,
+      totalDescuentosFormatted: `$${descOtorgadosRounded.toLocaleString('es-CO')}`,
       frecuenciaCompra: frecuenciaVal,
+      frecuenciaDiaria: frecuenciaDiariaNum.toFixed(1),
+      uniqueDays,
       tasaDescuento: tasaDescuentoVal,
       uniqueClientsCount
     };
