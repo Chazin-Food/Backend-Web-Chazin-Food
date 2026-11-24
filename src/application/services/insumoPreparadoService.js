@@ -24,7 +24,7 @@ class InsumoPreparadoService {
               {
                 model: DetalleFichaInsumo,
                 as: 'detalles',
-                include: [{ model: Insumo, as: 'insumo', attributes: ['idInsumo', 'nombre', 'unidadMedida'] }]
+                include: [{ model: Insumo, as: 'insumo', attributes: ['idInsumo', 'nombre', 'unidadMedida', 'precioUnitario'] }]
               }
             ]
           }
@@ -158,11 +158,11 @@ class InsumoPreparadoService {
           required: false,
           where: { estado: 1 },
           include: [
-            {
-              model: DetalleFichaInsumo,
-              as: 'detalles',
-              include: [{ model: Insumo, as: 'insumo', attributes: ['idInsumo', 'nombre', 'unidadMedida'] }]
-            }
+              {
+                model: DetalleFichaInsumo,
+                as: 'detalles',
+                include: [{ model: Insumo, as: 'insumo', attributes: ['idInsumo', 'nombre', 'unidadMedida', 'precioUnitario'] }]
+              }
           ]
         }
       ]
@@ -316,7 +316,9 @@ class InsumoPreparadoService {
 
     if (fichaTecnica) {
       const FichaTecnicaService = require('./fichaTecnicaService');
-      await FichaTecnicaService.saveForInsumoPreparado(preparado.id, fichaTecnica);
+      await FichaTecnicaService.saveForInsumoPreparado(preparado.id, fichaTecnica, {
+        skipSyncPreparadoDetalles: itemsList.length > 0
+      });
     }
 
     const TrazabilidadService = require('./trazabilidadService');
@@ -353,24 +355,45 @@ class InsumoPreparadoService {
 
     const itemsList = insumos || componentes;
     if (itemsList && Array.isArray(itemsList)) {
-      let costoTotal = 0;
-      itemsList.forEach(item => {
-        costoTotal += parseFloat(item.cantidad || 0) * parseFloat(item.precioUnitario || 0);
-      });
-      if (costoTotal === 0 && inputCosto) {
-        costoTotal = parseFloat(inputCosto) || 0;
-      }
-      p.costoTotal = costoTotal;
+      const insumoIds = itemsList
+        .map(item => Number(item.idInsumo || item.id))
+        .filter(n => Number.isFinite(n) && n > 0);
+      const dbInsumos = insumoIds.length > 0 && typeof Insumo.findAll === 'function'
+        ? await Insumo.findAll({
+            where: { idInsumo: insumoIds },
+            attributes: ['idInsumo', 'precioUnitario'],
+            raw: true
+          }).catch(() => [])
+        : [];
+      const priceMap = new Map(
+        dbInsumos.map(row => [Number(row.idInsumo), parseFloat(row.precioUnitario || 0)])
+      );
 
-      await DetalleInsumoPreparadoInsumo.destroy({ where: { idPreparado: id } });
-      for (const item of itemsList) {
-        await DetalleInsumoPreparadoInsumo.create({
+      let costoTotal = 0;
+      const resolvedItems = itemsList.map(item => {
+        const insId = Number(item.idInsumo || item.id);
+        const cant = parseFloat(item.cantidad || 0);
+        const rawPrice = parseFloat(item.precioUnitario || 0);
+        const resolvedPrice = rawPrice > 0 ? rawPrice : (priceMap.get(insId) || 0);
+        costoTotal += cant * resolvedPrice;
+        return {
           idPreparado: id,
-          idInsumo: item.idInsumo,
+          idInsumo: insId,
           cantidad: item.cantidad,
           unidadMedida: item.unidadMedida || 'und',
-          precioUnitario: item.precioUnitario || 0
-        });
+          precioUnitario: resolvedPrice
+        };
+      });
+
+      if (costoTotal > 0) {
+        p.costoTotal = costoTotal;
+      } else if (inputCosto && parseFloat(inputCosto) > 0) {
+        p.costoTotal = parseFloat(inputCosto);
+      }
+
+      await DetalleInsumoPreparadoInsumo.destroy({ where: { idPreparado: id } });
+      for (const item of resolvedItems) {
+        await DetalleInsumoPreparadoInsumo.create(item);
       }
     }
 
@@ -378,7 +401,9 @@ class InsumoPreparadoService {
 
     if (fichaTecnica) {
       const FichaTecnicaService = require('./fichaTecnicaService');
-      await FichaTecnicaService.saveForInsumoPreparado(id, fichaTecnica);
+      await FichaTecnicaService.saveForInsumoPreparado(id, fichaTecnica, {
+        skipSyncPreparadoDetalles: Array.isArray(itemsList) && itemsList.length > 0
+      });
     }
 
     const TrazabilidadService = require('./trazabilidadService');

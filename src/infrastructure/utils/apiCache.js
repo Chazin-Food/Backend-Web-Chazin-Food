@@ -223,7 +223,7 @@ const MUTATION_INVALIDATION_MAP = [
   { prefix: '/api/auth', namespaces: ['usuarios', 'roles', 'clientes', 'dashboard'] },
   { prefix: '/api/adiciones', namespaces: ['adiciones', 'productos', 'insumos'] },
   { prefix: '/api/eventos', namespaces: ['eventos', 'productos', 'fichas', 'produccion'] },
-  { prefix: '/api/fichas-tecnicas', namespaces: ['fichas', 'productos', 'produccion'] },
+  { prefix: '/api/fichas-tecnicas', namespaces: ['fichas', 'productos', 'produccion', 'insumos-preparados', 'insumos'] },
   { prefix: '/api/insumos-preparados', namespaces: ['insumos-preparados', 'insumos', 'fichas', 'productos', 'trazabilidad'] },
   { prefix: '/api/insumos', namespaces: ['insumos', 'insumos-preparados', 'adiciones', 'productos', 'fichas', 'categorias-insumo', 'categories', 'dashboard', 'trazabilidad'] },
   { prefix: '/api/proveedores', namespaces: ['proveedores', 'compras', 'insumos', 'trazabilidad'] },

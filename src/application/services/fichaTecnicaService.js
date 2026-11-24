@@ -1,5 +1,5 @@
 const { Sequelize, Op } = require('sequelize');
-const { FichaTecnica, DetalleFichaInsumo, Insumo, Product, Variante, InsumoPreparado } = require('../../persistence/models');
+const { FichaTecnica, DetalleFichaInsumo, DetalleInsumoPreparadoInsumo, Insumo, Product, Variante, InsumoPreparado } = require('../../persistence/models');
 const { resequenceTableIds } = require('../../infrastructure/utils/dbUtils');
 
 const VERSION_TAG_REGEX = /\n?<!--CHAZIN_FT_VERSIONS:([\s\S]*?)-->/;
@@ -703,6 +703,57 @@ class FichaTecnicaService {
           const numRend = parseFloat(data.rendimiento);
           if (!isNaN(numRend) && numRend > 0) prepUpdates.rendimiento = numRend;
         }
+
+        // Mantener sincronizada la tabla detalleinsumopreparadoinsumo cuando la ficha se guarda directamente
+        if (!options.skipSyncPreparadoDetalles && Array.isArray(inputDetalles) && inputDetalles.length > 0) {
+          const insumoIds = inputDetalles
+            .map((d) => Number(d.idInsumo || d.id))
+            .filter((n) => Number.isFinite(n) && n > 0);
+          const dbInsumos = insumoIds.length > 0 && typeof Insumo.findAll === 'function'
+            ? await Insumo.findAll({
+                where: { idInsumo: insumoIds },
+                attributes: ['idInsumo', 'precioUnitario'],
+                raw: true,
+                transaction: options.transaction
+              }).catch(() => [])
+            : [];
+          const priceMap = new Map(
+            dbInsumos.map((row) => [Number(row.idInsumo), parseFloat(row.precioUnitario || 0)])
+          );
+
+          await DetalleInsumoPreparadoInsumo.destroy({
+            where: { idPreparado: prep.id },
+            transaction: options.transaction
+          });
+
+          let calcCostoTotal = 0;
+          const prepDetallesPayload = [];
+          for (const d of inputDetalles) {
+            const insId = Number(d.idInsumo || d.id);
+            if (!Number.isFinite(insId) || insId <= 0) continue;
+            const cant = parseFloat(d.cantidad || 1);
+            const rawPrice = parseFloat(d.precioUnitario ?? d.costoUnitario ?? d.insumo?.precioUnitario ?? 0);
+            const resolvedPrice = rawPrice > 0 ? rawPrice : (priceMap.get(insId) || 0);
+            calcCostoTotal += cant * resolvedPrice;
+            prepDetallesPayload.push({
+              idPreparado: prep.id,
+              idInsumo: insId,
+              cantidad: cant,
+              unidadMedida: d.unidadMedida || 'und',
+              precioUnitario: resolvedPrice
+            });
+          }
+
+          if (prepDetallesPayload.length > 0) {
+            await DetalleInsumoPreparadoInsumo.bulkCreate(prepDetallesPayload, {
+              transaction: options.transaction
+            });
+          }
+          if (calcCostoTotal > 0) {
+            prepUpdates.costoTotal = calcCostoTotal;
+          }
+        }
+
         if (Object.keys(prepUpdates).length > 0) {
           await prep.update(prepUpdates, { transaction: options.transaction });
         }
