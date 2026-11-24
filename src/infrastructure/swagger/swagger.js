@@ -13,6 +13,14 @@ const swaggerDefinition = {
   },
   servers: [
     {
+      url: '/',
+      description: 'Servidor Actual (Automático)'
+    },
+    {
+      url: 'https://backend-web-chazin-food.onrender.com',
+      description: 'Servidor Producción (Render)'
+    },
+    {
       url: 'http://localhost:5000',
       description: 'Servidor Local Monolítico'
     }

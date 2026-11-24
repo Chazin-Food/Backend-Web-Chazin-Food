@@ -18,6 +18,7 @@ assertJwtConfigOnBoot();
 
 const app = express();
 const isProduction = process.env.NODE_ENV === 'production';
+const exposeSwagger = process.env.ENABLE_SWAGGER !== 'false';
 
 // Ocultar tecnología del servidor y confiar en 1 salto de proxy (Render / Cloudflare) para req.ip
 app.disable('x-powered-by');
@@ -49,6 +50,12 @@ const allowedOrigins = new Set([
   'https://frontend-web-chazin-food.vercel.app',
   'https://chazin-food-web.vercel.app',
   'https://chazin-food.vercel.app',
+  ...(exposeSwagger
+    ? [
+        'https://backend-web-chazin-food.onrender.com',
+        ...(process.env.RENDER_EXTERNAL_URL ? [String(process.env.RENDER_EXTERNAL_URL).trim().replace(/\/+$/, '')] : [])
+      ]
+    : []),
   ...envFrontendOrigins,
   ...(!isProduction
     ? [
@@ -134,11 +141,15 @@ if (process.env.NODE_ENV === 'development') {
   app.use(morgan('dev'));
 }
 
-// Swagger UI deshabilitado en producción por seguridad (AUD-024 / VULN-009)
-const exposeSwagger = !isProduction || process.env.ENABLE_SWAGGER === 'true';
+// Swagger UI habilitado salvo ENABLE_SWAGGER=false
 if (exposeSwagger) {
   app.use(
     '/api-docs',
+    (req, res, next) => {
+      // Quitar la CSP restrictiva global ("default-src 'none'") solo en Swagger UI para permitir scripts/estilos propios
+      res.removeHeader('Content-Security-Policy');
+      next();
+    },
     helmet({
       contentSecurityPolicy: false,
       crossOriginResourcePolicy: { policy: 'cross-origin' }
