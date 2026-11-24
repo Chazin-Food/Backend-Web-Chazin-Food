@@ -1087,11 +1087,21 @@ class VentaService {
       const total = parseFloat(v.total || 0);
       let desc = parseFloat(v.descuentoAplicado || 0);
       if (desc <= 0 && subtotal > total) desc = subtotal - total;
+      const descEvento = Math.max(0, Number(obsData.descuentoEvento || 0));
 
       totalVentasSum += total;
-      descOtorgadosSum += Math.max(0, desc);
-      const clientKey = v.idCliente || obsData.clienteNombre;
-      if (clientKey) uniqueClients.add(String(clientKey));
+      descOtorgadosSum += Math.max(0, desc) + descEvento;
+
+      const rawCliName = String(obsData.clienteNombre || '').toLowerCase().trim();
+      const isAnonymousWalkIn =
+        !v.idCliente ||
+        rawCliName === 'cliente mostrador' ||
+        rawCliName === 'cliente general' ||
+        rawCliName === 'mostrador';
+      const clientKey = isAnonymousWalkIn
+        ? `mostrador:${v.idVenta}`
+        : `cli:${v.idCliente}`;
+      uniqueClients.add(clientKey);
 
       if (v.fechaVenta) {
         const dayIso = getColombiaDateISO(v.fechaVenta);
@@ -1104,9 +1114,9 @@ class VentaService {
     const totalVentasRounded = Math.round(totalVentasSum);
     const descOtorgadosRounded = Math.round(descOtorgadosSum);
     const ticketPromedioVal = pedidosCount > 0 ? Math.round(totalVentasSum / pedidosCount) : 0;
-    const uniqueClientsCount = uniqueClients.size || 1;
+    const uniqueClientsCount = uniqueClients.size;
     const uniqueDays = uniqueDaysSet.size || 1;
-    const frecuenciaVal = pedidosCount > 0 ? parseFloat((pedidosCount / uniqueClientsCount).toFixed(1)) : 0.0;
+    const frecuenciaVal = pedidosCount > 0 ? parseFloat((pedidosCount / Math.max(1, uniqueClientsCount)).toFixed(1)) : 0.0;
     const tasaDescuentoVal = (totalVentasSum + descOtorgadosSum) > 0
       ? parseFloat(((descOtorgadosSum / (totalVentasSum + descOtorgadosSum)) * 100).toFixed(1))
       : 0.0;
@@ -1432,6 +1442,7 @@ class VentaService {
 
     const serverPricedMap = new WeakMap();
     let calculatedSubtotal = 0;
+    let totalEventSavings = 0;
 
     for (const it of rawDetails) {
       const itQty = Math.floor(Number(it.cantidad !== undefined ? it.cantidad : 1));
@@ -1484,6 +1495,9 @@ class VentaService {
           precioBase,
           prodBasePrice
         });
+        if (precioBase > serverUnitPrice) {
+          totalEventSavings += Math.round((precioBase - serverUnitPrice) * itQty);
+        }
 
         const rawAdics = Array.isArray(it.adiciones) ? it.adiciones : (Array.isArray(it.idAdiciones) ? it.idAdiciones : []);
         for (const a of rawAdics) {
@@ -1697,6 +1711,7 @@ class VentaService {
       ...(parsedObs.wompiReference ? { wompiReference: parsedObs.wompiReference, esIntencionWompi: true } : {}),
       ...(parsedObs.moneda ? { moneda: parsedObs.moneda } : {}),
       ...(parsedObs.fechaIntencion ? { fechaIntencion: parsedObs.fechaIntencion } : {}),
+      ...(totalEventSavings > 0 ? { descuentoEvento: Math.round(totalEventSavings) } : {}),
       origen: origenVenta,
       tiempoEstimadoEntrega: tiempoEstimadoEntregaVenta,
       empaqueParaLlevar,

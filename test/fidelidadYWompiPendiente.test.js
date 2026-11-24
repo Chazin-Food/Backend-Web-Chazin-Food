@@ -230,15 +230,18 @@ test('VentaService.isUnpaidWompiIntention y _applyFilters excluyen intenciones W
   assert.ok(Array.isArray(where[Op.and]) && where[Op.and].length >= 2);
 });
 
-test('VentaService.getStats se alinea con Dashboard (excluye anuladas/pendientes/devoluciones) y devuelve frecuenciaDiaria', async () => {
+test('VentaService.getStats se alinea con Dashboard (excluye anuladas/pendientes/devoluciones), suma descuentoEvento y no colapsa Mostrador', async () => {
   const { Venta } = require('../src/persistence/models');
   const origFindAll = Venta.findAll;
   const nowIso = new Date().toISOString();
   const sampleRows = [
-    // Válida aprobada POS
-    { idVenta: 1, idCliente: 10, fechaVenta: nowIso, tipoVenta: 'PUNTO_DE_VENTA', origen: 'PUNTO_FISICO', subtotal: 30000, total: 27000, descuentoAplicado: 3000, estadoEntrega: 'ENTREGADO', estadoAprobacion: 'APROBADO', observaciones: JSON.stringify({ metodoPago: 'Efectivo' }) },
-    // Válida aprobada Wompi
-    { idVenta: 2, idCliente: 10, fechaVenta: nowIso, tipoVenta: 'DOMICILIO', origen: 'ONLINE', subtotal: 20000, total: 20000, descuentoAplicado: 0, estadoEntrega: 'PREPARANDO', estadoAprobacion: 'APROBADO', observaciones: JSON.stringify({ metodoPago: 'Wompi', wompiTransactionId: 'tx-1' }) },
+    // Válida aprobada POS (cliente registrado id 10, descuento fidelidad 3000)
+    { idVenta: 1, idCliente: 10, fechaVenta: nowIso, tipoVenta: 'PUNTO_DE_VENTA', origen: 'PUNTO_FISICO', subtotal: 30000, total: 27000, descuentoAplicado: 3000, estadoEntrega: 'ENTREGADO', estadoAprobacion: 'APROBADO', observaciones: JSON.stringify({ metodoPago: 'Efectivo', clienteNombre: 'María García' }) },
+    // Válida aprobada Wompi (mismo cliente registrado id 10, promoción evento 2000)
+    { idVenta: 2, idCliente: 10, fechaVenta: nowIso, tipoVenta: 'DOMICILIO', origen: 'ONLINE', subtotal: 20000, total: 20000, descuentoAplicado: 0, estadoEntrega: 'PREPARANDO', estadoAprobacion: 'APROBADO', observaciones: JSON.stringify({ metodoPago: 'Wompi', wompiTransactionId: 'tx-1', clienteNombre: 'María García', descuentoEvento: 2000 }) },
+    // 2 ventas anónimas a Cliente Mostrador (mismo idCliente=26, NO deben colapsar como un mismo cliente)
+    { idVenta: 6, idCliente: 26, fechaVenta: nowIso, tipoVenta: 'PUNTO_DE_VENTA', origen: 'PUNTO_FISICO', subtotal: 18000, total: 18000, descuentoAplicado: 0, estadoEntrega: 'ENTREGADO', estadoAprobacion: 'APROBADO', observaciones: JSON.stringify({ metodoPago: 'Efectivo', clienteNombre: 'Cliente Mostrador' }) },
+    { idVenta: 7, idCliente: 26, fechaVenta: nowIso, tipoVenta: 'PUNTO_DE_VENTA', origen: 'PUNTO_FISICO', subtotal: 15000, total: 15000, descuentoAplicado: 0, estadoEntrega: 'ENTREGADO', estadoAprobacion: 'APROBADO', observaciones: JSON.stringify({ metodoPago: 'Efectivo', clienteNombre: 'Cliente Mostrador' }) },
     // Anulada (NO debe sumar)
     { idVenta: 3, idCliente: 11, fechaVenta: nowIso, tipoVenta: 'PUNTO_DE_VENTA', origen: 'PUNTO_FISICO', subtotal: 50000, total: 50000, descuentoAplicado: 0, estadoEntrega: 'CANCELADO', estadoAprobacion: 'RECHAZADO', observaciones: JSON.stringify({ metodoPago: 'Efectivo' }) },
     // Pendiente de aprobación (NO debe sumar)
@@ -250,13 +253,14 @@ test('VentaService.getStats se alinea con Dashboard (excluye anuladas/pendientes
   Venta.findAll = async () => sampleRows;
   try {
     const stats = await VentaService.getStats({ periodo: '7_dias' });
-    assert.equal(stats.totalVentas, 47000);
-    assert.equal(stats.pedidosCount, 2);
-    assert.equal(stats.ticketPromedio, 23500);
-    assert.equal(stats.totalDescuentos, 3000);
-    assert.equal(stats.tasaDescuento, 6.0);
-    assert.equal(stats.frecuenciaCompra, 2.0);
-    assert.equal(stats.frecuenciaDiaria, '0.3');
+    assert.equal(stats.totalVentas, 80000);
+    assert.equal(stats.pedidosCount, 4);
+    assert.equal(stats.ticketPromedio, 20000);
+    assert.equal(stats.totalDescuentos, 5000); // 3000 fidelidad + 2000 evento
+    assert.equal(stats.tasaDescuento, 5.9); // 5000 / 85000 = 5.88%
+    assert.equal(stats.uniqueClientsCount, 3); // cli:10 + mostrador:6 + mostrador:7
+    assert.equal(stats.frecuenciaCompra, 1.3); // 4 / 3 = 1.3
+    assert.equal(stats.frecuenciaDiaria, '0.6'); // 4 / 7 = 0.57 -> 0.6
     assert.equal(stats.uniqueDays, 1);
   } finally {
     Venta.findAll = origFindAll;
