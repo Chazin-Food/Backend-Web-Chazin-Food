@@ -317,3 +317,64 @@ test('ClienteService.formatCliente devuelve ticketPromedio exacto (sin truncar a
   assert.equal(res15.comprasMes, '6.0');
   assert.equal(res15.frecuenciaTipo, 'Semanal');
 });
+
+test('DashboardService.getStats alinea clientes reales (sin Mostrador/Staff) y Stock Crítico FEFO (stockVigente)', async () => {
+  const DashboardService = require('../src/application/services/dashboardService');
+  const { Venta, Cliente, User, Insumo, Product } = require('../src/persistence/models');
+
+  const origVentaFindAll = Venta.findAll;
+  const origClienteFindAll = Cliente.findAll;
+  const origUserCount = User.count;
+  const origInsumoFindAll = Insumo.findAll;
+  const origProductCount = Product.count;
+
+  const nowIso = new Date().toISOString();
+  Venta.findAll = async () => [
+    { fechaVenta: nowIso, total: 25000, estadoEntrega: 'ENTREGADO', estadoAprobacion: 'APROBADO', observaciones: '{}' },
+    { fechaVenta: nowIso, total: 99000, estadoEntrega: 'CANCELADO', estadoAprobacion: 'RECHAZADO', observaciones: '{}' }
+  ];
+  Cliente.findAll = async () => [
+    // Cliente real activo
+    { idCliente: 1, idUsuario: 10, direccion: 'Calle 1', estado: 1, usuario: { idUsuario: 10, estado: 'ACTIVO', idRol: 4, rolInfo: { idRol: 4, nombre: 'Cliente' } } },
+    // Cliente real inactivo
+    { idCliente: 2, idUsuario: 11, direccion: 'Calle 2', estado: 1, usuario: { idUsuario: 11, estado: 'INACTIVO', idRol: 4, rolInfo: { idRol: 4, nombre: 'Cliente' } } },
+    // Cliente Mostrador (NO debe contar)
+    { idCliente: 26, idUsuario: null, direccion: '{"esMostrador":true,"direccion":"Mostrador"}', estado: 1, usuario: null },
+    // Staff Admin (NO debe contar como cliente)
+    { idCliente: 3, idUsuario: 1, direccion: 'Local', estado: 1, usuario: { idUsuario: 1, estado: 'ACTIVO', idRol: 1, rolInfo: { idRol: 1, nombre: 'Administrador' } } }
+  ];
+  User.count = async (opts) => (opts && opts.where ? 4 : 5);
+  Insumo.findAll = async () => [
+    // Stock total 20 > min 5, PERO su único lote venció hace 5 días -> stockVigente = 0 <= 5 -> CRÍTICO!
+    {
+      idInsumo: 10, nombre: 'Tomate', stock: 20, stockMinimo: 5, unidadMedida: 'kg', precioUnitario: 3000, descripcion: '',
+      lotes: [{ idLote: 1, idInsumo: 10, cantidadActual: 20, cantidadInicial: 20, fechaVencimiento: '2020-01-01', estado: 'ACTIVO' }]
+    },
+    // Stock sano vigente 15 > min 5 -> NO crítico
+    {
+      idInsumo: 11, nombre: 'Papa', stock: 15, stockMinimo: 5, unidadMedida: 'kg', precioUnitario: 2000, descripcion: '',
+      lotes: [{ idLote: 2, idInsumo: 11, cantidadActual: 15, cantidadInicial: 15, fechaVencimiento: '2099-12-31', estado: 'ACTIVO' }]
+    },
+    // Sin control de stock (stock 0) -> NO crítico
+    {
+      idInsumo: 12, nombre: 'Agua', stock: 0, stockMinimo: 5, unidadMedida: 'lt', precioUnitario: 100, descripcion: '[SIN_CONTROL_STOCK]',
+      lotes: []
+    }
+  ];
+  Product.count = async () => 12;
+
+  try {
+    const res = await DashboardService.getStats({ periodo: 'este_mes' });
+    assert.equal(res.totalVentasGlobal, 25000);
+    assert.equal(res.clientesTotal, 2);
+    assert.equal(res.clientesActivos, 1);
+    assert.equal(res.usuariosTotal, 5);
+    assert.equal(res.insumosBajoStock, 1);
+  } finally {
+    Venta.findAll = origVentaFindAll;
+    Cliente.findAll = origClienteFindAll;
+    User.count = origUserCount;
+    Insumo.findAll = origInsumoFindAll;
+    Product.count = origProductCount;
+  }
+});

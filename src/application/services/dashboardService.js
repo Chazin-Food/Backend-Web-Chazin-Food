@@ -1,5 +1,9 @@
-const { Venta, Insumo, Cliente, User, Product, Compra, Resena, DetalleVentaProducto, Variante, Devolucion, sequelize } = require('../../persistence/models');
+const { Venta, Insumo, LoteInsumo, Cliente, User, Role, Product, Compra, Resena, DetalleVentaProducto, Variante, Devolucion, sequelize } = require('../../persistence/models');
 const { Op } = require('sequelize');
+const {
+  computeInsumoStockBreakdown,
+  isInsumoNoStockControl
+} = require('../../infrastructure/utils/stockFefoUtils');
 const {
   ensureDevolucionSchema,
   ensureZanahoriaInsumoRealOnce,
@@ -59,7 +63,82 @@ function isValidCompletedOrApprovedSale(v) {
   return true;
 }
 
+function isRegisteredNonStaffClient(c) {
+  if (!c) return false;
+  const dirLower = String(c.direccion || '').toLowerCase();
+  if (!c.idUsuario && (dirLower.includes('mostrador') || dirLower.includes('"esmostrador":true'))) {
+    return false;
+  }
+  if (c.usuario) {
+    const userRolId = Number(c.usuario.idRol);
+    const rolNom = String(c.usuario.rolInfo?.nombre || '').toLowerCase();
+    if (
+      userRolId === 1 ||
+      userRolId === 2 ||
+      userRolId === 3 ||
+      rolNom.includes('admin') ||
+      rolNom.includes('vendedor') ||
+      rolNom.includes('cocinero')
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function isRegisteredClientActive(c) {
+  if (c.usuario) {
+    const st = String(c.usuario.estado || '').toUpperCase().trim();
+    return st === 'ACTIVO' || c.usuario.estado === 1 || c.usuario.estado === true;
+  }
+  return c.estado !== 0 && c.estado !== false;
+}
+
 class DashboardService {
+  static async _getInsumosStockCritico(todayISO = getColombiaDateISO()) {
+    const activos = await Insumo.findAll({
+      where: {
+        estado: 1,
+        eliminado: 0
+      },
+      attributes: ['idInsumo', 'nombre', 'stock', 'stockMinimo', 'unidadMedida', 'precioUnitario', 'idProveedor', 'descripcion'],
+      include: [
+        {
+          model: LoteInsumo,
+          as: 'lotes',
+          required: false,
+          separate: true,
+          attributes: ['idLote', 'idInsumo', 'cantidadActual', 'cantidadInicial', 'fechaVencimiento', 'estado']
+        }
+      ]
+    }).catch(() => []);
+
+    const criticos = [];
+    for (const ins of activos) {
+      if (isInsumoNoStockControl(ins.descripcion)) continue;
+      const breakdown = computeInsumoStockBreakdown(ins, ins.lotes || [], todayISO);
+      const stockMin = parseFloat(ins.stockMinimo || 0);
+      if (breakdown.stockVigente <= stockMin) {
+        criticos.push({
+          id: ins.idInsumo,
+          idInsumo: ins.idInsumo,
+          nombre: ins.nombre,
+          stock: breakdown.stockVigente,
+          stockVigente: breakdown.stockVigente,
+          stockVencido: breakdown.stockVencido,
+          stockTotal: parseFloat(ins.stock || 0),
+          minimo: stockMin,
+          stockMinimo: stockMin,
+          unidadMedida: ins.unidadMedida || 'unidades',
+          precioUnitario: parseFloat(ins.precioUnitario || 0),
+          idProveedor: ins.idProveedor || null
+        });
+      }
+    }
+    criticos.sort((a, b) => (a.stock - a.minimo) - (b.stock - b.minimo));
+    return criticos;
+  }
+
   static async getStats(filtro = {}) {
     try {
       const range = parseDateRange(filtro);
@@ -77,28 +156,34 @@ class DashboardService {
         periodo
       } = range;
 
-      const [todasVentas, clientesTotal, clientesActivos, usuariosTotal, usuariosActivos, insumosBajoStock, productosTotal] = await Promise.all([
+      const [todasVentas, rawClientes, usuariosTotal, usuariosActivos, criticosList, productosTotal] = await Promise.all([
         Venta.findAll({
           attributes: ['fechaVenta', 'total', 'estadoEntrega', 'estadoAprobacion', 'observaciones'],
           raw: true
         }).catch(() => []),
-        Cliente.count().catch(() => 0),
-        Cliente.count({ where: { estado: 1 } }).catch(() => null),
+        Cliente.findAll({
+          attributes: ['idCliente', 'idUsuario', 'direccion', 'estado'],
+          include: [
+            {
+              model: User,
+              as: 'usuario',
+              required: false,
+              attributes: ['idUsuario', 'estado', 'idRol'],
+              include: [{ model: Role, as: 'rolInfo', attributes: ['idRol', 'nombre'] }]
+            }
+          ]
+        }).catch(() => []),
         User.count().catch(() => 0),
         User.count({ where: { estado: 'ACTIVO' } }).catch(() => 0),
-        Insumo.count({
-          where: {
-            estado: 1,
-            eliminado: 0,
-            stock: { [Op.lte]: sequelize.col('stockMinimo') },
-            [Op.or]: [
-              { descripcion: null },
-              { descripcion: { [Op.notLike]: '%[SIN_CONTROL_STOCK]%' } }
-            ]
-          }
-        }).catch(() => 0),
+        this._getInsumosStockCritico(todayISO).catch(() => []),
         Product.count({ where: { estado: 1, eliminado: 0 } }).catch(() => 0)
       ]);
+
+      // Alinear conteo de clientes exactamente con ClienteService.getAll (sin Cliente Mostrador ni Staff)
+      const clientesReales = rawClientes.filter(isRegisteredNonStaffClient);
+      const clientesTotal = clientesReales.length;
+      const clientesActivos = clientesReales.filter(isRegisteredClientActive).length;
+      const insumosBajoStock = criticosList.length;
 
       const ventasValidas = todasVentas.filter(isValidCompletedOrApprovedSale);
 
@@ -707,31 +792,8 @@ class DashboardService {
   static async getAlertasStock() {
     try {
       await ensureZanahoriaInsumoRealOnce();
-      const insumosBajoStock = await Insumo.findAll({
-        where: {
-          estado: 1,
-          eliminado: 0,
-          stock: { [Op.lte]: sequelize.col('stockMinimo') },
-          [Op.or]: [
-            { descripcion: null },
-            { descripcion: { [Op.notLike]: '%[SIN_CONTROL_STOCK]%' } }
-          ]
-        },
-        limit: 5,
-        raw: true
-      }).catch(() => []);
-
-      return insumosBajoStock.map(i => ({
-        id: i.idInsumo,
-        idInsumo: i.idInsumo,
-        nombre: i.nombre,
-        stock: parseFloat(i.stock || 0),
-        minimo: parseFloat(i.stockMinimo || 0),
-        stockMinimo: parseFloat(i.stockMinimo || 0),
-        unidadMedida: i.unidadMedida || 'unidades',
-        precioUnitario: parseFloat(i.precioUnitario || 0),
-        idProveedor: i.idProveedor || null
-      }));
+      const criticos = await this._getInsumosStockCritico(getColombiaDateISO());
+      return criticos.slice(0, 5);
     } catch (error) {
       console.error('Error in getAlertasStock:', error);
       return [];
@@ -746,7 +808,8 @@ class DashboardService {
       const where = {
         estadoEntrega: {
           [Op.notIn]: ['LISTO', 'ENTREGADO', 'CANCELADO', 'EN_CAMINO']
-        }
+        },
+        [Op.and]: VentaService.buildExcludeUnpaidWompiClauses(Op)
       };
       if (startDate) {
         where.fechaVenta = {
@@ -769,7 +832,9 @@ class DashboardService {
         limit: 10
       });
 
-      return ventas.map(v => VentaService.formatVenta(v));
+      return ventas
+        .filter((v) => !VentaService.isUnpaidWompiIntention(v))
+        .map(v => VentaService.formatVenta(v));
     } catch (error) {
       console.error('Error in getVentasRecientes:', error);
       return [];
