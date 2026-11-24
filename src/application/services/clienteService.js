@@ -75,6 +75,7 @@ class ClienteService {
     let comprasCount = 0;
     let totalGastadoSum = 0;
     let ticketPromedioVal = 0;
+    let primeraCompraFecha = null;
     let ultimaCompraFecha = null;
     let preferenciasCompra = computeClientPurchasePreferences([]);
 
@@ -103,8 +104,13 @@ class ClienteService {
       for (const v of ventasDB) {
         if (v.fechaVenta) {
           const dt = new Date(v.fechaVenta);
-          if (!Number.isNaN(dt.getTime()) && (!ultimaCompraFecha || dt.getTime() > ultimaCompraFecha.getTime())) {
-            ultimaCompraFecha = dt;
+          if (!Number.isNaN(dt.getTime())) {
+            if (!primeraCompraFecha || dt.getTime() < primeraCompraFecha.getTime()) {
+              primeraCompraFecha = dt;
+            }
+            if (!ultimaCompraFecha || dt.getTime() > ultimaCompraFecha.getTime()) {
+              ultimaCompraFecha = dt;
+            }
           }
         }
       }
@@ -120,6 +126,7 @@ class ClienteService {
         return {
           idTrans: v.codigoPedido || `VEN-${String(v.idVenta).padStart(4, '0')}`,
           fecha: v.fechaVenta ? formatColombiaDateES(v.fechaVenta, 'Reciente') : 'Reciente',
+          fechaISO: v.fechaVenta ? new Date(v.fechaVenta).toISOString() : null,
           producto: prodNombre,
           total: `$${Number(v.total || 0).toLocaleString('es-CO')}`
         };
@@ -195,6 +202,32 @@ class ClienteService {
     const rawTipoDoc = (c.usuario && c.usuario.tipoDocumento) || meta.tipoDocumento || 'C.C.';
     const rawDocumento = (c.usuario && c.usuario.numeroDocumento) || meta.documento || (c.idUsuario ? String(c.idUsuario) : '');
 
+    const totalGastadoRounded = Math.round(totalGastadoSum);
+    let comprasMesVal = 0;
+    let frecuenciaTipo = 'Sin compras';
+    if (comprasCount > 0) {
+      const nowMs = Date.now();
+      const earliestMs = primeraCompraFecha ? primeraCompraFecha.getTime() : nowMs;
+      const spanDays = Math.max(1, (nowMs - earliestMs) / (1000 * 60 * 60 * 24));
+      const spanMonths = Math.max(1, spanDays / 30);
+      comprasMesVal = parseFloat((comprasCount / spanMonths).toFixed(1));
+
+      if (comprasCount === 1) {
+        frecuenciaTipo = spanDays <= 30 ? 'Primera compra' : 'Esporádico';
+      } else if (comprasMesVal >= 4) {
+        frecuenciaTipo = 'Semanal';
+      } else if (comprasMesVal >= 2) {
+        frecuenciaTipo = 'Quincenal';
+      } else if (comprasMesVal >= 1) {
+        frecuenciaTipo = 'Mensual';
+      } else {
+        frecuenciaTipo = 'Esporádico';
+      }
+    }
+    const ultimaCompraStr = ultimaCompraFecha
+      ? formatColombiaDateES(ultimaCompraFecha, 'Sin compras')
+      : 'Sin compras';
+
     return {
       id: c.idCliente,
       idCliente: c.idCliente,
@@ -215,9 +248,15 @@ class ClienteService {
       estado: estadoStr,
       estadoCuenta: c.usuario ? (c.usuario.estado || 'ACTIVO') : (c.estado === 1 ? 'ACTIVO' : 'INACTIVO'),
       compras: comprasCount,
-      totalConsumido: `$${totalGastadoSum.toLocaleString('es-CO')}`,
-      totalGastado: `$${totalGastadoSum.toLocaleString('es-CO')}`,
-      ticketPromedio: comprasCount > 0 ? `$${Math.round(ticketPromedioVal / 1000)}K` : '$0',
+      totalConsumido: `$${totalGastadoRounded.toLocaleString('es-CO')}`,
+      totalConsumidoRaw: totalGastadoRounded,
+      totalGastado: `$${totalGastadoRounded.toLocaleString('es-CO')}`,
+      totalGastadoRaw: totalGastadoRounded,
+      ticketPromedio: comprasCount > 0 ? `$${ticketPromedioVal.toLocaleString('es-CO')}` : '$0',
+      ticketPromedioRaw: ticketPromedioVal,
+      comprasMes: comprasMesVal.toFixed(1),
+      frecuenciaTipo,
+      ultimaCompra: ultimaCompraStr,
       transacciones,
       usuario: c.usuario ? {
         id: c.usuario.idUsuario,

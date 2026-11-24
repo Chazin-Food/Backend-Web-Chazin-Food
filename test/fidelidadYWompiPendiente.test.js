@@ -266,3 +266,54 @@ test('VentaService.getStats se alinea con Dashboard (excluye anuladas/pendientes
     Venta.findAll = origFindAll;
   }
 });
+
+test('ClienteService.formatCliente devuelve ticketPromedio exacto (sin truncar a K) y frecuencia real por fechas', async () => {
+  const daysAgoIso = (n) => new Date(Date.now() - n * 24 * 60 * 60 * 1000).toISOString();
+  const baseCliente = {
+    idCliente: 55,
+    idUsuario: 99,
+    direccion: JSON.stringify({ direccion: 'Cra 10 #20-30' }),
+    estado: 1,
+    usuario: {
+      idUsuario: 99,
+      nombre: 'Laura',
+      apellidos: 'Mendoza',
+      tipoDocumento: 'C.C.',
+      numeroDocumento: '1020304050',
+      email: 'laura@test.com',
+      telefono: '3001234567',
+      estado: 'ACTIVO'
+    }
+  };
+
+  // Caso 1: 0 compras -> $0, 0.0, Sin compras
+  const emptyRes = await ClienteService.formatCliente(baseCliente, []);
+  assert.equal(emptyRes.ticketPromedio, '$0');
+  assert.equal(emptyRes.ticketPromedioRaw, 0);
+  assert.equal(emptyRes.comprasMes, '0.0');
+  assert.equal(emptyRes.frecuenciaTipo, 'Sin compras');
+  assert.equal(emptyRes.ultimaCompra, 'Sin compras');
+
+  // Caso 2: 6 compras por $98.175 en los últimos 90 días -> ticket exacto $16.363, 2.0/mes, Quincenal
+  const ventas90d = [
+    { idVenta: 1, total: 16363, fechaVenta: daysAgoIso(90), estadoEntrega: 'ENTREGADO', estadoAprobacion: 'APROBADO', observaciones: '{}', detalles: [] },
+    { idVenta: 2, total: 16363, fechaVenta: daysAgoIso(72), estadoEntrega: 'ENTREGADO', estadoAprobacion: 'APROBADO', observaciones: '{}', detalles: [] },
+    { idVenta: 3, total: 16363, fechaVenta: daysAgoIso(54), estadoEntrega: 'ENTREGADO', estadoAprobacion: 'APROBADO', observaciones: '{}', detalles: [] },
+    { idVenta: 4, total: 16362, fechaVenta: daysAgoIso(36), estadoEntrega: 'ENTREGADO', estadoAprobacion: 'APROBADO', observaciones: '{}', detalles: [] },
+    { idVenta: 5, total: 16362, fechaVenta: daysAgoIso(18), estadoEntrega: 'ENTREGADO', estadoAprobacion: 'APROBADO', observaciones: '{}', detalles: [] },
+    { idVenta: 6, total: 16362, fechaVenta: daysAgoIso(2), estadoEntrega: 'ENTREGADO', estadoAprobacion: 'APROBADO', observaciones: '{}', detalles: [] }
+  ];
+  const res90 = await ClienteService.formatCliente(baseCliente, ventas90d);
+  assert.equal(res90.compras, 6);
+  assert.equal(res90.totalConsumidoRaw, 98175);
+  assert.equal(res90.ticketPromedioRaw, 16363);
+  assert.ok(!res90.ticketPromedio.includes('K'), 'ticketPromedio no debe truncarse a K');
+  assert.equal(res90.comprasMes, '2.0');
+  assert.equal(res90.frecuenciaTipo, 'Quincenal');
+
+  // Caso 3: 6 compras dentro de los últimos 15 días -> 6.0/mes, Semanal (no dividido por 3 fijo)
+  const ventas15d = ventas90d.map((v, i) => ({ ...v, fechaVenta: daysAgoIso(15 - i * 2) }));
+  const res15 = await ClienteService.formatCliente(baseCliente, ventas15d);
+  assert.equal(res15.comprasMes, '6.0');
+  assert.equal(res15.frecuenciaTipo, 'Semanal');
+});
