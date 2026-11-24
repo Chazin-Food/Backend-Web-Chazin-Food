@@ -418,3 +418,40 @@ test('CategoryService.updateCategory habilita e inhabilita categorias de insumo 
     Insumo.count = origInsumoCount;
   }
 });
+
+test('ClienteService.verificarDocumento y create bloquean documentos duplicados en User y Cliente legacy', async () => {
+  const { User, Cliente } = require('../src/persistence/models');
+  const origUserFindOne = User.findOne;
+  const origClienteFindAll = Cliente.findAll;
+
+  try {
+    // Caso 1: Documento ya existe en User -> existe=true y bloquea create con 400
+    User.findOne = async () => ({ idUsuario: 12, nombre: 'María', apellidos: 'García', numeroDocumento: '1018238872', tipoDocumento: 'C.C.' });
+    Cliente.findAll = async () => [];
+
+    const checkUser = await ClienteService.verificarDocumento('1018238872', 'C.C.');
+    assert.equal(checkUser.existe, true);
+    assert.equal(checkUser.nombre, 'María García');
+
+    await assert.rejects(
+      () => ClienteService.create({ nombre: 'Miguel', apellidos: 'Ochoa', tipoDocumento: 'C.C.', documento: '1018238872', email: 'nuevo@test.com', telefono: '3001234567' }),
+      (err) => err.statusCode === 400 && err.message.includes('1018238872')
+    );
+
+    // Caso 2: No existe en User, pero sí en Cliente legacy (JSON direccion) -> existe=true
+    User.findOne = async () => null;
+    Cliente.findAll = async () => [{ idCliente: 99, idUsuario: null, direccion: JSON.stringify({ nombre: 'Pedro', apellidos: 'Pérez', documento: '6432234344', tipoDocumento: 'C.C.' }) }];
+
+    const checkLegacy = await ClienteService.verificarDocumento('6432234344', 'C.C.');
+    assert.equal(checkLegacy.existe, true);
+    assert.equal(checkLegacy.nombre, 'Pedro Pérez');
+
+    // Caso 3: Documento libre -> existe=false
+    Cliente.findAll = async () => [];
+    const checkFree = await ClienteService.verificarDocumento('9988776655', 'C.C.');
+    assert.equal(checkFree.existe, false);
+  } finally {
+    User.findOne = origUserFindOne;
+    Cliente.findAll = origClienteFindAll;
+  }
+});

@@ -403,6 +403,83 @@ class ClienteService {
     return this.formatCliente(c);
   }
 
+  static async verificarDocumento(rawDocumento, tipoDocumento = 'C.C.') {
+    const cleanDoc = sanitizeDocumento(rawDocumento || '', tipoDocumento || 'C.C.');
+    if (!cleanDoc) {
+      return {
+        existe: false,
+        exists: false,
+        conflict: false,
+        nombre: null,
+        origen: null,
+        message: 'Documento disponible.'
+      };
+    }
+
+    const numericId = /^\d+$/.test(cleanDoc) ? Number(cleanDoc) : null;
+    const userWhere = [{ numeroDocumento: cleanDoc }];
+    if (numericId && Number.isSafeInteger(numericId) && numericId <= 2147483647) {
+      userWhere.push({ idUsuario: numericId });
+    }
+
+    const existingUser = await User.findOne({
+      where: { [Op.or]: userWhere },
+      attributes: ['idUsuario', 'nombre', 'apellidos', 'numeroDocumento', 'tipoDocumento']
+    });
+
+    if (existingUser) {
+      const fullName = `${existingUser.nombre || ''} ${existingUser.apellidos || ''}`.trim() || 'otra persona';
+      return {
+        existe: true,
+        exists: true,
+        conflict: true,
+        nombre: fullName,
+        origen: 'usuario',
+        message: `Ya existe una persona registrada con el número de documento ${cleanDoc} (${fullName}).`
+      };
+    }
+
+    // Revisar también registros legacy en tabla cliente sin idUsuario con documento en JSON
+    const legacyClients = await Cliente.findAll({
+      where: {
+        direccion: { [Op.like]: `%"documento":"${cleanDoc}"%` }
+      },
+      attributes: ['idCliente', 'idUsuario', 'direccion'],
+      limit: 5
+    }).catch(() => []);
+
+    for (const lc of legacyClients) {
+      try {
+        const meta = typeof lc.direccion === 'string' && lc.direccion.trim().startsWith('{')
+          ? JSON.parse(lc.direccion)
+          : {};
+        const metaDoc = sanitizeDocumento(meta.documento || '', meta.tipoDocumento || tipoDocumento || 'C.C.');
+        if (metaDoc && metaDoc === cleanDoc) {
+          const fullName = `${meta.nombre || 'Cliente'} ${meta.apellidos || ''}`.trim();
+          return {
+            existe: true,
+            exists: true,
+            conflict: true,
+            nombre: fullName,
+            origen: 'cliente',
+            message: `Ya existe un cliente registrado con el número de documento ${cleanDoc} (${fullName}).`
+          };
+        }
+      } catch {
+        // Ignorar JSON malformado
+      }
+    }
+
+    return {
+      existe: false,
+      exists: false,
+      conflict: false,
+      nombre: null,
+      origen: null,
+      message: 'Documento disponible.'
+    };
+  }
+
   static async create(data) {
     let idUsuario = data.idUsuario || null;
 
@@ -429,13 +506,11 @@ class ClienteService {
     const cleanTel = sanitizeTelefono(data.telefono);
     const cleanDoc = data.documento ? sanitizeDocumento(data.documento, data.tipoDocumento) : null;
 
-    // Validación de documento duplicado de inmediato en base de datos
+    // Validación de documento duplicado de inmediato en base de datos (usuarios y clientes)
     if (cleanDoc) {
-      const existingUserDoc = await User.findOne({
-        where: { numeroDocumento: cleanDoc }
-      });
-      if (existingUserDoc) {
-        const error = new Error(`Ya existe un cliente registrado con el número de documento ${cleanDoc} (${existingUserDoc.nombre} ${existingUserDoc.apellidos || ''}).`);
+      const docCheck = await this.verificarDocumento(cleanDoc, data.tipoDocumento);
+      if (docCheck.existe) {
+        const error = new Error(docCheck.message || `Ya existe una persona registrada con el número de documento ${cleanDoc}.`);
         error.statusCode = 400;
         throw error;
       }

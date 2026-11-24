@@ -7,7 +7,8 @@ const {
   createCliente,
   updateCliente,
   deleteCliente,
-  getFidelidadCatalogo
+  getFidelidadCatalogo,
+  verificarDocumentoCliente
 } = require('../controllers/clienteController');
 const { protect, requirePrivilege } = require('../../infrastructure/middlewares/authMiddleware');
 const { cacheResponse } = require('../../infrastructure/utils/apiCache');
@@ -16,6 +17,7 @@ const cacheClientes = cacheResponse('clientes', { ttlMs: 15000, cacheControl: 'p
 const cacheFidelidad = cacheResponse('clientes', { ttlMs: 60000, cacheControl: 'public, max-age=30, stale-while-revalidate=60' });
 
 router.get('/fidelidad/catalogo', cacheFidelidad, getFidelidadCatalogo);
+router.get('/verificar-documento', protect, requirePrivilege(['Clientes', 'Gestión de Ventas', 'Punto de Venta'], 'Ver'), verificarDocumentoCliente);
 
 router.route('/')
   .get(protect, requirePrivilege(['Clientes', 'Gestión de Ventas'], 'Ver'), cacheClientes, getClientes)

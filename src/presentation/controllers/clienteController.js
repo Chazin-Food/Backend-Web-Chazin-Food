@@ -69,6 +69,18 @@ const deleteCliente = async (req, res, next) => {
   }
 };
 
+const verificarDocumentoCliente = async (req, res, next) => {
+  try {
+    const documento = req.query.documento || req.query.numeroDocumento || req.body?.documento || req.body?.numeroDocumento || '';
+    const tipoDocumento = req.query.tipoDocumento || req.body?.tipoDocumento || 'C.C.';
+    const result = await ClienteService.verificarDocumento(documento, tipoDocumento);
+    res.setHeader('Cache-Control', 'no-store');
+    res.json(result);
+  } catch (error) {
+    next(error);
+  }
+};
+
 const getFidelidadCatalogo = async (req, res, next) => {
   try {
     const catalogo = ClienteService.getCatalogoFidelidad();
@@ -78,5 +90,14 @@ const getFidelidadCatalogo = async (req, res, next) => {
   }
 };
 
-module.exports = { getClientes, getClientesStats, getClienteById, createCliente, updateCliente, deleteCliente, getFidelidadCatalogo };
+module.exports = {
+  getClientes,
+  getClientesStats,
+  getClienteById,
+  createCliente,
+  updateCliente,
+  deleteCliente,
+  getFidelidadCatalogo,
+  verificarDocumentoCliente
+};
 
