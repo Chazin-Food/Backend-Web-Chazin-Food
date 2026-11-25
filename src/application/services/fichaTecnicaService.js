@@ -702,6 +702,9 @@ class FichaTecnicaService {
         if (data.rendimiento) {
           const numRend = parseFloat(data.rendimiento);
           if (!isNaN(numRend) && numRend > 0) prepUpdates.rendimiento = numRend;
+        } else if (data.cantidad !== undefined && data.cantidad !== null) {
+          const numCant = parseFloat(data.cantidad);
+          if (!isNaN(numCant) && numCant > 0) prepUpdates.rendimiento = numCant;
         }
 
         // Mantener sincronizada la tabla detalleinsumopreparadoinsumo cuando la ficha se guarda directamente
