@@ -203,17 +203,7 @@ class UserService {
       throw error;
     }
 
-    // 2. Full Name Uniqueness Validation
-    const newFullName = formatNombreCompleto(cleanNom, cleanApe).toLowerCase();
-    const allUsers = await User.findAll({ attributes: ['idUsuario', 'nombre', 'apellidos'] });
-    const duplicateName = allUsers.some(u => formatNombreCompleto(u.nombre, u.apellidos).toLowerCase() === newFullName);
-    if (duplicateName) {
-      const error = new Error(`Ya existe un usuario registrado con el nombre "${formatNombreCompleto(cleanNom, cleanApe)}"`);
-      error.statusCode = 400;
-      throw error;
-    }
-
-    // 3. Document Uniqueness Validation
+    // 2. Document Uniqueness Validation (nombres homónimos permitidos)
     if (cleanDoc) {
       const existingDoc = await User.findOne({
         where: {
@@ -291,7 +281,7 @@ class UserService {
 
     const { nombre, apellidos, apellido, email, correo, contrasena, contraseña, password, idRol, rol_id, tipoDocumento, documento, numeroDocumento, telefono, direccion, estado, foto, avatar } = userData;
 
-    // 1. Name & Uniqueness Check (ignoring current user)
+    // 1. Name format validation (nombres homónimos permitidos)
     if (nombre !== undefined || apellidos !== undefined || apellido !== undefined) {
       const rawNom = nombre !== undefined ? nombre : user.nombre;
       const rawApe = (apellidos !== undefined || apellido !== undefined) ? (apellidos || apellido || '') : user.apellidos;
@@ -300,21 +290,6 @@ class UserService {
         const error = new Error('El nombre y los apellidos no pueden contener números ni el símbolo @');
         error.statusCode = 400;
         throw error;
-      }
-      const newFullName = formatNombreCompleto(cleanNom, cleanApe).toLowerCase();
-      const currentFullName = formatNombreCompleto(user.nombre, user.apellidos).toLowerCase();
-
-      if (newFullName && newFullName !== currentFullName) {
-        const otherUsers = await User.findAll({
-          where: { idUsuario: { [Op.ne]: id } },
-          attributes: ['idUsuario', 'nombre', 'apellidos']
-        });
-        const duplicateName = otherUsers.some(u => formatNombreCompleto(u.nombre, u.apellidos).toLowerCase() === newFullName);
-        if (duplicateName) {
-          const error = new Error(`Ya existe un usuario registrado con el nombre "${formatNombreCompleto(cleanNom, cleanApe)}"`);
-          error.statusCode = 400;
-          throw error;
-        }
       }
       user.nombre = cleanNom;
       user.apellidos = cleanApe;

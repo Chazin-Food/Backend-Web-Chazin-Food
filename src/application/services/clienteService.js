@@ -734,20 +734,7 @@ class ClienteService {
 
       const nameChanged = data.nombre !== undefined || data.apellidos !== undefined;
       if (nameChanged) {
-        const newFullName = formatNombreCompleto(cleanNom, cleanApe).toLowerCase();
-        const currentFullName = formatNombreCompleto(c.usuario.nombre, c.usuario.apellidos).toLowerCase();
-        if (newFullName && newFullName !== currentFullName) {
-          const otherUsers = await User.findAll({
-            where: { idUsuario: { [Op.ne]: c.usuario.idUsuario } },
-            attributes: ['idUsuario', 'nombre', 'apellidos']
-          });
-          const duplicateName = otherUsers.some(u => formatNombreCompleto(u.nombre, u.apellidos).toLowerCase() === newFullName);
-          if (duplicateName) {
-            const error = new Error(`Ya existe un usuario registrado con el nombre "${formatNombreCompleto(cleanNom, cleanApe)}"`);
-            error.statusCode = 400;
-            throw error;
-          }
-        }
+        // Nombres homónimos permitidos: no validar duplicidad de nombre completo
         c.usuario.nombre = cleanNom;
         c.usuario.apellidos = cleanApe;
       }
