@@ -153,17 +153,7 @@ class AuthService {
       throw error;
     }
 
-    // 2. Full Name Uniqueness
-    const newFullName = formatNombreCompleto(cleanNom, cleanApe).toLowerCase();
-    const allUsers = await User.findAll({ attributes: ['idUsuario', 'nombre', 'apellidos'] });
-    const duplicateName = allUsers.some(u => formatNombreCompleto(u.nombre, u.apellidos).toLowerCase() === newFullName);
-    if (duplicateName) {
-      const error = new Error(`Ya existe un usuario registrado con el nombre "${formatNombreCompleto(cleanNom, cleanApe)}"`);
-      error.statusCode = 400;
-      throw error;
-    }
-
-    // 3. Document Number Uniqueness
+    // 2. Document Number Uniqueness (nombres homónimos permitidos)
     if (finalDocumento) {
       const existingDoc = await User.findOne({
         where: {
