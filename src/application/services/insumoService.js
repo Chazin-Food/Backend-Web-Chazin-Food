@@ -399,14 +399,6 @@ class InsumoService {
       }
     }
 
-    const minVal = stockMinimo !== undefined && stockMinimo !== null ? parseFloat(stockMinimo) : 0;
-    const maxVal = stockMaximo !== undefined && stockMaximo !== null ? parseFloat(stockMaximo) : 100;
-    if (maxVal < minVal) {
-      const error = new Error('La cantidad máxima no puede ser inferior a la cantidad mínima.');
-      error.statusCode = 400;
-      throw error;
-    }
-
     const normalizedEstado = estado !== undefined
       ? (estado === 'Activo' || estado === 1 || estado === '1' ? 1 : 0)
       : 1;
@@ -414,6 +406,43 @@ class InsumoService {
     const controlarStockFlag = insumoData.controlarStock !== undefined
       ? !(insumoData.controlarStock === false || insumoData.controlarStock === 0 || insumoData.controlarStock === 'false')
       : true;
+
+    let stockVal = 0;
+    let minVal = 0;
+    let maxVal = 0;
+
+    if (controlarStockFlag) {
+      stockVal = stock !== undefined && stock !== null && stock !== '' ? parseFloat(stock) : 0;
+      minVal = stockMinimo !== undefined && stockMinimo !== null && stockMinimo !== '' ? parseFloat(stockMinimo) : 0;
+      maxVal = stockMaximo !== undefined && stockMaximo !== null && stockMaximo !== '' ? parseFloat(stockMaximo) : 100;
+
+      if (!Number.isFinite(stockVal) || stockVal < 0) {
+        const error = new Error('El stock inicial debe ser un número válido mayor o igual a 0.');
+        error.statusCode = 400;
+        throw error;
+      }
+      if (!Number.isFinite(minVal) || minVal < 0) {
+        const error = new Error('El stock mínimo debe ser un número válido mayor o igual a 0.');
+        error.statusCode = 400;
+        throw error;
+      }
+      if (!Number.isFinite(maxVal) || maxVal <= 0) {
+        const error = new Error('El stock máximo / capacidad debe ser mayor a 0.');
+        error.statusCode = 400;
+        throw error;
+      }
+      if (maxVal <= minVal) {
+        const error = new Error('El stock máximo debe ser estrictamente mayor al stock mínimo.');
+        error.statusCode = 400;
+        throw error;
+      }
+      if (stockVal > maxVal) {
+        const error = new Error('El stock inicial no puede superar el stock máximo / capacidad.');
+        error.statusCode = 400;
+        throw error;
+      }
+    }
+
     const encodedDescripcion = encodeDescripcionWithStockFlag(descripcion || '', controlarStockFlag);
 
     const transaction = await database.sequelize.transaction();
@@ -421,9 +450,9 @@ class InsumoService {
       const insumo = await Insumo.create({
         nombre: nombre.trim(),
         idCategoriaInsumo: idCategoriaInsumo ? parseInt(idCategoriaInsumo) : null,
-        stock: controlarStockFlag && stock !== undefined && stock !== null ? parseFloat(stock) : 0,
+        stock: controlarStockFlag ? stockVal : 0,
         stockMinimo: controlarStockFlag ? minVal : 0,
-        stockMaximo: maxVal,
+        stockMaximo: controlarStockFlag ? maxVal : 0,
         fechaExpedicion: (fechaExpedicion && String(fechaExpedicion).trim() !== '') ? fechaExpedicion : null,
         fechaVencimiento: (fechaVencimiento && String(fechaVencimiento).trim() !== '') ? fechaVencimiento : null,
         unidadMedida: unidadMedida || 'und',
@@ -487,35 +516,42 @@ class InsumoService {
 
       // ── Campos editables: Stock Mínimo, Stock Máximo, Descripción, Estado, IVA y Adición ──
       // Los datos maestros (nombre, categoría, unidad, precio/costo y stock) son inmutables
-      if (stockMinimo !== undefined) {
-        const minParsed = parseFloat(stockMinimo);
-        if (isNaN(minParsed) || minParsed < 0) {
+      const currentParsed = parseNoStockFlag(insumo.descripcion);
+      const nextControlarStock = insumoData.controlarStock !== undefined
+        ? !(insumoData.controlarStock === false || insumoData.controlarStock === 0 || insumoData.controlarStock === 'false')
+        : currentParsed.controlarStock;
+
+      if (!nextControlarStock) {
+        insumo.stockMinimo = 0;
+        insumo.stockMaximo = 0;
+      } else if (stockMinimo !== undefined || stockMaximo !== undefined) {
+        const effectiveMin = stockMinimo !== undefined
+          ? parseFloat(stockMinimo)
+          : parseFloat(insumo.stockMinimo || 0);
+        const effectiveMax = stockMaximo !== undefined
+          ? parseFloat(stockMaximo)
+          : parseFloat(insumo.stockMaximo || 0);
+
+        if (!Number.isFinite(effectiveMin) || effectiveMin < 0) {
           const error = new Error('El stock mínimo debe ser un número válido mayor o igual a 0.');
           error.statusCode = 400;
           throw error;
         }
-        insumo.stockMinimo = minParsed;
-      }
-      if (stockMaximo !== undefined) {
-        const maxParsed = parseFloat(stockMaximo);
-        if (isNaN(maxParsed) || maxParsed < 0) {
-          const error = new Error('El stock máximo debe ser un número válido mayor o igual a 0.');
+        if (!Number.isFinite(effectiveMax) || effectiveMax <= 0) {
+          const error = new Error('El stock máximo / capacidad debe ser mayor a 0.');
           error.statusCode = 400;
           throw error;
         }
-        const currentMin = parseFloat(insumo.stockMinimo || 0);
-        if (maxParsed < currentMin) {
-          const error = new Error('La cantidad máxima no puede ser inferior a la cantidad mínima.');
+        if (effectiveMax <= effectiveMin) {
+          const error = new Error('El stock máximo debe ser estrictamente mayor al stock mínimo.');
           error.statusCode = 400;
           throw error;
         }
-        insumo.stockMaximo = maxParsed;
+
+        if (stockMinimo !== undefined) insumo.stockMinimo = effectiveMin;
+        if (stockMaximo !== undefined) insumo.stockMaximo = effectiveMax;
       }
       if (descripcion !== undefined || insumoData.controlarStock !== undefined) {
-        const currentParsed = parseNoStockFlag(insumo.descripcion);
-        const nextControlarStock = insumoData.controlarStock !== undefined
-          ? !(insumoData.controlarStock === false || insumoData.controlarStock === 0 || insumoData.controlarStock === 'false')
-          : currentParsed.controlarStock;
         const nextCleanDesc = descripcion !== undefined ? descripcion : currentParsed.cleanDescripcion;
         insumo.descripcion = encodeDescripcionWithStockFlag(nextCleanDesc, nextControlarStock);
       }

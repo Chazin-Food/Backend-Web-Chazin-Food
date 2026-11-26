@@ -2,6 +2,12 @@ const { Empleado, User, Role } = require('../../persistence/models');
 const { Op } = require('sequelize');
 const { getColombiaDateISO, extractDateOnlyISO } = require('../../infrastructure/utils/colombiaDateUtils');
 
+const normalizeTipoContrato = (val) =>
+  String(val || '').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+
+const isTerminoIndefinido = (val) => normalizeTipoContrato(val) === 'termino indefinido';
+const isTerminoFijo = (val) => normalizeTipoContrato(val) === 'termino fijo';
+
 /**
  * Normaliza cualquier formato de estado a 'Activo', 'Inactivo' o 'Incapacitado'
  */
@@ -161,12 +167,21 @@ const createEmpleado = async (req, res, next) => {
     }
 
     const todayStr = getColombiaDateISO();
+    const tipoContratoFinal = (tipoContrato || 'Término Fijo').trim();
     const fInicio = extractDateOnlyISO(fechaInicio || fechaContratacion) || todayStr;
-    const fFin = fechaFin ? extractDateOnlyISO(fechaFin) : null;
+    const fFin = isTerminoIndefinido(tipoContratoFinal)
+      ? null
+      : (fechaFin ? extractDateOnlyISO(fechaFin) : null);
 
-    if (fFin && fInicio && fFin < fInicio) {
+    if (isTerminoFijo(tipoContratoFinal) && !fFin) {
       return res.status(400).json({
-        message: 'La fecha de finalización no puede ser anterior a la fecha de inicio de contratación'
+        message: 'La fecha de finalización es obligatoria para contratos a Término Fijo'
+      });
+    }
+
+    if (fFin && fInicio && fFin <= fInicio) {
+      return res.status(400).json({
+        message: 'La fecha de finalización debe ser posterior a la fecha de inicio de contratación'
       });
     }
 
@@ -202,7 +217,7 @@ const createEmpleado = async (req, res, next) => {
       fechaContratacion: fInicio,
       fechaInicio: fInicio,
       fechaFin: fFin,
-      tipoContrato: tipoContrato || 'Término Fijo',
+      tipoContrato: tipoContratoFinal,
       salario: Number(salario) || 0,
       turno: turno || 'Completo',
       estado: estadoFinal,
@@ -269,13 +284,22 @@ const updateEmpleado = async (req, res, next) => {
       }
     }
 
+    const tipoContratoFinal = (tipoContrato !== undefined ? tipoContrato : empleado.tipoContrato || 'Término Fijo').trim();
     const rawInicio = fechaInicio !== undefined ? fechaInicio : (fechaContratacion !== undefined ? fechaContratacion : empleado.fechaInicio || empleado.fechaContratacion);
     const fInicio = extractDateOnlyISO(rawInicio);
-    const fFin = fechaFin !== undefined ? (fechaFin ? extractDateOnlyISO(fechaFin) : null) : extractDateOnlyISO(empleado.fechaFin);
+    const fFin = isTerminoIndefinido(tipoContratoFinal)
+      ? null
+      : (fechaFin !== undefined ? (fechaFin ? extractDateOnlyISO(fechaFin) : null) : extractDateOnlyISO(empleado.fechaFin));
 
-    if (fFin && fInicio && fFin < fInicio) {
+    if (isTerminoFijo(tipoContratoFinal) && !fFin) {
       return res.status(400).json({
-        message: 'La fecha de finalización no puede ser anterior a la fecha de inicio de contratación'
+        message: 'La fecha de finalización es obligatoria para contratos a Término Fijo'
+      });
+    }
+
+    if (fFin && fInicio && fFin <= fInicio) {
+      return res.status(400).json({
+        message: 'La fecha de finalización debe ser posterior a la fecha de inicio de contratación'
       });
     }
 
@@ -297,7 +321,7 @@ const updateEmpleado = async (req, res, next) => {
       fechaContratacion: fInicio,
       fechaInicio: fInicio,
       fechaFin: fFin,
-      tipoContrato: tipoContrato !== undefined ? tipoContrato : empleado.tipoContrato,
+      tipoContrato: tipoContratoFinal,
       salario: salario !== undefined ? Number(salario) : empleado.salario,
       turno: turno !== undefined ? turno : empleado.turno,
       estado: estadoFinal,

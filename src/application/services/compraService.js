@@ -2,6 +2,7 @@ const { Op } = require('sequelize');
 const { Compra, DetalleCompraInsumo, Proveedor, Insumo, LoteInsumo, User, sequelize } = require('../../persistence/models');
 const TrazabilidadService = require('./trazabilidadService');
 const { parsePaginationParams, buildPaginatedResponse } = require('../../infrastructure/utils/paginationUtils');
+const { getColombiaDateISO, extractDateOnlyISO } = require('../../infrastructure/utils/colombiaDateUtils');
 
 const ESTADO_RECIBIDA = 'RECIBIDA';
 const ESTADO_PENDIENTE = 'PENDIENTE';
@@ -317,15 +318,26 @@ class CompraService {
       throw error;
     }
 
-    // Ítem #76: Fecha de factura obligatoria
+    // Ítem #76: Fecha de factura obligatoria y estrictamente igual a la fecha actual de Colombia (ni un día antes ni un día después)
     if (!data.fechaFactura) {
       const error = new Error('La fecha de la factura es obligatoria');
       error.statusCode = 400;
       throw error;
     }
-    const fechaFacturaValida = new Date(data.fechaFactura);
-    if (isNaN(fechaFacturaValida.getTime())) {
+    const fechaFacturaISO = extractDateOnlyISO(data.fechaFactura);
+    if (!fechaFacturaISO || !/^\d{4}-\d{2}-\d{2}$/.test(fechaFacturaISO)) {
       const error = new Error('La fecha de la factura no es válida');
+      error.statusCode = 400;
+      throw error;
+    }
+    const hoyColombia = getColombiaDateISO();
+    if (fechaFacturaISO < hoyColombia) {
+      const error = new Error(`La fecha de la factura no puede ser anterior a hoy (${hoyColombia}).`);
+      error.statusCode = 400;
+      throw error;
+    }
+    if (fechaFacturaISO > hoyColombia) {
+      const error = new Error(`La fecha de la factura no puede ser posterior a hoy (${hoyColombia}).`);
       error.statusCode = 400;
       throw error;
     }
@@ -335,6 +347,27 @@ class CompraService {
       const error = new Error('La compra debe incluir al menos un insumo');
       error.statusCode = 400;
       throw error;
+    }
+
+    // Validar fechas de vencimiento de lotes (no pueden estar vencidos al registrar la compra)
+    for (const det of data.detalles) {
+      if (Array.isArray(det.lotes)) {
+        for (const lote of det.lotes) {
+          if (lote && lote.fechaVencimiento) {
+            const vencISO = extractDateOnlyISO(lote.fechaVencimiento);
+            if (!vencISO || !/^\d{4}-\d{2}-\d{2}$/.test(vencISO)) {
+              const error = new Error('La fecha de vencimiento del lote no es válida.');
+              error.statusCode = 400;
+              throw error;
+            }
+            if (vencISO < hoyColombia) {
+              const error = new Error(`La fecha de vencimiento del lote no puede ser anterior a hoy (${hoyColombia}).`);
+              error.statusCode = 400;
+              throw error;
+            }
+          }
+        }
+      }
     }
 
     // Calcular subtotales e IVAs individuales por insumo adquirido
@@ -376,8 +409,8 @@ class CompraService {
     const compra = await Compra.create({
       idProveedor: idProv,
       numeroFactura: numFactura,
-      fechaFactura: data.fechaFactura,
-      fechaCompra: data.fechaCompra || new Date(),
+      fechaFactura: fechaFacturaISO,
+      fechaCompra: hoyColombia,
       subtotal: finalSubtotal,
       iva: finalIva,
       total: finalTotal,
