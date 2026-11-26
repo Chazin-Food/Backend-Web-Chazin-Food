@@ -208,13 +208,8 @@ class ProveedorService {
       throw error;
     }
 
-    const existing = await Proveedor.findOne({ where: { nombre: nombre.trim() } });
-    if (existing) {
-      const error = new Error('Ya existe un proveedor registrado con ese nombre');
-      error.statusCode = 400;
-      throw error;
-    }
-
+    // Nombres homónimos permitidos (especialmente en Persona Natural):
+    // la unicidad del proveedor se garantiza por su número de documento / NIT.
     if (cleanNumeroDocumento) {
       const existingDoc = await Proveedor.findOne({
         where: { numeroDocumento: cleanNumeroDocumento }

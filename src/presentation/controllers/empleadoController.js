@@ -1,6 +1,7 @@
 const { Empleado, User, Role } = require('../../persistence/models');
 const { Op } = require('sequelize');
 const { getColombiaDateISO, extractDateOnlyISO } = require('../../infrastructure/utils/colombiaDateUtils');
+const { isValidEmailStrict } = require('../../infrastructure/utils/validationUtils');
 
 const normalizeTipoContrato = (val) =>
   String(val || '').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
@@ -166,6 +167,12 @@ const createEmpleado = async (req, res, next) => {
       });
     }
 
+    if (correo && String(correo).trim() && !isValidEmailStrict(String(correo).trim())) {
+      return res.status(400).json({
+        message: 'El correo electrónico del empleado no tiene un formato válido'
+      });
+    }
+
     const todayStr = getColombiaDateISO();
     const tipoContratoFinal = (tipoContrato || 'Término Fijo').trim();
     const fInicio = extractDateOnlyISO(fechaInicio || fechaContratacion) || todayStr;
@@ -266,6 +273,12 @@ const updateEmpleado = async (req, res, next) => {
     } = req.body;
 
     const rolFinal = (rol !== undefined ? rol : cargo !== undefined ? cargo : empleado.cargo || '').trim();
+
+    if (correo !== undefined && String(correo).trim() && !isValidEmailStrict(String(correo).trim())) {
+      return res.status(400).json({
+        message: 'El correo electrónico del empleado no tiene un formato válido'
+      });
+    }
 
     // Si cambió el documento, validar que no choque con otro
     if (numeroDocumento && numeroDocumento.trim() !== empleado.numeroDocumento) {

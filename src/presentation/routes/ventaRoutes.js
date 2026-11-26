@@ -9,7 +9,8 @@ const {
   updateTiempoEntregaVenta,
   cancelarVenta,
   aprobarPagoVenta,
-  confirmarEntregaCliente
+  confirmarEntregaCliente,
+  agregarProductosVenta
 } = require('../controllers/ventaController');
 const { protect, requirePrivilege, userHasPrivilege } = require('../../infrastructure/middlewares/authMiddleware');
 const { cacheResponse } = require('../../infrastructure/utils/apiCache');
@@ -44,5 +45,6 @@ router.put('/:id/aprobar-pago', protect, requirePrivilege('Gestión de Ventas', 
 router.put('/:id/tiempo-entrega', protect, requirePrivilege(['Gestión de Ventas', 'Gestión de Producción'], 'Editar'), updateTiempoEntregaVenta);
 router.put('/:id/cancelar', protect, cancelarVenta);
 router.put('/:id/confirmar-entrega', protect, confirmarEntregaCliente);
+router.post('/:id/productos', protect, agregarProductosVenta);
 
 module.exports = router;

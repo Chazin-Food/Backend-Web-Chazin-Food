@@ -195,6 +195,38 @@ const confirmarEntregaCliente = async (req, res, next) => {
   }
 };
 
+const agregarProductosVenta = async (req, res, next) => {
+  try {
+    const canManageSales =
+      userHasPrivilege(req.user, ['Gestión de Ventas', 'Punto de Venta'], 'Editar') ||
+      userHasPrivilege(req.user, ['Gestión de Ventas', 'Punto de Venta'], 'Crear');
+    if (!canManageSales && !isClienteRole(req.user)) {
+      return res.status(403).json({ message: 'No tienes permiso para agregar productos a este pedido.' });
+    }
+
+    if (!canManageSales) {
+      const existing = await VentaService.getById(req.params.id);
+      const idUsuario = req.user.idUsuario || req.user.id;
+      const idCliente = await getClienteIdDeUsuario(idUsuario);
+      const esPropietario =
+        ventaPerteneceAlCliente(existing, idUsuario, idCliente) ||
+        (idUsuario && Number(existing?.idUsuario) === Number(idUsuario));
+      if (!esPropietario) {
+        return res.status(403).json({ message: 'No tienes permiso para modificar este pedido.' });
+      }
+    }
+
+    const venta = await VentaService.agregarProductos(req.params.id, req.body, req.user);
+    res.json({
+      message: 'Productos agregados correctamente al pedido.',
+      venta
+    });
+  } catch (error) {
+    if (error.statusCode) res.status(error.statusCode);
+    next(error);
+  }
+};
+
 module.exports = {
   getVentas,
   getVentasStats,
@@ -204,5 +236,6 @@ module.exports = {
   updateTiempoEntregaVenta,
   cancelarVenta,
   aprobarPagoVenta,
-  confirmarEntregaCliente
+  confirmarEntregaCliente,
+  agregarProductosVenta
 };

@@ -827,6 +827,9 @@ class VentaService {
       idVentaOriginal: obsData.idVentaOriginal || null,
       codigoVentaOriginal: obsData.codigoVentaOriginal || null,
       telefono: obsData.telefono || obsData.celular || clienteUser?.telefono || null,
+      saldoPendienteAdicional: Number(obsData.saldoPendienteAdicional || 0),
+      historialEdiciones: Array.isArray(obsData.historialEdiciones) ? obsData.historialEdiciones : [],
+      estadoCocina: obsData.estadoCocina || null,
       productos,
       detalles: (v.detalles || []).map(d => {
         const plain = typeof d?.toJSON === 'function' ? d.toJSON() : { ...d };
@@ -3469,9 +3472,668 @@ class VentaService {
 
     return this.getById(v.idVenta);
   }
+
+  /**
+   * Determina si un pedido todavía puede ser ampliado agregando más productos
+   * (únicamente mientras NO haya pasado a producción / cocina ni esté cancelado/finalizado).
+   */
+  static isVentaEditablePreCocina(v, obsData = {}) {
+    if (!v) {
+      return { editable: false, statusCode: 404, reason: 'Pedido no encontrado.' };
+    }
+    if (obsData && obsData.esDevolucion === true) {
+      return {
+        editable: false,
+        statusCode: 400,
+        reason: 'No se pueden agregar productos a una orden de reposición por devolución.'
+      };
+    }
+    const estadoEntregaUpper = String(v.estadoEntrega || 'PENDIENTE').toUpperCase().trim();
+    if (estadoEntregaUpper === 'CANCELADO') {
+      return {
+        editable: false,
+        statusCode: 400,
+        reason: 'No se pueden agregar productos a un pedido anulado o cancelado.'
+      };
+    }
+    const estadoCocinaUpper = String(obsData?.estadoCocina || '').toUpperCase().trim();
+    const cocinaIniciada =
+      Boolean(estadoCocinaUpper) &&
+      !['EN_COLA', 'PENDIENTE'].includes(estadoCocinaUpper);
+
+    if (estadoEntregaUpper !== 'PENDIENTE' || cocinaIniciada) {
+      return {
+        editable: false,
+        statusCode: 409,
+        reason: 'No se pueden agregar más productos porque este pedido ya pasó a producción o fue finalizado.'
+      };
+    }
+    return { editable: true };
+  }
+
+  /**
+   * Agrega nuevos productos a un pedido existente mientras NO haya ingresado a cocina/producción.
+   * Valida disponibilidad FEFO, calcula precios desde BD, descuenta stock atómicamente,
+   * actualiza totales de la venta y sincroniza la comanda de producción.
+   */
+  static async agregarProductos(id, data = {}, requestUser = null) {
+    const rawDetails = Array.isArray(data.productos) && data.productos.length > 0
+      ? data.productos
+      : Array.isArray(data.detalles) && data.detalles.length > 0
+      ? data.detalles
+      : Array.isArray(data.items) && data.items.length > 0
+      ? data.items
+      : [];
+
+    if (rawDetails.length === 0) {
+      const err = new Error('Debes seleccionar al menos un producto para agregar al pedido.');
+      err.statusCode = 400;
+      throw err;
+    }
+
+    const existingVenta = await Venta.findByPk(id);
+    if (!existingVenta) {
+      const err = new Error('Pedido no encontrado.');
+      err.statusCode = 404;
+      throw err;
+    }
+
+    let initialObs = {};
+    if (existingVenta.observaciones) {
+      try {
+        initialObs = typeof existingVenta.observaciones === 'string' && existingVenta.observaciones.startsWith('{')
+          ? JSON.parse(existingVenta.observaciones)
+          : { nota: existingVenta.observaciones };
+      } catch (_) {
+        initialObs = { nota: existingVenta.observaciones };
+      }
+    }
+
+    const preCheck = VentaService.isVentaEditablePreCocina(existingVenta, initialObs);
+    if (!preCheck.editable) {
+      const err = new Error(preCheck.reason);
+      err.statusCode = preCheck.statusCode || 409;
+      throw err;
+    }
+
+    const {
+      sequelize,
+      Insumo,
+      Evento,
+      DetalleVentaAdicion,
+      LoteInsumo,
+      Trazabilidad,
+      ComboProducto: CPModel
+    } = require('../../persistence/models');
+    const { Op } = require('sequelize');
+    const { resolveBestEventUnitPrice } = require('../../infrastructure/utils/eventPricingUtils');
+
+    const hoyColombia = getColombiaDateISO();
+    const eventosVigentes = (await Evento.findAll({ where: { estado: 1 } }).catch(() => [])).filter((e) => {
+      const ini = extractDateOnlyISO(e.fechaInicio);
+      const fin = extractDateOnlyISO(e.fechaFin);
+      return (!ini || ini <= hoyColombia) && (!fin || fin >= hoyColombia);
+    });
+
+    // 1. Validar cantidades y resolver precios oficiales desde BD (nunca confiar en montos del cliente)
+    const serverPricedMap = new WeakMap();
+    let addedSubtotal = 0;
+
+    for (const it of rawDetails) {
+      const itQty = Math.floor(Number(it.cantidad !== undefined ? it.cantidad : 1));
+      if (!Number.isFinite(itQty) || itQty < 1 || itQty > 100) {
+        const err = new Error('La cantidad de cada producto debe ser un entero entre 1 y 100.');
+        err.statusCode = 400;
+        throw err;
+      }
+
+      let idProd = it.idProducto || it.productoId || null;
+      let precioVar = null;
+      let varNombreResuelto = null;
+      const reqVarId = !it.esVarianteBase ? (it.idVariante || it.varianteId) : null;
+      if (reqVarId) {
+        const varRow = await Variante.findByPk(reqVarId).catch(() => null);
+        if (varRow) {
+          idProd = idProd || varRow.idProducto;
+          const isDummyBase = String(varRow.nombre || '').toLowerCase().includes('- base');
+          if (!isDummyBase) {
+            varNombreResuelto = varRow.nombre;
+            if (Number(varRow.precio) > 0) precioVar = Number(varRow.precio);
+          }
+        }
+      }
+
+      let precioBase = null;
+      let prodBasePrice = null;
+      let prodNombreResuelto = it.nombre || it.nombreProducto || 'Producto';
+      if (idProd) {
+        const prodRow = await Product.findByPk(idProd).catch(() => null);
+        if (prodRow) {
+          prodNombreResuelto = prodRow.nombre || prodNombreResuelto;
+          prodBasePrice = Number(prodRow.precio || 0);
+          precioBase = precioVar !== null ? precioVar : prodBasePrice;
+        }
+      } else if (precioVar !== null) {
+        precioBase = precioVar;
+      }
+
+      if (precioBase === null || !(precioBase > 0)) {
+        const err = new Error(`No se pudo verificar el precio oficial del producto "${prodNombreResuelto}".`);
+        err.statusCode = 400;
+        throw err;
+      }
+
+      const serverUnitPrice = resolveBestEventUnitPrice({
+        eventosVigentes,
+        idProducto: idProd,
+        precioBase,
+        prodBasePrice
+      });
+
+      const rawAdics = Array.isArray(it.adiciones) ? it.adiciones : (Array.isArray(it.idAdiciones) ? it.idAdiciones : []);
+      let serverAddsUnitTotal = 0;
+      const resolvedAdiciones = [];
+      for (const a of rawAdics) {
+        const adId = typeof a === 'object' ? (a.idAdicion || a.idInsumo || a.id) : a;
+        const adCant = typeof a === 'object' ? Math.max(1, Math.floor(Number(a.cantidad || 1))) : 1;
+        if (!adId) continue;
+        const insAd = await Insumo.findByPk(adId).catch(() => null);
+        const adPrice = insAd ? Math.max(0, Number(insAd.precioAdicion || 0)) : 0;
+        serverAddsUnitTotal += adPrice * adCant;
+        resolvedAdiciones.push({
+          idAdicion: Number(adId),
+          nombre: insAd?.nombre || (typeof a === 'object' ? a.nombre : `Adición #${adId}`),
+          cantidad: adCant,
+          precio: adPrice
+        });
+      }
+
+      const itemLineSubtotal = Math.round((serverUnitPrice + serverAddsUnitTotal) * itQty);
+      serverPricedMap.set(it, {
+        idProducto: idProd ? Number(idProd) : null,
+        nombreProducto: prodNombreResuelto,
+        varianteNombre: varNombreResuelto,
+        cantidad: itQty,
+        precioUnitario: serverUnitPrice,
+        addsUnitTotal: serverAddsUnitTotal,
+        subtotal: itemLineSubtotal,
+        adiciones: resolvedAdiciones
+      });
+      addedSubtotal += itemLineSubtotal;
+    }
+
+    addedSubtotal = Math.round(addedSubtotal);
+
+    // 2. Transacción atómica: re-validar estado pre-cocina bajo lock, descontar FEFO y persistir detalles
+    const updatedVentaId = await sequelize.transaction(async (t) => {
+      const lockedVenta = await Venta.findByPk(id, {
+        transaction: t,
+        lock: t.LOCK.UPDATE
+      });
+      if (!lockedVenta) {
+        const err = new Error('Pedido no encontrado.');
+        err.statusCode = 404;
+        throw err;
+      }
+
+      let obsObj = {};
+      if (lockedVenta.observaciones) {
+        try {
+          obsObj = typeof lockedVenta.observaciones === 'string' && lockedVenta.observaciones.startsWith('{')
+            ? JSON.parse(lockedVenta.observaciones)
+            : { nota: lockedVenta.observaciones };
+        } catch (_) {
+          obsObj = { nota: lockedVenta.observaciones };
+        }
+      }
+
+      const lockCheck = VentaService.isVentaEditablePreCocina(lockedVenta, obsObj);
+      if (!lockCheck.editable) {
+        const err = new Error(lockCheck.reason);
+        err.statusCode = lockCheck.statusCode || 409;
+        throw err;
+      }
+
+      const preparedDetails = [];
+      const allDemands = [];
+
+      for (const d of rawDetails) {
+        const pricedDetail = serverPricedMap.get(d);
+        const prodId = pricedDetail?.idProducto || d.idProducto || d.productoId || null;
+        const isBaseSelection = Boolean(d.esVarianteBase);
+        let chosenVarianteId = null;
+
+        if (!isBaseSelection && (d.idVariante || d.varianteId)) {
+          const reqId = Number(d.idVariante || d.varianteId);
+          const [matchById] = await sequelize.query(
+            'SELECT idVariante, idProducto FROM variante WHERE idVariante = :id LIMIT 1',
+            { replacements: { id: reqId }, transaction: t }
+          );
+          if (matchById && matchById.length > 0 && (!prodId || Number(prodId) === Number(matchById[0].idProducto))) {
+            chosenVarianteId = matchById[0].idVariante;
+          }
+        }
+
+        if (!chosenVarianteId && prodId) {
+          const [baseDummy] = await sequelize.query(
+            "SELECT idVariante FROM variante WHERE idProducto = :id ORDER BY CASE WHEN LOWER(nombre) LIKE '%- base%' THEN 0 ELSE 1 END, estado DESC, idVariante ASC LIMIT 1",
+            { replacements: { id: prodId }, transaction: t }
+          );
+          if (baseDummy && baseDummy.length > 0) {
+            chosenVarianteId = baseDummy[0].idVariante;
+          } else {
+            const [prodInfo] = await sequelize.query(
+              'SELECT idProducto, nombre, precio FROM producto WHERE idProducto = :id LIMIT 1',
+              { replacements: { id: prodId }, transaction: t }
+            );
+            if (prodInfo && prodInfo.length > 0) {
+              const dummyName = `${String(prodInfo[0].nombre || 'Producto').slice(0, 68)} - base`;
+              await sequelize.query(
+                'INSERT INTO variante (idProducto, nombre, precio, estado) VALUES (:idProducto, :nombre, :precio, 1)',
+                {
+                  replacements: { idProducto: prodInfo[0].idProducto, nombre: dummyName, precio: Number(prodInfo[0].precio || 0) },
+                  transaction: t
+                }
+              );
+              const [insertedDummy] = await sequelize.query(
+                'SELECT idVariante FROM variante WHERE idProducto = :id ORDER BY idVariante DESC LIMIT 1',
+                { replacements: { id: prodInfo[0].idProducto }, transaction: t }
+              );
+              if (insertedDummy && insertedDummy.length > 0) {
+                chosenVarianteId = insertedDummy[0].idVariante;
+              }
+            }
+          }
+        }
+
+        const prodRow = prodId ? await Product.findByPk(prodId, { transaction: t }).catch(() => null) : null;
+        const selectedVarRow = chosenVarianteId ? await Variante.findByPk(chosenVarianteId, { transaction: t }).catch(() => null) : null;
+        const prodDisplayName = String(prodRow?.nombre || pricedDetail?.nombreProducto || 'Producto').trim();
+        const safeDetalleQty = pricedDetail.cantidad;
+
+        if (prodRow && (Number(prodRow.eliminado) === 1 || Number(prodRow.estado) === 0)) {
+          const err = new Error(`No se puede agregar "${prodDisplayName}" porque no está disponible en este momento.`);
+          err.statusCode = 409;
+          throw err;
+        }
+        if (
+          !isBaseSelection &&
+          selectedVarRow &&
+          !String(selectedVarRow.nombre || '').toLowerCase().includes('- base') &&
+          Number(selectedVarRow.estado) === 0
+        ) {
+          const err = new Error(`La variante "${selectedVarRow.nombre}" de "${prodDisplayName}" está inactiva.`);
+          err.statusCode = 409;
+          throw err;
+        }
+
+        let comboItems = [];
+        if (prodRow) {
+          let cfg = prodRow.configuracionCombo;
+          if (typeof cfg === 'string') {
+            try { cfg = JSON.parse(cfg); } catch (_) { cfg = null; }
+          }
+          if (cfg && cfg.esCombo) {
+            if (Array.isArray(cfg.productosAsociados) && cfg.productosAsociados.length > 0) comboItems = cfg.productosAsociados;
+            else if (Array.isArray(cfg.itemsCombo) && cfg.itemsCombo.length > 0) comboItems = cfg.itemsCombo;
+          }
+          if (comboItems.length === 0 && prodId) {
+            const dbComboItems = await CPModel.findAll({ where: { idCombo: prodId }, transaction: t }).catch(() => []);
+            if (dbComboItems && dbComboItems.length > 0) {
+              comboItems = dbComboItems.map((ci) => ({ idProducto: ci.idProducto, cantidad: ci.cantidad }));
+            }
+          }
+        }
+
+        const recipeResult = await VentaService.resolveRecipeOrInsumoForDetail(
+          d,
+          chosenVarianteId,
+          prodId,
+          { transaction: t, skipNameFallback: comboItems.length > 0 }
+        );
+
+        let itemHasInventorySource = false;
+        if (recipeResult.directInsumoId) {
+          itemHasInventorySource = true;
+          allDemands.push({
+            idInsumo: Number(recipeResult.directInsumoId),
+            rawCantidad: 1,
+            recipeUnit: 'und',
+            multiplierQty: safeDetalleQty,
+            sourceType: 'PRODUCTO_DIRECTO',
+            productName: prodDisplayName,
+            detailItem: d,
+            obsProdItem: d,
+            checkMiseEnPlace: true,
+            trazabilidadTipo: 'CONSUMO_VENTA',
+            trazabilidadDetalleFn: (qtyDesc, unit, insName, ventaId) =>
+              `Adición a Venta #${ventaId}: consumo de ${qtyDesc.toFixed(2)} ${unit} (${safeDetalleQty}x ${insName})`
+          });
+        } else if (comboItems.length > 0) {
+          itemHasInventorySource = true;
+          for (const ci of comboItems) {
+            const childProdId = Number(ci.idProducto || ci.id);
+            const childQty = Math.max(1, Number(ci.cantidad || 1)) * safeDetalleQty;
+            if (!childProdId || !(childQty > 0)) continue;
+            const childProd = await Product.findByPk(childProdId, { transaction: t }).catch(() => null);
+            const childRecipe = await VentaService.resolveRecipeOrInsumoForDetail(
+              { idProducto: childProdId, cantidad: childQty, nombre: childProd?.nombre },
+              null,
+              childProdId,
+              { transaction: t }
+            );
+            if (childRecipe.directInsumoId) {
+              allDemands.push({
+                idInsumo: Number(childRecipe.directInsumoId),
+                rawCantidad: 1,
+                recipeUnit: 'und',
+                multiplierQty: childQty,
+                sourceType: 'COMBO_DIRECTO',
+                productName: prodDisplayName,
+                detailItem: d,
+                obsProdItem: d,
+                checkMiseEnPlace: false,
+                trazabilidadTipo: 'CONSUMO_VENTA',
+                trazabilidadDetalleFn: (qtyDesc, unit, insName, ventaId) =>
+                  `Adición a Venta #${ventaId} (Combo ${prodDisplayName}): ${qtyDesc.toFixed(2)} ${unit} de ${insName}`
+              });
+            } else if (childRecipe.ficha && Array.isArray(childRecipe.ficha.detalles)) {
+              for (const det of childRecipe.ficha.detalles) {
+                const cantPorPlato = Number(det.cantidad || 0);
+                if (cantPorPlato > 0 && det.idInsumo) {
+                  allDemands.push({
+                    idInsumo: Number(det.idInsumo),
+                    rawCantidad: cantPorPlato,
+                    recipeUnit: det.unidadMedida || 'und',
+                    multiplierQty: childQty,
+                    sourceType: 'COMBO_RECETA',
+                    productName: prodDisplayName,
+                    detailItem: d,
+                    obsProdItem: d,
+                    checkMiseEnPlace: false,
+                    trazabilidadTipo: 'CONSUMO_VENTA',
+                    trazabilidadDetalleFn: (qtyDesc, unit, _insName, ventaId) =>
+                      `Adición a Venta #${ventaId} (Combo ${prodDisplayName}): ${qtyDesc.toFixed(2)} ${unit}`
+                  });
+                }
+              }
+            }
+          }
+        } else if (recipeResult.ficha && Array.isArray(recipeResult.ficha.detalles) && recipeResult.ficha.detalles.length > 0) {
+          itemHasInventorySource = true;
+          for (const det of recipeResult.ficha.detalles) {
+            const cantPorPlato = Number(det.cantidad || 0);
+            if (cantPorPlato > 0 && det.idInsumo) {
+              allDemands.push({
+                idInsumo: Number(det.idInsumo),
+                rawCantidad: cantPorPlato,
+                recipeUnit: det.unidadMedida || 'und',
+                multiplierQty: safeDetalleQty,
+                sourceType: 'RECETA',
+                productName: prodDisplayName,
+                detailItem: d,
+                obsProdItem: d,
+                checkMiseEnPlace: true,
+                trazabilidadTipo: 'CONSUMO_VENTA',
+                trazabilidadDetalleFn: (qtyDesc, unit, _insName, ventaId) =>
+                  `Adición a Venta #${ventaId}: consumo de ${qtyDesc.toFixed(2)} ${unit} (${safeDetalleQty}x ${prodDisplayName})`
+              });
+            }
+          }
+        }
+
+        if (!itemHasInventorySource) {
+          const err = new Error(`No se puede agregar "${prodDisplayName}": está agotado o sin stock configurado.`);
+          err.statusCode = 409;
+          err.code = 'INSUFFICIENT_STOCK';
+          throw err;
+        }
+
+        for (const ad of pricedDetail.adiciones) {
+          allDemands.push({
+            idInsumo: Number(ad.idAdicion),
+            rawCantidad: 1,
+            recipeUnit: null,
+            multiplierQty: ad.cantidad * safeDetalleQty,
+            sourceType: 'ADICION',
+            productName: ad.nombre,
+            detailItem: d,
+            obsProdItem: d,
+            checkMiseEnPlace: false,
+            trazabilidadTipo: 'CONSUMO_ADICION',
+            trazabilidadMotivoFn: (ventaId) => `Adición a Venta #${ventaId}`,
+            trazabilidadDetalleFn: (qtyDesc, unit, insName, ventaId) =>
+              `Adición ${insName} (${qtyDesc} ${unit}) agregada a Venta #${ventaId}`
+          });
+        }
+
+        preparedDetails.push({
+          d,
+          chosenVarianteId,
+          prodId,
+          prodDisplayName,
+          pricedDetail,
+          safeDetalleQty
+        });
+      }
+
+      // Bloquear insumos y lotes en orden determinístico y validar stock vigente FEFO
+      const uniqueInsumoIds = Array.from(new Set(allDemands.map((dm) => Number(dm.idInsumo)).filter(Boolean))).sort((a, b) => a - b);
+      const lockedInsumosMap = new Map();
+      const lockedLotesByInsumo = new Map();
+
+      if (uniqueInsumoIds.length > 0) {
+        const lockedInsumos = await Insumo.findAll({
+          where: { idInsumo: uniqueInsumoIds },
+          order: [['idInsumo', 'ASC']],
+          transaction: t,
+          lock: t.LOCK.UPDATE
+        });
+        for (const ins of lockedInsumos) lockedInsumosMap.set(Number(ins.idInsumo), ins);
+
+        const lockedLotes = await LoteInsumo.findAll({
+          where: { idInsumo: uniqueInsumoIds, estado: { [Op.ne]: 'AGOTADO' } },
+          order: [['idInsumo', 'ASC'], ['idLote', 'ASC']],
+          transaction: t,
+          lock: t.LOCK.UPDATE
+        });
+        for (const l of lockedLotes) {
+          const idIns = Number(l.idInsumo);
+          if (!lockedLotesByInsumo.has(idIns)) lockedLotesByInsumo.set(idIns, []);
+          lockedLotesByInsumo.get(idIns).push(l);
+        }
+      }
+
+      const activeDemands = [];
+      const aggregatedByInsumo = new Map();
+      for (const dm of allDemands) {
+        const insumo = lockedInsumosMap.get(dm.idInsumo) || null;
+        if (!insumo) {
+          const err = new Error(`No se encontró el insumo requerido para "${dm.productName}".`);
+          err.statusCode = 409;
+          throw err;
+        }
+        if (dm.checkMiseEnPlace && isInsumoRemovedByMiseEnPlace(insumo, dm.detailItem, dm.obsProdItem)) continue;
+
+        const insumoUnit = insumo.unidadMedida || dm.recipeUnit || 'und';
+        const cantPorUnidad = dm.recipeUnit
+          ? convertUnits(dm.rawCantidad, dm.recipeUnit, insumoUnit)
+          : Number(dm.rawCantidad || 0);
+        const totalADescontar = roundQty(cantPorUnidad * dm.multiplierQty);
+        if (!(totalADescontar > EPSILON)) continue;
+
+        activeDemands.push({ ...dm, insumo, insumoUnit, totalADescontar });
+        if (!aggregatedByInsumo.has(dm.idInsumo)) {
+          aggregatedByInsumo.set(dm.idInsumo, { insumo, totalRequired: 0, unit: insumoUnit, affectedProducts: new Set() });
+        }
+        const agg = aggregatedByInsumo.get(dm.idInsumo);
+        agg.totalRequired = roundQty(agg.totalRequired + totalADescontar);
+        agg.affectedProducts.add(dm.sourceType === 'ADICION' ? `Adición "${insumo.nombre}"` : dm.productName);
+      }
+
+      const stockConflicts = [];
+      for (const [idIns, agg] of aggregatedByInsumo.entries()) {
+        const lotesIns = lockedLotesByInsumo.get(idIns) || [];
+        const breakdown = computeInsumoStockBreakdown(agg.insumo, lotesIns, hoyColombia);
+        if (breakdown.isInactive) {
+          stockConflicts.push({ idInsumo: idIns, productos: Array.from(agg.affectedProducts), motivo: 'INSUMO_INACTIVO' });
+        } else if (breakdown.controlarStock && breakdown.stockVigente + EPSILON < agg.totalRequired) {
+          stockConflicts.push({ idInsumo: idIns, productos: Array.from(agg.affectedProducts), motivo: 'STOCK_INSUFICIENTE' });
+        }
+      }
+      if (stockConflicts.length > 0) {
+        const affected = Array.from(new Set(stockConflicts.flatMap((c) => c.productos))).map((n) => `"${n}"`).join(', ');
+        const err = new Error(`Stock insuficiente para agregar ${affected} al pedido.`);
+        err.statusCode = 409;
+        err.code = 'INSUFFICIENT_STOCK';
+        err.productosAgotados = stockConflicts;
+        throw err;
+      }
+
+      // Crear los nuevos detalles relacionales y formatear los ítems agregados para obsObj.productos
+      const newlyFormattedObsProducts = [];
+      for (const item of preparedDetails) {
+        const { d, chosenVarianteId, prodId, prodDisplayName, pricedDetail, safeDetalleQty } = item;
+        const customNote = String(d.observacion || d.observaciones || d.nota || '').trim();
+        const safeDetalleUnit = pricedDetail.precioUnitario;
+        const safeDetalleSub = Math.round(safeDetalleUnit * safeDetalleQty);
+
+        if (chosenVarianteId) {
+          const createdDetalle = await DetalleVentaProducto.create({
+            idVenta: lockedVenta.idVenta,
+            idVariante: chosenVarianteId,
+            cantidad: safeDetalleQty,
+            precioUnitario: safeDetalleUnit,
+            subtotal: safeDetalleSub,
+            observaciones: customNote || prodDisplayName
+          }, { transaction: t });
+
+          for (const ad of pricedDetail.adiciones) {
+            await DetalleVentaAdicion.create({
+              idDetalleVenta: createdDetalle.idDetalleVenta,
+              idAdicion: ad.idAdicion,
+              cantidad: ad.cantidad,
+              precio: ad.precio,
+              subtotal: ad.precio * ad.cantidad
+            }, { transaction: t });
+          }
+        }
+
+        newlyFormattedObsProducts.push({
+          idProducto: prodId,
+          idVariante: chosenVarianteId || d.idVariante || null,
+          esVarianteBase: Boolean(d.esVarianteBase),
+          nombre: prodDisplayName,
+          nombreProducto: prodDisplayName,
+          varianteNombre: pricedDetail.varianteNombre || null,
+          cantidad: safeDetalleQty,
+          precioUnitario: safeDetalleUnit,
+          total: pricedDetail.subtotal,
+          observaciones: customNote,
+          ingredientesRemovidos: Array.isArray(d.ingredientesRemovidos) ? d.ingredientesRemovidos : [],
+          adiciones: pricedDetail.adiciones,
+          agregadoPostCreacion: true
+        });
+      }
+
+      // Descontar inventario FEFO
+      const newLotesConsumidos = [];
+      const actorId = requestUser?.idUsuario || requestUser?.id || lockedVenta.idUsuario || null;
+      for (const dm of activeDemands) {
+        const insumo = dm.insumo;
+        if (!insumo || isInsumoNoStockControl(insumo)) continue;
+        const lotesIns = lockedLotesByInsumo.get(dm.idInsumo) || [];
+        const fefoRes = await deductInsumoFefo(insumo, dm.totalADescontar, {
+          lotes: lotesIns,
+          todayCol: hoyColombia,
+          transaction: t
+        });
+        if (Array.isArray(fefoRes.lotesConsumidos) && fefoRes.lotesConsumidos.length > 0) {
+          newLotesConsumidos.push(...fefoRes.lotesConsumidos);
+        }
+        try {
+          await Trazabilidad.create({
+            tipo: dm.trazabilidadTipo || 'CONSUMO_VENTA',
+            entidadNombre: insumo.nombre,
+            detalle: dm.trazabilidadDetalleFn(dm.totalADescontar, dm.insumoUnit, insumo.nombre, lockedVenta.idVenta),
+            idInsumo: insumo.idInsumo,
+            tipoMovimiento: 'SALIDA',
+            cantidad: dm.totalADescontar,
+            motivo: dm.trazabilidadMotivoFn ? dm.trazabilidadMotivoFn(lockedVenta.idVenta) : `Adición a Venta #${lockedVenta.idVenta}`,
+            usuarioId: actorId
+          }, { transaction: t });
+        } catch (tzErr) {
+          console.warn('Error registrando trazabilidad al agregar productos:', tzErr.message);
+        }
+      }
+
+      // Recalcular totales conservando el porcentaje de descuento original si existía
+      const prevSubtotal = Number(lockedVenta.subtotal || 0);
+      const prevDescuento = Number(lockedVenta.descuentoAplicado || 0);
+      const prevRate = prevSubtotal > 0 && prevDescuento > 0 ? prevDescuento / prevSubtotal : 0;
+      const addedDescuento = prevRate > 0 ? Math.round(addedSubtotal * prevRate) : 0;
+      const newSubtotal = Math.round(prevSubtotal + addedSubtotal);
+      const newDescuento = Math.round(prevDescuento + addedDescuento);
+      const newTotal = Math.max(0, newSubtotal - newDescuento);
+      const addedNetTotal = Math.max(0, addedSubtotal - addedDescuento);
+
+      const existingObsProductos = Array.isArray(obsObj.productos) ? obsObj.productos : [];
+      obsObj.productos = [...existingObsProductos, ...newlyFormattedObsProducts];
+
+      if (newLotesConsumidos.length > 0) {
+        obsObj.lotesConsumidos = [
+          ...(Array.isArray(obsObj.lotesConsumidos) ? obsObj.lotesConsumidos : []),
+          ...newLotesConsumidos
+        ];
+      }
+
+      const now = new Date();
+      const formattedHorario = formatColombiaTime(now);
+      if (!Array.isArray(obsObj.historialEdiciones)) obsObj.historialEdiciones = [];
+      obsObj.historialEdiciones.push({
+        fecha: now.toISOString(),
+        hora: formattedHorario,
+        usuario: requestUser ? `${requestUser.nombre || ''} ${requestUser.apellidos || ''}`.trim() || requestUser.email : 'Sistema',
+        itemsAgregados: newlyFormattedObsProducts.reduce((s, p) => s + Number(p.cantidad || 1), 0),
+        montoAdicional: addedNetTotal
+      });
+
+      // Si el pedido ya estaba pagado (ej. Wompi/POS), registrar saldo pendiente adicional por los ítems agregados
+      const wasAlreadyPaid =
+        String(obsObj.estadoPago || '').toLowerCase() === 'pagado' ||
+        Boolean(obsObj.wompiTransactionId);
+      if (wasAlreadyPaid && addedNetTotal > 0) {
+        obsObj.saldoPendienteAdicional = Number(obsObj.saldoPendienteAdicional || 0) + addedNetTotal;
+      }
+
+      // Recalcular tiempo estimado automático si no estaba en modo manual
+      if (String(obsObj.modoTiempoEntrega || '').toUpperCase() !== 'MANUAL') {
+        const updatedEst = computeHybridDeliveryEstimate({
+          productos: obsObj.productos,
+          tipoEntrega: obsObj.tipoEntrega || (String(lockedVenta.tipoVenta || '').toUpperCase() === 'DOMICILIO' ? 'Domicilio' : 'En Mesa'),
+          estadoEntrega: lockedVenta.estadoEntrega,
+          estadoCocina: obsObj.estadoCocina
+        });
+        obsObj.tiempoEstimadoEntrega = updatedEst.effectiveEstimate;
+        lockedVenta.tiempoEstimadoEntrega = updatedEst.effectiveEstimate;
+      }
+
+      lockedVenta.subtotal = newSubtotal;
+      lockedVenta.descuentoAplicado = newDescuento;
+      lockedVenta.total = newTotal;
+      lockedVenta.observaciones = JSON.stringify(obsObj);
+      await lockedVenta.save({ transaction: t });
+
+      return lockedVenta.idVenta;
+    });
+
+    invalidateNamespaces(['ventas', 'productos', 'insumos', 'insumos-preparados', 'adiciones', 'dashboard', 'produccion']);
+    return this.getById(updatedVentaId);
+  }
 }
 
 VentaService.isUnpaidWompiIntention = isUnpaidWompiIntention;
 VentaService.buildExcludeUnpaidWompiClauses = buildExcludeUnpaidWompiClauses;
+VentaService.isVentaEditablePreCocina = VentaService.isVentaEditablePreCocina;
 
 module.exports = VentaService;
