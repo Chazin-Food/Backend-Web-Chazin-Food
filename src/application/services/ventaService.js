@@ -1,4 +1,4 @@
-const { Venta, DetalleVentaProducto, Cliente, User, Role, Variante, Product } = require('../../persistence/models');
+const { Venta, DetalleVentaProducto, Cliente, User, Role, Variante, Product, Devolucion } = require('../../persistence/models');
 const {
   parsePaginationParams,
   buildPaginatedResponse,
@@ -1057,6 +1057,7 @@ class VentaService {
     let totalVentasSum = 0;
     let descOtorgadosSum = 0;
     let pedidosCount = 0;
+    const validVentaTotalsMap = new Map();
     const uniqueClients = new Set();
     const uniqueDaysSet = new Set();
     let earliestMs = Infinity;
@@ -1091,6 +1092,9 @@ class VentaService {
 
       totalVentasSum += total;
       descOtorgadosSum += Math.max(0, desc) + descEvento;
+      if (v.idVenta) {
+        validVentaTotalsMap.set(Number(v.idVenta), total);
+      }
 
       const rawCliName = String(obsData.clienteNombre || '').toLowerCase().trim();
       const isAnonymousWalkIn =
@@ -1111,9 +1115,60 @@ class VentaService {
       }
     }
 
-    const totalVentasRounded = Math.round(totalVentasSum);
+    // Cruzar devoluciones aprobadas/completadas sobre las ventas válidas del período para calcular totales netos reales
+    let totalReembolsosSum = 0;
+    let devolucionesCount = 0;
+    let unidadesDevueltas = 0;
+    const validVentaIds = Array.from(validVentaTotalsMap.keys());
+    if (validVentaIds.length > 0 && Devolucion && typeof Devolucion.findAll === 'function') {
+      try {
+        const devRows = await Devolucion.findAll({
+          where: {
+            idVenta: { [Op.in]: validVentaIds },
+            estado: { [Op.in]: ['APROBADA', 'COMPLETADA'] }
+          },
+          attributes: ['idDevolucion', 'idVenta', 'tipoResolucion', 'valorDevuelto', 'productosDevueltos'],
+          raw: true
+        });
+        const refundedBySale = new Map();
+        for (const d of (devRows || [])) {
+          devolucionesCount++;
+          const vid = Number(d.idVenta || 0);
+          const isMoney = String(d.tipoResolucion || '').toLowerCase().includes('dinero');
+          const rawVal = isMoney ? Math.max(0, parseFloat(d.valorDevuelto || 0)) : 0;
+          if (rawVal > 0 && vid) {
+            const saleMax = validVentaTotalsMap.get(vid) || 0;
+            const prevForSale = refundedBySale.get(vid) || 0;
+            const nextForSale = Math.min(saleMax, prevForSale + rawVal);
+            totalReembolsosSum += Math.max(0, nextForSale - prevForSale);
+            refundedBySale.set(vid, nextForSale);
+          }
+          if (d.productosDevueltos) {
+            try {
+              const items = typeof d.productosDevueltos === 'string'
+                ? JSON.parse(d.productosDevueltos)
+                : d.productosDevueltos;
+              if (Array.isArray(items)) {
+                for (const it of items) {
+                  unidadesDevueltas += Math.max(0, Number(it?.cantidad || 0));
+                }
+              }
+            } catch (_) {
+              // ignorar JSON malformado
+            }
+          }
+        }
+      } catch (devErr) {
+        console.warn('[VentaService.getStats] No se pudieron cruzar devoluciones:', devErr?.message);
+      }
+    }
+
+    const totalVentasBrutasRounded = Math.round(totalVentasSum);
+    const totalReembolsosRounded = Math.min(totalVentasBrutasRounded, Math.round(totalReembolsosSum));
+    const totalVentasNetasRounded = Math.max(0, totalVentasBrutasRounded - totalReembolsosRounded);
+    const totalVentasRounded = totalVentasNetasRounded;
     const descOtorgadosRounded = Math.round(descOtorgadosSum);
-    const ticketPromedioVal = pedidosCount > 0 ? Math.round(totalVentasSum / pedidosCount) : 0;
+    const ticketPromedioVal = pedidosCount > 0 ? Math.round(totalVentasNetasRounded / pedidosCount) : 0;
     const uniqueClientsCount = uniqueClients.size;
     const uniqueDays = uniqueDaysSet.size || 1;
     const frecuenciaVal = pedidosCount > 0 ? parseFloat((pedidosCount / Math.max(1, uniqueClientsCount)).toFixed(1)) : 0.0;
@@ -1152,6 +1207,14 @@ class VentaService {
     return {
       totalVentas: totalVentasRounded,
       totalVentasFormatted: `$${totalVentasRounded.toLocaleString('es-CO')}`,
+      totalVentasBrutas: totalVentasBrutasRounded,
+      totalVentasBrutasFormatted: `$${totalVentasBrutasRounded.toLocaleString('es-CO')}`,
+      totalReembolsos: totalReembolsosRounded,
+      totalReembolsosFormatted: `$${totalReembolsosRounded.toLocaleString('es-CO')}`,
+      totalVentasNetas: totalVentasNetasRounded,
+      totalVentasNetasFormatted: `$${totalVentasNetasRounded.toLocaleString('es-CO')}`,
+      devolucionesCount,
+      unidadesDevueltas,
       pedidosCount,
       ticketPromedio: ticketPromedioVal,
       ticketPromedioFormatted: `$${ticketPromedioVal.toLocaleString('es-CO')}`,
