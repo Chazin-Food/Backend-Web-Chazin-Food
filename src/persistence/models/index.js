@@ -286,6 +286,11 @@ const Insumo = sequelize.define('insumo', {
     allowNull: true,
     defaultValue: null
   },
+  tamanioPaquete: {
+    type: DataTypes.STRING(50),
+    allowNull: true,
+    defaultValue: null
+  },
   imagen: {
     type: DataTypes.STRING(255),
     allowNull: true
@@ -350,6 +355,18 @@ const InsumoPreparado = sequelize.define('insumopreparado', {
   costoTotal: {
     type: DataTypes.DECIMAL(10, 2),
     defaultValue: 0
+  },
+  esAdicion: {
+    type: DataTypes.TINYINT,
+    defaultValue: 0
+  },
+  precioAdicion: {
+    type: DataTypes.DECIMAL(10, 2),
+    defaultValue: 0
+  },
+  imagen: {
+    type: DataTypes.STRING(255),
+    allowNull: true
   },
   porcionMinimaCantidad: {
     type: DataTypes.DECIMAL(10, 2),

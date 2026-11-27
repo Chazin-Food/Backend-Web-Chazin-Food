@@ -406,6 +406,31 @@ class CompraService {
     const finalIva = totalIvaCalculado > 0 ? totalIvaCalculado : (parseFloat(data.iva) || 0);
     const finalTotal = (finalSubtotal + finalIva) > 0 ? (finalSubtotal + finalIva) : (parseFloat(data.total) || 0);
 
+    // Validar que ninguna compra exceda el Stock Máximo del insumo
+    if (esEstadoRecibida(estadoNormalizado)) {
+      const cantidadesPorInsumo = new Map();
+      for (const d of detallesProcesados) {
+        const idIns = parseInt(d.idInsumo, 10);
+        if (!idIns) continue;
+        cantidadesPorInsumo.set(idIns, (cantidadesPorInsumo.get(idIns) || 0) + (parseFloat(d.cant) || 0));
+      }
+
+      for (const [idIns, cantCompra] of cantidadesPorInsumo.entries()) {
+        const insumo = await Insumo.findByPk(idIns);
+        if (!insumo) continue;
+        const stockActual = parseFloat(insumo.stock) || 0;
+        const stockMax = insumo.stockMaximo !== undefined && insumo.stockMaximo !== null ? parseFloat(insumo.stockMaximo) : 100;
+        if (stockMax > 0 && stockActual + cantCompra > stockMax) {
+          const disponible = Math.max(0, Math.round((stockMax - stockActual) * 100) / 100);
+          const error = new Error(
+            `La compra de "${insumo.nombre}" excede su stock máximo (${stockMax} ${insumo.unidadMedida || 'und'}). Stock actual: ${stockActual}, espacio disponible: ${disponible}. Descarta stock o lotes antes de comprar más.`
+          );
+          error.statusCode = 400;
+          throw error;
+        }
+      }
+    }
+
     const compra = await Compra.create({
       idProveedor: idProv,
       numeroFactura: numFactura,

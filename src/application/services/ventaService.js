@@ -117,7 +117,23 @@ function buildExcludeUnpaidWompiClauses(Op) {
   ];
 }
 
-function convertUnits(amount, fromUnit, toUnit) {
+function parsePaqueteSize(tamanioPaquete) {
+  if (!tamanioPaquete) return 1;
+  const str = String(tamanioPaquete).trim();
+  const matchX = str.match(/^\d+\s*[xX×]\s*(\d+(?:[.,]\d+)?)$/);
+  if (matchX) {
+    const val = parseFloat(matchX[1].replace(',', '.'));
+    return val > 0 ? val : 1;
+  }
+  const matchNum = str.match(/(\d+(?:[.,]\d+)?)/);
+  if (matchNum) {
+    const val = parseFloat(matchNum[1].replace(',', '.'));
+    return val > 0 ? val : 1;
+  }
+  return 1;
+}
+
+function convertUnits(amount, fromUnit, toUnit, insumoObj = null) {
   if (!amount || isNaN(amount)) return 0;
   if (!fromUnit || !toUnit) return Number(amount);
 
@@ -126,23 +142,34 @@ function convertUnits(amount, fromUnit, toUnit) {
 
   if (from === to) return Number(amount);
 
-  const isKg = (u) => u === 'kg' || u.includes('kg') || u.includes('kilo');
-  const isGr = (u) => u === 'g' || u === 'gr' || u.includes('gr') || u.includes('gram');
-  const isMg = (u) => u === 'mg' || u.includes('mg') || u.includes('miligram');
-  const isLb = (u) => u === 'lb' || u.includes('libra');
-  const isLt = (u) => u === 'l' || u === 'lt' || u.includes('lt') || u.includes('litro');
-  const isMl = (u) => u === 'ml' || u.includes('ml') || u.includes('mililitro') || u.includes('cc');
+  const isKg = (u) => u.includes('kg') || u.includes('kilo');
+  const isGr = (u) => u.includes('gr') || u.includes('gram');
+  const isMg = (u) => u.includes('mg') || u.includes('miligram');
+  const isLb = (u) => u === 'lb' || u.includes('libra') || u.includes('(lb)');
+  const isLt = (u) => u.includes('lt') || u.includes('litro');
+  const isMl = (u) => u.includes('ml') || u.includes('mililitro') || u.includes('cc');
+  const isPaq = (u) => u.includes('paq');
+  const isUnd = (u) => u.includes('und') || u === 'ud' || u.includes('unidad') || u.includes('porc');
 
-  if (isKg(from) && isGr(to)) return Number(amount) * 1000;
-  if (isGr(from) && isKg(to)) return Number(amount) / 1000;
-  if (isGr(from) && isLb(to)) return Number(amount) / 500;
-  if (isLb(from) && isGr(to)) return Number(amount) * 500;
-  if (isKg(from) && isLb(to)) return Number(amount) * 2;
-  if (isLb(from) && isKg(to)) return Number(amount) / 2;
-  if (isKg(from) && isMg(to)) return Number(amount) * 1000000;
-  if (isMg(from) && isKg(to)) return Number(amount) / 1000000;
-  if (isGr(from) && isMg(to)) return Number(amount) * 1000;
-  if (isMg(from) && isGr(to)) return Number(amount) / 1000;
+  // Si el insumo en inventario está en Paquete y se consume por unidad/porción, descontar la fracción del paquete
+  if (isPaq(to) && isUnd(from)) {
+    const size = parsePaqueteSize(insumoObj?.tamanioPaquete);
+    return Number(amount) / size;
+  }
+
+  // Peso con base en gramos
+  const weightToGr = (u) => {
+    if (isKg(u)) return 1000;
+    if (isGr(u)) return 1;
+    if (isMg(u)) return 0.001;
+    if (isLb(u)) return 453.592;
+    return null;
+  };
+  const fromW = weightToGr(from);
+  const toW = weightToGr(to);
+  if (fromW && toW) {
+    return (Number(amount) * fromW) / toW;
+  }
 
   if (isLt(from) && isMl(to)) return Number(amount) * 1000;
   if (isMl(from) && isLt(to)) return Number(amount) / 1000;
@@ -2265,9 +2292,15 @@ class VentaService {
         }
 
         const insumoUnit = insumo.unidadMedida || dm.recipeUnit || 'und';
-        const cantPorUnidad = dm.recipeUnit
-          ? convertUnits(dm.rawCantidad, dm.recipeUnit, insumoUnit)
-          : Number(dm.rawCantidad || 0);
+        let cantPorUnidad;
+        if (dm.sourceType === 'ADICION' && Number(insumo.porcionMinimaCantidad || 0) > 0) {
+          const porcionUni = insumo.porcionMinimaUnidad || insumoUnit;
+          cantPorUnidad = convertUnits(Number(insumo.porcionMinimaCantidad), porcionUni, insumoUnit, insumo);
+        } else {
+          cantPorUnidad = dm.recipeUnit
+            ? convertUnits(dm.rawCantidad, dm.recipeUnit, insumoUnit, insumo)
+            : Number(dm.rawCantidad || 0);
+        }
         const totalADescontar = roundQty(cantPorUnidad * dm.multiplierQty);
         if (!(totalADescontar > EPSILON)) continue;
 
@@ -3956,9 +3989,15 @@ class VentaService {
         if (dm.checkMiseEnPlace && isInsumoRemovedByMiseEnPlace(insumo, dm.detailItem, dm.obsProdItem)) continue;
 
         const insumoUnit = insumo.unidadMedida || dm.recipeUnit || 'und';
-        const cantPorUnidad = dm.recipeUnit
-          ? convertUnits(dm.rawCantidad, dm.recipeUnit, insumoUnit)
-          : Number(dm.rawCantidad || 0);
+        let cantPorUnidad;
+        if (dm.sourceType === 'ADICION' && Number(insumo.porcionMinimaCantidad || 0) > 0) {
+          const porcionUni = insumo.porcionMinimaUnidad || insumoUnit;
+          cantPorUnidad = convertUnits(Number(insumo.porcionMinimaCantidad), porcionUni, insumoUnit, insumo);
+        } else {
+          cantPorUnidad = dm.recipeUnit
+            ? convertUnits(dm.rawCantidad, dm.recipeUnit, insumoUnit, insumo)
+            : Number(dm.rawCantidad || 0);
+        }
         const totalADescontar = roundQty(cantPorUnidad * dm.multiplierQty);
         if (!(totalADescontar > EPSILON)) continue;
 

@@ -2,9 +2,114 @@ const { Op } = require('sequelize');
 const { InsumoPreparado, DetalleInsumoPreparadoInsumo, Insumo, LoteInsumo, FichaTecnica, DetalleFichaInsumo } = require('../../persistence/models');
 const { getColombiaDateISO } = require('../../infrastructure/utils/colombiaDateUtils');
 const { computeInsumoStockBreakdown, groupLotesByInsumo } = require('../../infrastructure/utils/stockFefoUtils');
+const { ensureInsumoPaqueteSchemaOnce } = require('../../infrastructure/utils/dbUtils');
+
+function parsePaqueteSize(tamanioPaquete) {
+  if (!tamanioPaquete) return 1;
+  const str = String(tamanioPaquete).trim();
+  const matchX = str.match(/^\d+\s*[xX×]\s*(\d+(?:[.,]\d+)?)$/);
+  if (matchX) {
+    const val = parseFloat(matchX[1].replace(',', '.'));
+    return val > 0 ? val : 1;
+  }
+  const matchNum = str.match(/(\d+(?:[.,]\d+)?)/);
+  if (matchNum) {
+    const val = parseFloat(matchNum[1].replace(',', '.'));
+    return val > 0 ? val : 1;
+  }
+  return 1;
+}
+
+function convertPrepUnits(amount, fromUnit, toUnit, insumoObj = null) {
+  if (!amount || isNaN(amount)) return 0;
+  if (!fromUnit || !toUnit) return Number(amount);
+  const from = String(fromUnit).toLowerCase().trim();
+  const to = String(toUnit).toLowerCase().trim();
+  if (from === to) return Number(amount);
+
+  const isKg = (u) => u.includes('kg') || u.includes('kilo');
+  const isGr = (u) => u.includes('gr') || u.includes('gram');
+  const isMg = (u) => u.includes('mg') || u.includes('miligram');
+  const isLb = (u) => u === 'lb' || u.includes('libra') || u.includes('(lb)');
+  const isLt = (u) => u.includes('lt') || u.includes('litro');
+  const isMl = (u) => u.includes('ml') || u.includes('mililitro') || u.includes('cc');
+  const isPaq = (u) => u.includes('paq');
+  const isUnd = (u) => u.includes('und') || u === 'ud' || u.includes('unidad') || u.includes('porc');
+
+  if (isPaq(to) && isUnd(from)) {
+    return Number(amount) / parsePaqueteSize(insumoObj?.tamanioPaquete);
+  }
+
+  const weightToGr = (u) => {
+    if (isKg(u)) return 1000;
+    if (isGr(u)) return 1;
+    if (isMg(u)) return 0.001;
+    if (isLb(u)) return 453.592;
+    return null;
+  };
+  const fromW = weightToGr(from);
+  const toW = weightToGr(to);
+  if (fromW && toW) return (Number(amount) * fromW) / toW;
+
+  if (isLt(from) && isMl(to)) return Number(amount) * 1000;
+  if (isMl(from) && isLt(to)) return Number(amount) / 1000;
+
+  return Number(amount);
+}
+
+const ALLOWED_PREP_UNITS = new Set(['und', 'und — unidad', 'unidad', 'porción', 'porcion', 'ml', 'gr']);
+
+function validatePrepUnit(unidadMedida) {
+  if (!unidadMedida) return;
+  const norm = String(unidadMedida).toLowerCase().trim();
+  if (!ALLOWED_PREP_UNITS.has(norm) && !norm.startsWith('und') && !norm.startsWith('porc')) {
+    const error = new Error('En insumo preparado solo se permiten las unidades: unidad, porción, ml o gr.');
+    error.statusCode = 400;
+    throw error;
+  }
+}
+
+function validatePrepIngredients(itemsList) {
+  if (!Array.isArray(itemsList)) return;
+  for (const item of itemsList) {
+    const u = String(item.unidadMedida || 'und').toLowerCase().trim();
+    const cant = parseFloat(item.cantidad || 0);
+    if (u.includes('paq')) {
+      const error = new Error('No se permite la unidad "Paquete" en los ingredientes de un insumo preparado.');
+      error.statusCode = 400;
+      throw error;
+    }
+    if ((u === 'gr' || u.startsWith('gram')) && cant > 1000) {
+      const error = new Error('La cantidad requerida de un ingrediente en gramos no puede superar los 1000 gr.');
+      error.statusCode = 400;
+      throw error;
+    }
+    if ((u === 'kg' || u.startsWith('kilo')) && cant > 2) {
+      const error = new Error('La cantidad requerida de un ingrediente en kilogramos no puede superar los 2 kg.');
+      error.statusCode = 400;
+      throw error;
+    }
+    if ((u === 'ml' || u.startsWith('mililit') || u === 'cc') && cant > 1000) {
+      const error = new Error('La cantidad requerida de un ingrediente en mililitros no puede superar los 1000 ml.');
+      error.statusCode = 400;
+      throw error;
+    }
+    if ((u === 'und' || u === 'ud' || u.startsWith('unidad')) && cant > 5) {
+      const error = new Error('La cantidad requerida de un ingrediente en unidades no puede superar las 5 und.');
+      error.statusCode = 400;
+      throw error;
+    }
+    if ((u.startsWith('porc')) && cant > 5) {
+      const error = new Error('La cantidad requerida de un ingrediente en porciones no puede superar las 5 porciones.');
+      error.statusCode = 400;
+      throw error;
+    }
+  }
+}
 
 class InsumoPreparadoService {
   static async getAll() {
+    await ensureInsumoPaqueteSchemaOnce();
     const todayCol = getColombiaDateISO();
     const [preparados, allLotes] = await Promise.all([
       InsumoPreparado.findAll({
@@ -63,7 +168,10 @@ class InsumoPreparadoService {
           } else if (!breakdown.controlarStock) {
             hasUnlimitedOnly = true;
           } else {
-            minPorciones = Math.min(minPorciones, Math.floor(breakdown.stockVigente / cant));
+            const cantConvertida = convertPrepUnits(cant, d.unidadMedida || d.insumo.unidadMedida, d.insumo.unidadMedida, d.insumo);
+            if (cantConvertida > 0) {
+              minPorciones = Math.min(minPorciones, Math.floor(breakdown.stockVigente / cantConvertida));
+            }
           }
         }
 
@@ -95,6 +203,11 @@ class InsumoPreparadoService {
         unidadRendimiento: p.unidadRendimiento || 'und',
         precioVenta: parseFloat(p.precioVenta || 0),
         costoTotal: finalCosto,
+        esAdicion: p.esAdicion ? 1 : 0,
+        precioAdicion: parseFloat(p.precioAdicion || 0),
+        imagen: p.imagen || '',
+        porcionMinimaCantidad: p.porcionMinimaCantidad !== null && p.porcionMinimaCantidad !== undefined ? parseFloat(p.porcionMinimaCantidad) : null,
+        porcionMinimaUnidad: p.porcionMinimaUnidad || null,
         stock: p.estado === 0 ? 0 : stockDisponible,
         fechaCreacion: p.fechaCreacion,
         insumos,
@@ -145,6 +258,7 @@ class InsumoPreparadoService {
   }
 
   static async getById(id) {
+    await ensureInsumoPaqueteSchemaOnce();
     const p = await InsumoPreparado.findByPk(id, {
       include: [
         {
@@ -208,7 +322,10 @@ class InsumoPreparadoService {
         } else if (!breakdown.controlarStock) {
           hasUnlimitedOnly = true;
         } else {
-          minPorciones = Math.min(minPorciones, Math.floor(breakdown.stockVigente / cant));
+          const cantConvertida = convertPrepUnits(cant, d.unidadMedida || d.insumo.unidadMedida, d.insumo.unidadMedida, d.insumo);
+          if (cantConvertida > 0) {
+            minPorciones = Math.min(minPorciones, Math.floor(breakdown.stockVigente / cantConvertida));
+          }
         }
       }
 
@@ -239,6 +356,11 @@ class InsumoPreparadoService {
       unidadRendimiento: p.unidadRendimiento || 'und',
       precioVenta: parseFloat(p.precioVenta || 0),
       costoTotal: finalCosto,
+      esAdicion: p.esAdicion ? 1 : 0,
+      precioAdicion: parseFloat(p.precioAdicion || 0),
+      imagen: p.imagen || '',
+      porcionMinimaCantidad: p.porcionMinimaCantidad !== null && p.porcionMinimaCantidad !== undefined ? parseFloat(p.porcionMinimaCantidad) : null,
+      porcionMinimaUnidad: p.porcionMinimaUnidad || null,
       stock: p.estado === 0 ? 0 : stockDisponible,
       fechaCreacion: p.fechaCreacion,
       insumos,
@@ -248,12 +370,19 @@ class InsumoPreparadoService {
   }
 
   static async create(data) {
-    const { nombre, descripcion, unidadMedida, rendimiento, unidadRendimiento, precioVenta, insumos, componentes, costoTotal: inputCosto, estado, fichaTecnica } = data;
+    await ensureInsumoPaqueteSchemaOnce();
+    const {
+      nombre, descripcion, unidadMedida, rendimiento, unidadRendimiento, precioVenta,
+      insumos, componentes, costoTotal: inputCosto, estado, fichaTecnica,
+      esAdicion, precioAdicion, imagen, porcionMinimaCantidad, porcionMinimaUnidad
+    } = data;
     if (!nombre) {
       const error = new Error('El nombre del insumo preparado es requerido');
       error.statusCode = 400;
       throw error;
     }
+
+    validatePrepUnit(unidadMedida);
 
     // Validar que la ficha técnica sea obligatoria al crear
     if (!fichaTecnica) {
@@ -281,12 +410,14 @@ class InsumoPreparadoService {
     }
 
     const itemsList = insumos || componentes || [];
+    validatePrepIngredients(itemsList);
+    validatePrepIngredients(ftIngredientes);
     let costoTotal = 0;
     itemsList.forEach(item => {
       costoTotal += parseFloat(item.cantidad || 0) * parseFloat(item.precioUnitario || 0);
     });
 
-    if (costoTotal === 0 && inputCosto) {
+    if (inputCosto !== undefined && inputCosto !== null && parseFloat(inputCosto) > 0) {
       costoTotal = parseFloat(inputCosto) || 0;
     }
 
@@ -301,6 +432,11 @@ class InsumoPreparadoService {
       unidadRendimiento: unidadRendimiento || 'und',
       precioVenta: precioVenta || 0,
       costoTotal,
+      esAdicion: esAdicion ? 1 : 0,
+      precioAdicion: precioAdicion !== undefined && precioAdicion !== null ? parseFloat(precioAdicion) : 0,
+      imagen: imagen || null,
+      porcionMinimaCantidad: porcionMinimaCantidad !== undefined && porcionMinimaCantidad !== null && porcionMinimaCantidad !== '' ? parseFloat(porcionMinimaCantidad) : null,
+      porcionMinimaUnidad: porcionMinimaUnidad || null,
       fechaCreacion: new Date()
     });
 
@@ -334,6 +470,7 @@ class InsumoPreparadoService {
   }
 
   static async update(id, data) {
+    await ensureInsumoPaqueteSchemaOnce();
     const p = await InsumoPreparado.findByPk(id);
     if (!p) {
       const error = new Error('Insumo preparado no encontrado');
@@ -341,20 +478,35 @@ class InsumoPreparadoService {
       throw error;
     }
 
-    const { nombre, descripcion, unidadMedida, rendimiento, unidadRendimiento, precioVenta, insumos, componentes, costoTotal: inputCosto, estado, fichaTecnica } = data;
+    const {
+      nombre, descripcion, unidadMedida, rendimiento, unidadRendimiento, precioVenta,
+      insumos, componentes, costoTotal: inputCosto, estado, fichaTecnica,
+      esAdicion, precioAdicion, imagen, porcionMinimaCantidad, porcionMinimaUnidad
+    } = data;
 
+    if (unidadMedida !== undefined) {
+      validatePrepUnit(unidadMedida);
+      p.unidadMedida = unidadMedida;
+    }
     if (nombre !== undefined) p.nombre = nombre;
     if (descripcion !== undefined) p.descripcion = descripcion;
-    if (unidadMedida !== undefined) p.unidadMedida = unidadMedida;
     if (rendimiento !== undefined) p.rendimiento = rendimiento;
     if (unidadRendimiento !== undefined) p.unidadRendimiento = unidadRendimiento;
     if (precioVenta !== undefined) p.precioVenta = precioVenta;
+    if (esAdicion !== undefined) p.esAdicion = esAdicion ? 1 : 0;
+    if (precioAdicion !== undefined) p.precioAdicion = parseFloat(precioAdicion || 0);
+    if (imagen !== undefined) p.imagen = imagen || null;
+    if (porcionMinimaCantidad !== undefined) {
+      p.porcionMinimaCantidad = porcionMinimaCantidad !== null && porcionMinimaCantidad !== '' ? parseFloat(porcionMinimaCantidad) : null;
+    }
+    if (porcionMinimaUnidad !== undefined) p.porcionMinimaUnidad = porcionMinimaUnidad || null;
     if (estado !== undefined) {
       p.estado = (estado === 'Activo' || estado === 1 || estado === '1') ? 1 : 0;
     }
 
     const itemsList = insumos || componentes;
     if (itemsList && Array.isArray(itemsList)) {
+      validatePrepIngredients(itemsList);
       const insumoIds = itemsList
         .map(item => Number(item.idInsumo || item.id))
         .filter(n => Number.isFinite(n) && n > 0);

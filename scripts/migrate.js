@@ -31,7 +31,8 @@ const {
   ensureVarianteInsumoSchema,
   ensureVarianteEventoSchema,
   ensureZanahoriaInsumoReal,
-  ensureValidationPendingDevolucionOnce
+  ensureValidationPendingDevolucionOnce,
+  ensureInsumoPaqueteSchema
 } = require('../src/infrastructure/utils/dbUtils');
 const { ensureCatalogVariantsAndDrinkFichas } = require('../src/infrastructure/utils/catalogVariantsSync');
 
@@ -46,6 +47,7 @@ async function initializeDatabaseSchema() {
     await ensureVarianteImagenSchema();
     await ensureVarianteInsumoSchema();
     await ensureVarianteEventoSchema();
+    await ensureInsumoPaqueteSchema();
     await ensureUsuarioDocumentoSchema();
     await ensureFichaTecnicaTrashSchema();
     await ensureFichaTecnicaInsumoVariantZero();

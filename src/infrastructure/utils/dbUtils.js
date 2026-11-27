@@ -532,7 +532,7 @@ async function ensureProductoEliminadoSchema() {
       await sequelize.query('ALTER TABLE `producto` ADD COLUMN `fechaEliminacion` DATETIME NULL AFTER `eliminado`');
       console.log('[DB] ✅ Columna producto.fechaEliminacion agregada exitosamente.');
     }
-    await sequelize.query('UPDATE `producto` SET `eliminado` = 0 WHERE `idProducto` = 0 AND `eliminado` <> 0').catch(() => {});
+    await sequelize.query('UPDATE `producto` SET `eliminado` = 0 WHERE `idProducto` = 0 AND `eliminado` <> 0').catch(() => { });
   } catch (err) {
     console.warn('[DB] ⚠️ Error asegurando esquema de papelera en producto:', err.message);
   }
@@ -1546,6 +1546,46 @@ async function ensureValidationPendingDevolucionOnce() {
   return _seedPendingDevPromise;
 }
 
+let _insumoPaqueteSchemaPromise = null;
+
+async function ensureInsumoPaqueteSchema() {
+  try {
+    const sequelize = connectDB.sequelize;
+    const [tamanioCols] = await sequelize.query("SHOW COLUMNS FROM `insumo` LIKE 'tamanioPaquete'");
+    if (!tamanioCols || tamanioCols.length === 0) {
+      await sequelize.query("ALTER TABLE `insumo` ADD COLUMN `tamanioPaquete` VARCHAR(50) NULL DEFAULT NULL AFTER `porcionMinimaUnidad`");
+      console.log('[DB Migration] Columna tamanioPaquete agregada a tabla insumo');
+    }
+
+    const [prepAdicCols] = await sequelize.query("SHOW COLUMNS FROM `insumopreparado` LIKE 'esAdicion'");
+    if (!prepAdicCols || prepAdicCols.length === 0) {
+      await sequelize.query("ALTER TABLE `insumopreparado` ADD COLUMN `esAdicion` TINYINT NOT NULL DEFAULT 0 AFTER `costoTotal`");
+      console.log('[DB Migration] Columna esAdicion agregada a tabla insumopreparado');
+    }
+    const [prepPrecioCols] = await sequelize.query("SHOW COLUMNS FROM `insumopreparado` LIKE 'precioAdicion'");
+    if (!prepPrecioCols || prepPrecioCols.length === 0) {
+      await sequelize.query("ALTER TABLE `insumopreparado` ADD COLUMN `precioAdicion` DECIMAL(10,2) NOT NULL DEFAULT 0 AFTER `esAdicion`");
+      console.log('[DB Migration] Columna precioAdicion agregada a tabla insumopreparado');
+    }
+    const [prepImgCols] = await sequelize.query("SHOW COLUMNS FROM `insumopreparado` LIKE 'imagen'");
+    if (!prepImgCols || prepImgCols.length === 0) {
+      await sequelize.query("ALTER TABLE `insumopreparado` ADD COLUMN `imagen` VARCHAR(255) NULL DEFAULT NULL AFTER `precioAdicion`");
+      console.log('[DB Migration] Columna imagen agregada a tabla insumopreparado');
+    }
+  } catch (err) {
+    console.warn('[DB Migration] ⚠️ Error asegurando esquema tamanioPaquete/adición:', err.message);
+  }
+}
+
+async function ensureInsumoPaqueteSchemaOnce() {
+  if (!_insumoPaqueteSchemaPromise) {
+    _insumoPaqueteSchemaPromise = ensureInsumoPaqueteSchema().catch((err) => {
+      _insumoPaqueteSchemaPromise = null;
+    });
+  }
+  return _insumoPaqueteSchemaPromise;
+}
+
 module.exports = {
   resetAutoIncrement,
   resequenceTableIds,
@@ -1579,5 +1619,7 @@ module.exports = {
   ensureVarianteEventoSchemaOnce,
   ensureZanahoriaInsumoReal,
   ensureZanahoriaInsumoRealOnce,
-  ensureValidationPendingDevolucionOnce
+  ensureValidationPendingDevolucionOnce,
+  ensureInsumoPaqueteSchema,
+  ensureInsumoPaqueteSchemaOnce
 };

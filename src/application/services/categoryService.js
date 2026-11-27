@@ -94,8 +94,15 @@ class CategoryService {
       throw error;
     }
 
+    const cantidadInsumos = await Insumo.count({ where: { idCategoriaInsumo: id, eliminado: 0 } });
+
     if (data.nombre !== undefined) {
       const trimmedNombre = String(data.nombre || '').trim();
+      if (cantidadInsumos > 0 && trimmedNombre !== String(cat.nombre || '').trim()) {
+        const error = new Error('No se puede editar el nombre de la categoría porque tiene insumos asociados.');
+        error.statusCode = 400;
+        throw error;
+      }
       if (!trimmedNombre) {
         const error = new Error('El nombre de la categoría no puede estar vacío');
         error.statusCode = 400;
@@ -124,7 +131,13 @@ class CategoryService {
         estadoNorm === '1' ||
         estadoNorm === 'activo' ||
         estadoNorm === 'true';
-      cat.estado = isActivo ? 1 : 0;
+      const nuevoEstado = isActivo ? 1 : 0;
+      if (nuevoEstado === 0 && cantidadInsumos > 0) {
+        const error = new Error('No se puede inactivar la categoría porque tiene insumos asociados.');
+        error.statusCode = 400;
+        throw error;
+      }
+      cat.estado = nuevoEstado;
     }
 
     await cat.save();

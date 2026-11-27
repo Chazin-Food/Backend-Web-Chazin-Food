@@ -1,8 +1,8 @@
 const { Op } = require('sequelize');
-const { Insumo, CategoriaInsumo, Proveedor, FichaTecnica, DetalleFichaInsumo, Trazabilidad, DetalleInsumoPreparadoInsumo, LoteInsumo, DetalleCompraInsumo } = require('../../persistence/models');
+const { Insumo, CategoriaInsumo, Proveedor, FichaTecnica, DetalleFichaInsumo, Trazabilidad, DetalleInsumoPreparadoInsumo, InsumoPreparado, LoteInsumo, DetalleCompraInsumo } = require('../../persistence/models');
 const database = require('../../persistence/config/db');
 const { parsePaginationParams, buildPaginatedResponse } = require('../../infrastructure/utils/paginationUtils');
-const { ensureZanahoriaInsumoRealOnce } = require('../../infrastructure/utils/dbUtils');
+const { ensureZanahoriaInsumoRealOnce, ensureInsumoPaqueteSchemaOnce } = require('../../infrastructure/utils/dbUtils');
 const {
   getColombiaDateISO,
   extractDateOnlyISO,
@@ -13,6 +13,44 @@ const {
   isLoteExpired: isLoteExpiredByDateOrState,
   computeInsumoStockBreakdown
 } = require('../../infrastructure/utils/stockFefoUtils');
+
+function normalizeStockUnit(raw) {
+  if (!raw) return 'und';
+  const s = String(raw).toLowerCase().trim();
+  if (s === 'kg' || s.startsWith('kilo') || s.includes('(kg)')) return 'kg';
+  if (s === 'gr' || s === 'g' || s.startsWith('gram') || s.includes('(gr)')) return 'gr';
+  if (s === 'mg' || s.startsWith('miligram')) return 'mg';
+  if (s === 'lb' || s.startsWith('libra') || s.includes('(lb)')) return 'lb';
+  if (s === 'lt' || s === 'l' || s.startsWith('litr') || s.includes('(lt)')) return 'lt';
+  if (s === 'ml' || s.startsWith('mililit') || s === 'cc' || s.includes('(ml)')) return 'ml';
+  if (s === 'paq' || s.startsWith('paquet')) return 'paq';
+  if (s === 'porcion' || s === 'porción' || s.startsWith('porci')) return 'porción';
+  return 'und';
+}
+
+function convertStockUnits(amount, fromUnit, toUnit) {
+  const num = parseFloat(amount || 0);
+  if (isNaN(num) || num === 0) return 0;
+  const from = normalizeStockUnit(fromUnit);
+  const to = normalizeStockUnit(toUnit);
+  if (from === to) return num;
+
+  // Convertir peso a gramos como base intermedia
+  const weightToGr = { kg: 1000, gr: 1, mg: 0.001, lb: 453.592 };
+  if (weightToGr[from] && weightToGr[to]) {
+    const inGr = num * weightToGr[from];
+    return Math.round((inGr / weightToGr[to]) * 100) / 100;
+  }
+
+  // Convertir volumen a ml como base intermedia
+  const volToMl = { lt: 1000, ml: 1 };
+  if (volToMl[from] && volToMl[to]) {
+    const inMl = num * volToMl[from];
+    return Math.round((inMl / volToMl[to]) * 100) / 100;
+  }
+
+  return num;
+}
 
 function getExpirationMeta(fechaVencimiento, todayCol = getColombiaDateISO(), forceExpired = false) {
   const fechaISO = extractDateOnlyISO(fechaVencimiento);
@@ -99,6 +137,9 @@ function formatInsumo(i, options = {}) {
     estado: i.estado,
     esAdicion: i.esAdicion ? 1 : 0,
     precioAdicion: parseFloat(i.precioAdicion || 0),
+    porcionMinimaCantidad: i.porcionMinimaCantidad !== null && i.porcionMinimaCantidad !== undefined ? parseFloat(i.porcionMinimaCantidad) : null,
+    porcionMinimaUnidad: i.porcionMinimaUnidad || null,
+    tamanioPaquete: i.tamanioPaquete || null,
     imagen: i.imagen || '',
     incluyeIva: i.incluyeIva ? 1 : 0,
     porcentajeIva: (i.incluyeIva && (i.porcentajeIva === undefined || i.porcentajeIva === null || Number(i.porcentajeIva) === 0))
@@ -112,7 +153,8 @@ function formatInsumo(i, options = {}) {
     tieneCompras,
     totalCompras: countCompras,
     tieneStockActivo,
-    puedeEliminarse
+    puedeEliminarse,
+    estaEnPreparado: Boolean(options.preparadoSet ? options.preparadoSet.has(Number(i.idInsumo)) : options.estaEnPreparado)
   };
 }
 
@@ -229,14 +271,33 @@ class InsumoService {
     }
   }
 
+  static async getPreparadoSet() {
+    try {
+      const rows = await DetalleInsumoPreparadoInsumo.findAll({
+        attributes: ['idInsumo'],
+        include: [{
+          model: InsumoPreparado,
+          as: 'preparado',
+          attributes: [],
+          where: { eliminado: 0 }
+        }],
+        group: ['idInsumo'],
+        raw: true
+      });
+      return new Set((rows || []).map(r => Number(r.idInsumo)));
+    } catch {
+      return new Set();
+    }
+  }
+
   static async getAll(filterObj = {}) {
     await ensureZanahoriaInsumoRealOnce();
+    await ensureInsumoPaqueteSchemaOnce();
     const nowTs = Date.now();
     if (!this._lastVencimientoCheckAt || nowTs - this._lastVencimientoCheckAt >= 3 * 60 * 1000) {
       await this.checkVencimientos();
       this._lastVencimientoCheckAt = Date.now();
     }
-
     const { isPaginated, page, limit, offset } = parsePaginationParams(filterObj, { defaultLimit: 5, maxLimit: 100 });
     const where = { eliminado: 0 };
 
@@ -280,25 +341,27 @@ class InsumoService {
     };
 
     if (isPaginated) {
-      const [paged, comprasMap] = await Promise.all([
+      const [paged, comprasMap, preparadoSet] = await Promise.all([
         Insumo.findAndCountAll({
           ...queryOptions,
           limit,
           offset,
           distinct: true
         }),
-        this.getComprasMap()
+        this.getComprasMap(),
+        this.getPreparadoSet()
       ]);
-      const formatted = paged.rows.map(i => formatInsumo(i, { comprasMap }));
+      const formatted = paged.rows.map(i => formatInsumo(i, { comprasMap, preparadoSet }));
       return buildPaginatedResponse(formatted, paged.count, page, limit);
     }
 
-    const [insumos, comprasMap] = await Promise.all([
+    const [insumos, comprasMap, preparadoSet] = await Promise.all([
       Insumo.findAll(queryOptions),
-      this.getComprasMap()
+      this.getComprasMap(),
+      this.getPreparadoSet()
     ]);
 
-    return insumos.map(i => formatInsumo(i, { comprasMap }));
+    return insumos.map(i => formatInsumo(i, { comprasMap, preparadoSet }));
   }
 
   static async getDeleted() {
@@ -318,10 +381,11 @@ class InsumoService {
   }
 
   static async getById(idInsumo) {
+    await ensureInsumoPaqueteSchemaOnce();
     const id = parseInt(idInsumo, 10);
     const { Op } = require('sequelize');
     const { Compra } = require('../../persistence/models');
-    const [i, count] = await Promise.all([
+    const [i, count, prepCount] = await Promise.all([
       Insumo.findByPk(id, {
         include: [
           { model: CategoriaInsumo, as: 'categoria', required: false },
@@ -338,6 +402,14 @@ class InsumoService {
             estado: { [Op.notIn]: ['CANCELADA', 'ANULADA'] }
           }
         }]
+      }).catch(() => 0),
+      DetalleInsumoPreparadoInsumo.count({
+        where: { idInsumo: id },
+        include: [{
+          model: InsumoPreparado,
+          as: 'preparado',
+          where: { eliminado: 0 }
+        }]
       }).catch(() => 0)
     ]);
 
@@ -348,10 +420,11 @@ class InsumoService {
     }
 
     const comprasMap = new Map([[id, count]]);
-    return formatInsumo(i, { comprasMap });
+    return formatInsumo(i, { comprasMap, estaEnPreparado: prepCount > 0 });
   }
 
   static async create(insumoData) {
+    await ensureInsumoPaqueteSchemaOnce();
     let {
       nombre, idCategoriaInsumo, stock, stockMinimo, stockMaximo,
       fechaExpedicion, fechaVencimiento, unidadMedida,
@@ -450,17 +523,20 @@ class InsumoService {
       const insumo = await Insumo.create({
         nombre: nombre.trim(),
         idCategoriaInsumo: idCategoriaInsumo ? parseInt(idCategoriaInsumo) : null,
-        stock: controlarStockFlag ? stockVal : 0,
+        stock: 0, // El stock inicial siempre es 0; solo se abastece mediante compras
         stockMinimo: controlarStockFlag ? minVal : 0,
         stockMaximo: controlarStockFlag ? maxVal : 0,
         fechaExpedicion: (fechaExpedicion && String(fechaExpedicion).trim() !== '') ? fechaExpedicion : null,
         fechaVencimiento: (fechaVencimiento && String(fechaVencimiento).trim() !== '') ? fechaVencimiento : null,
         unidadMedida: unidadMedida || 'und',
+        tamanioPaquete: insumoData.tamanioPaquete ? String(insumoData.tamanioPaquete).trim() : null,
         precioUnitario: precioUnitario !== undefined && precioUnitario !== null ? parseFloat(precioUnitario) : 0,
         idProveedor: idProveedor ? parseInt(idProveedor) : null,
         descripcion: encodedDescripcion,
         esAdicion: insumoData.esAdicion ? 1 : 0,
         precioAdicion: insumoData.precioAdicion !== undefined && insumoData.precioAdicion !== null ? parseFloat(insumoData.precioAdicion) : 0,
+        porcionMinimaCantidad: insumoData.porcionMinimaCantidad !== undefined && insumoData.porcionMinimaCantidad !== null && insumoData.porcionMinimaCantidad !== '' ? parseFloat(insumoData.porcionMinimaCantidad) : null,
+        porcionMinimaUnidad: insumoData.porcionMinimaUnidad ? String(insumoData.porcionMinimaUnidad).trim() : null,
         imagen: insumoData.imagen || null,
         incluyeIva: insumoData.incluyeIva ? 1 : 0,
         porcentajeIva: insumoData.incluyeIva
@@ -501,6 +577,7 @@ class InsumoService {
   }
 
   static async update(idInsumo, insumoData, options = {}) {
+    await ensureInsumoPaqueteSchemaOnce();
     const transaction = await database.sequelize.transaction();
     try {
       const insumo = await Insumo.findByPk(idInsumo, { transaction });
@@ -510,9 +587,60 @@ class InsumoService {
         throw error;
       }
 
+      const estaEnPreparado = (await DetalleInsumoPreparadoInsumo.count({
+        where: { idInsumo },
+        include: [{
+          model: InsumoPreparado,
+          as: 'preparado',
+          where: { eliminado: 0 }
+        }],
+        transaction
+      }).catch(() => 0)) > 0;
+
       let {
-        stockMinimo, stockMaximo, descripcion, estado, fichaTecnica
+        stockMinimo, stockMaximo, descripcion, estado, fichaTecnica,
+        idCategoriaInsumo, unidadMedida, precioUnitario
       } = insumoData;
+
+      // Categoría: editable mientras no esté asociado a un insumo preparado
+      if (idCategoriaInsumo !== undefined && idCategoriaInsumo !== null && idCategoriaInsumo !== '') {
+        const nuevaCat = parseInt(idCategoriaInsumo, 10);
+        if (!isNaN(nuevaCat) && nuevaCat !== Number(insumo.idCategoriaInsumo)) {
+          if (estaEnPreparado && !options.allowFullUpdate) {
+            const error = new Error('No se puede cambiar la categoría porque este insumo está asociado a un insumo preparado.');
+            error.statusCode = 400;
+            throw error;
+          }
+          insumo.idCategoriaInsumo = nuevaCat;
+        }
+      }
+
+      // Unidad de medida: editable mientras no esté asociado a un insumo preparado, convirtiendo stock
+      if (unidadMedida !== undefined && String(unidadMedida).trim() !== '' && String(unidadMedida).trim() !== String(insumo.unidadMedida || '').trim()) {
+        if (estaEnPreparado && !options.allowFullUpdate) {
+          const error = new Error('No se puede cambiar la unidad de medida porque este insumo está asociado a un insumo preparado.');
+          error.statusCode = 400;
+          throw error;
+        }
+        const stockConvertido = convertStockUnits(insumo.stock, insumo.unidadMedida, unidadMedida);
+        insumo.stock = stockConvertido;
+        insumo.unidadMedida = String(unidadMedida).trim();
+      }
+
+      if (insumoData.tamanioPaquete !== undefined) {
+        insumo.tamanioPaquete = insumoData.tamanioPaquete ? String(insumoData.tamanioPaquete).trim() : null;
+      }
+
+      // Precio de compra: siempre editable
+      if (precioUnitario !== undefined && precioUnitario !== null && precioUnitario !== '') {
+        const precioParsed = parseFloat(precioUnitario);
+        if (isNaN(precioParsed) || precioParsed < 0) {
+          const error = new Error('El precio de compra debe ser un número válido mayor o igual a 0.');
+          error.statusCode = 400;
+          throw error;
+        }
+        insumo.precioUnitario = precioParsed;
+      }
 
       // ── Campos editables: Stock Mínimo, Stock Máximo, Descripción, Estado, IVA y Adición ──
       // Los datos maestros (nombre, categoría, unidad, precio/costo y stock) son inmutables
@@ -564,6 +692,14 @@ class InsumoService {
       }
       if (insumoData.precioAdicion !== undefined && insumoData.precioAdicion !== null && insumoData.precioAdicion !== '') {
         insumo.precioAdicion = parseFloat(insumoData.precioAdicion || 0);
+      }
+      if (insumoData.porcionMinimaCantidad !== undefined) {
+        insumo.porcionMinimaCantidad = insumoData.porcionMinimaCantidad !== null && insumoData.porcionMinimaCantidad !== ''
+          ? parseFloat(insumoData.porcionMinimaCantidad)
+          : null;
+      }
+      if (insumoData.porcionMinimaUnidad !== undefined) {
+        insumo.porcionMinimaUnidad = insumoData.porcionMinimaUnidad ? String(insumoData.porcionMinimaUnidad).trim() : null;
       }
       if (insumoData.imagen !== undefined) {
         insumo.imagen = insumoData.imagen || null;
