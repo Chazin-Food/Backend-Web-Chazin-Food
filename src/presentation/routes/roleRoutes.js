@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { cacheResponse } = require('../../infrastructure/utils/apiCache');
-const cacheRoles = cacheResponse('roles', { ttlMs: 120000, cacheControl: 'private, max-age=60' });
+const cacheRoles = cacheResponse('roles', { ttlMs: 120000, cacheControl: 'private, no-cache' });
 const { getRoles, getRoleById, createRole, updateRole, updateRolePermisos, deleteRole } = require('../controllers/roleController');
 const { protect, requirePrivilege } = require('../../infrastructure/middlewares/authMiddleware');
 
