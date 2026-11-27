@@ -1,4 +1,11 @@
 const { Role, Permiso, RolPermiso, User } = require('../../persistence/models');
+const { invalidateNamespaces } = require('../../infrastructure/utils/apiCache');
+
+const isRoleEstadoActive = (estado) =>
+  estado === 1 ||
+  estado === '1' ||
+  estado === true ||
+  String(estado ?? '').trim().toLowerCase() === 'activo';
 
 class RoleService {
   static async getAllRoles() {
@@ -18,7 +25,7 @@ class RoleService {
         descripcion: role.descripcion || '',
         usuarios: userCount,
         permisos,
-        estado: role.estado === 1 ? 'Activo' : 'Inactivo'
+        estado: isRoleEstadoActive(role.estado) ? 'Activo' : 'Inactivo'
       };
     });
   }
@@ -46,7 +53,7 @@ class RoleService {
       descripcion: role.descripcion || '',
       usuarios: userCount,
       permisos,
-      estado: role.estado === 1 ? 'Activo' : 'Inactivo'
+      estado: isRoleEstadoActive(role.estado) ? 'Activo' : 'Inactivo'
     };
   }
 
@@ -103,6 +110,7 @@ class RoleService {
       await RolPermiso.bulkCreate(rolPermisoRecords);
     }
 
+    invalidateNamespaces(['roles', 'usuarios']);
     return this.getRoleById(role.idRol);
   }
 
@@ -131,7 +139,7 @@ class RoleService {
     }
 
     if (descripcion !== undefined) role.descripcion = descripcion ? descripcion.trim() : '';
-    if (estado !== undefined) role.estado = estado === 'Activo' || estado === 1 ? 1 : 0;
+    if (estado !== undefined) role.estado = isRoleEstadoActive(estado) ? 1 : 0;
 
     await role.save();
 
@@ -170,6 +178,7 @@ class RoleService {
       }
     }
 
+    invalidateNamespaces(['roles', 'usuarios']);
     return this.getRoleById(id);
   }
 
@@ -200,7 +209,7 @@ class RoleService {
     const { resetAutoIncrement } = require('../../infrastructure/utils/dbUtils');
     await resetAutoIncrement('rol', 'idRol');
 
-
+    invalidateNamespaces(['roles', 'usuarios']);
     return { message: 'Rol eliminado correctamente' };
   }
 }
