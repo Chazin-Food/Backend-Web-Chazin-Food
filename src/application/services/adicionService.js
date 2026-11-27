@@ -4,11 +4,82 @@ const { getColombiaDateISO } = require('../../infrastructure/utils/colombiaDateU
 const { computeInsumoStockBreakdown, groupLotesByInsumo } = require('../../infrastructure/utils/stockFefoUtils');
 const { invalidateNamespaces } = require('../../infrastructure/utils/apiCache');
 
+function parsePaqueteSize(tamanioPaquete) {
+  if (!tamanioPaquete) return 1;
+  const str = String(tamanioPaquete).trim();
+  const matchX = str.match(/^\d+\s*[xX×]\s*(\d+(?:[.,]\d+)?)$/);
+  if (matchX) {
+    const val = parseFloat(matchX[1].replace(',', '.'));
+    return val > 0 ? val : 1;
+  }
+  const matchNum = str.match(/(\d+(?:[.,]\d+)?)/);
+  if (matchNum) {
+    const val = parseFloat(matchNum[1].replace(',', '.'));
+    return val > 0 ? val : 1;
+  }
+  return 1;
+}
+
+function convertAdicionUnits(amount, fromUnit, toUnit, insumoObj = null) {
+  if (!amount || isNaN(amount)) return 0;
+  if (!fromUnit || !toUnit) return Number(amount);
+
+  const from = String(fromUnit).toLowerCase().trim();
+  const to = String(toUnit).toLowerCase().trim();
+  if (from === to) return Number(amount);
+
+  const isKg = (u) => u.includes('kg') || u.includes('kilo');
+  const isGr = (u) => u.includes('gr') || u.includes('gram');
+  const isMg = (u) => u.includes('mg') || u.includes('miligram');
+  const isLb = (u) => u === 'lb' || u.includes('libra') || u.includes('(lb)');
+  const isLt = (u) => u.includes('lt') || u.includes('litro');
+  const isMl = (u) => u.includes('ml') || u.includes('mililitro') || u.includes('cc');
+  const isPaq = (u) => u.includes('paq');
+  const isUnd = (u) => u.includes('und') || u === 'ud' || u.includes('unidad') || u.includes('porc');
+
+  if (isPaq(to) && isUnd(from)) {
+    return Number(amount) / parsePaqueteSize(insumoObj?.tamanioPaquete);
+  }
+
+  const weightToGr = (u) => {
+    if (isKg(u)) return 1000;
+    if (isGr(u)) return 1;
+    if (isMg(u)) return 0.001;
+    if (isLb(u)) return 453.592;
+    return null;
+  };
+  const fromW = weightToGr(from);
+  const toW = weightToGr(to);
+  if (fromW && toW) return (Number(amount) * fromW) / toW;
+
+  if (isLt(from) && isMl(to)) return Number(amount) * 1000;
+  if (isMl(from) && isLt(to)) return Number(amount) / 1000;
+
+  return Number(amount);
+}
+
 function formatAdicion(insumo, lotes = [], todayCol = getColombiaDateISO()) {
   const breakdown = computeInsumoStockBreakdown(insumo, lotes, todayCol);
-  const stockOperativo = !breakdown.isInactive
+  const rawStockOperativo = !breakdown.isInactive
     ? (breakdown.controlarStock ? breakdown.stockVigente : 99)
     : 0;
+
+  const insumoUnit = insumo.unidadMedida || 'und';
+  const porcionCant = insumo.porcionMinimaCantidad !== null && insumo.porcionMinimaCantidad !== undefined
+    ? parseFloat(insumo.porcionMinimaCantidad)
+    : null;
+  const porcionUnit = insumo.porcionMinimaUnidad || null;
+
+  let cantPorAdicion = 1;
+  if (porcionCant && porcionCant > 0) {
+    cantPorAdicion = convertAdicionUnits(porcionCant, porcionUnit || insumoUnit, insumoUnit, insumo);
+  }
+  if (!(cantPorAdicion > 0)) cantPorAdicion = 1;
+
+  const porcionesDisponibles = breakdown.isInactive
+    ? 0
+    : (!breakdown.controlarStock ? 99 : Math.max(0, Math.floor((rawStockOperativo + 1e-6) / cantPorAdicion)));
+
   return {
     idAdicion: insumo.idInsumo,
     id: insumo.idInsumo,
@@ -17,11 +88,17 @@ function formatAdicion(insumo, lotes = [], todayCol = getColombiaDateISO()) {
     descripcion: insumo.descripcion || '',
     imagen: insumo.imagen || '',
     precio: parseFloat(insumo.precioAdicion || 0),
-    stock: stockOperativo,
+    stock: porcionesDisponibles,
+    stockInsumo: rawStockOperativo,
+    stockEnPorciones: true,
+    controlarStock: breakdown.controlarStock,
     stockTotal: breakdown.stockTotal,
     stockVigente: breakdown.stockVigente,
-    agotado: breakdown.isInactive || (breakdown.controlarStock && breakdown.stockVigente <= 0),
+    agotado: breakdown.isInactive || (breakdown.controlarStock && porcionesDisponibles <= 0),
     unidadMedida: insumo.unidadMedida,
+    porcionMinimaCantidad: porcionCant,
+    porcionMinimaUnidad: porcionUnit,
+    tamanioPaquete: insumo.tamanioPaquete || null,
     estado: insumo.estado,
     esAdicion: 1,
     insumo: {
