@@ -131,6 +131,33 @@ function convertAdicionUnits(amount, fromUnit, toUnit, insumoObj = null) {
   return Number(amount);
 }
 
+function resolveCulinaryMaxPorPlato(insumo) {
+  const rawName = String(insumo?.nombre || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim();
+  const rawDesc = String(insumo?.descripcion || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim();
+
+  const isLiquidSauce =
+    /\b(salsa|mostaza|mayonesa|mayo|suero|guacamole|tartara|bbq|barbecue|heinz|rosada|aderezo|chimichurri|vinagreta|miel|chipotle|ajo|showy)\b/.test(rawName) ||
+    (rawName.includes('queso') && rawName.includes('fundido')) ||
+    rawDesc.includes('salsa');
+
+  if (
+    !isLiquidSauce &&
+    /\b(loncha|tajada|queso|cheddar|mozzarella|parmesano|provolone|sabana|suizo|tocineta|bacon|tocino|jamon)\b/.test(rawName)
+  ) {
+    return 4;
+  }
+
+  return 3;
+}
+
 function formatAdicion(insumo, lotes = [], todayCol = getColombiaDateISO()) {
   const breakdown = computeInsumoStockBreakdown(insumo, lotes, todayCol);
   const rawStockOperativo = !breakdown.isInactive
@@ -172,6 +199,7 @@ function formatAdicion(insumo, lotes = [], todayCol = getColombiaDateISO()) {
     porcionMinimaCantidad: porcionCant,
     porcionMinimaUnidad: porcionUnit,
     tamanioPaquete: insumo.tamanioPaquete || null,
+    maxPorPlato: resolveCulinaryMaxPorPlato(insumo),
     estado: insumo.estado,
     esAdicion: 1,
     insumo: {

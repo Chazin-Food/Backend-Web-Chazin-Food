@@ -1593,11 +1593,32 @@ class VentaService {
         }
 
         const rawAdics = Array.isArray(it.adiciones) ? it.adiciones : (Array.isArray(it.idAdiciones) ? it.idAdiciones : []);
+        const isSharedOrderItem = Boolean(it.esCombo || it.isCombo) || /\b(combo|pareja|familiar|compartir)\b/i.test(String(it.nombre || ''));
+        const maxTotalDishAdds = isSharedOrderItem ? 12 : 8;
+        let totalDishAddsCount = 0;
+
         for (const a of rawAdics) {
           const adId = typeof a === 'object' ? (a.idAdicion || a.idInsumo || a.id) : a;
           const adCant = typeof a === 'object' ? Math.max(1, Math.floor(Number(a.cantidad || 1))) : 1;
           if (!adId) continue;
           const insAd = await Insumo.findByPk(adId).catch(() => null);
+          const adNameNorm = normalizeTextForMatch(insAd?.nombre || a?.nombre || '');
+          const isSauceAd = /\b(salsa|mostaza|mayonesa|mayo|suero|guacamole|tartara|bbq|barbecue|heinz|rosada|aderezo|chimichurri|vinagreta|miel|chipotle|ajo|showy)\b/.test(adNameNorm) || (adNameNorm.includes('queso') && adNameNorm.includes('fundido'));
+          const isCheeseOrBacon = !isSauceAd && /\b(loncha|tajada|queso|cheddar|mozzarella|parmesano|provolone|sabana|suizo|tocineta|bacon|tocino|jamon)\b/.test(adNameNorm);
+          const maxAllowedForAd = (isCheeseOrBacon ? 4 : 3) + (isSharedOrderItem ? 1 : 0);
+
+          if (adCant > maxAllowedForAd) {
+            const err = new Error(`La adición "${insAd?.nombre || a?.nombre || adId}" supera el límite máximo permitido por plato (${maxAllowedForAd}).`);
+            err.statusCode = 400;
+            throw err;
+          }
+          totalDishAddsCount += adCant;
+          if (totalDishAddsCount > maxTotalDishAdds) {
+            const err = new Error(`El plato supera el máximo de ${maxTotalDishAdds} porciones de adiciones permitidas.`);
+            err.statusCode = 400;
+            throw err;
+          }
+
           const adPrice = insAd ? Math.max(0, Number(insAd.precioAdicion || 0)) : 0;
           serverAddsUnitTotal += adPrice * adCant;
           resolvedAdiciones.push({
