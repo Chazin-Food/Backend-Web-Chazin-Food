@@ -3,6 +3,79 @@ const { Insumo, LoteInsumo } = require('../../persistence/models');
 const { getColombiaDateISO } = require('../../infrastructure/utils/colombiaDateUtils');
 const { computeInsumoStockBreakdown, groupLotesByInsumo } = require('../../infrastructure/utils/stockFefoUtils');
 const { invalidateNamespaces } = require('../../infrastructure/utils/apiCache');
+const { ensureInsumoPaqueteSchemaOnce } = require('../../infrastructure/utils/dbUtils');
+
+const ADICION_FULL_ATTRIBUTES = [
+  'idInsumo',
+  'nombre',
+  'descripcion',
+  'imagen',
+  'precioAdicion',
+  'stock',
+  'fechaVencimiento',
+  'unidadMedida',
+  'porcionMinimaCantidad',
+  'porcionMinimaUnidad',
+  'tamanioPaquete',
+  'estado',
+  'esAdicion',
+  'eliminado'
+];
+
+const ADICION_CORE_ATTRIBUTES = [
+  'idInsumo',
+  'nombre',
+  'descripcion',
+  'imagen',
+  'precioAdicion',
+  'stock',
+  'fechaVencimiento',
+  'unidadMedida',
+  'estado',
+  'esAdicion',
+  'eliminado'
+];
+
+async function findAdicionInsumosSafe(whereClause) {
+  try {
+    return await Insumo.findAll({
+      attributes: ADICION_FULL_ATTRIBUTES,
+      where: whereClause
+    });
+  } catch (err) {
+    if (/Unknown column/i.test(String(err?.message || ''))) {
+      await ensureInsumoPaqueteSchemaOnce().catch(() => {});
+      try {
+        return await Insumo.findAll({
+          attributes: ADICION_FULL_ATTRIBUTES,
+          where: whereClause
+        });
+      } catch (_) {
+        return await Insumo.findAll({
+          attributes: ADICION_CORE_ATTRIBUTES,
+          where: whereClause
+        });
+      }
+    }
+    throw err;
+  }
+}
+
+async function findAdicionByPkSafe(id) {
+  try {
+    return await Insumo.findByPk(id, { attributes: ADICION_FULL_ATTRIBUTES });
+  } catch (err) {
+    if (/Unknown column/i.test(String(err?.message || ''))) {
+      await ensureInsumoPaqueteSchemaOnce().catch(() => {});
+      try {
+        return await Insumo.findByPk(id, { attributes: ADICION_FULL_ATTRIBUTES });
+      } catch (_) {
+        return await Insumo.findByPk(id, { attributes: ADICION_CORE_ATTRIBUTES });
+      }
+    }
+    throw err;
+  }
+}
 
 function parsePaqueteSize(tamanioPaquete) {
   if (!tamanioPaquete) return 1;
@@ -112,9 +185,7 @@ class AdicionService {
   static async getAll() {
     const todayCol = getColombiaDateISO();
     const [insumos, allLotes] = await Promise.all([
-      Insumo.findAll({
-        where: { esAdicion: 1, estado: 1, eliminado: 0 }
-      }),
+      findAdicionInsumosSafe({ esAdicion: 1, estado: 1, eliminado: 0 }),
       LoteInsumo.findAll({
         attributes: ['idLote', 'idInsumo', 'cantidad', 'cantidadDisponible', 'fechaVencimiento', 'estado'],
         where: { estado: { [Op.ne]: 'AGOTADO' } },
@@ -128,7 +199,7 @@ class AdicionService {
   static async getById(id) {
     const todayCol = getColombiaDateISO();
     const [insumo, lotes] = await Promise.all([
-      Insumo.findByPk(id),
+      findAdicionByPkSafe(id),
       LoteInsumo.findAll({
         attributes: ['idLote', 'idInsumo', 'cantidad', 'cantidadDisponible', 'fechaVencimiento', 'estado'],
         where: { idInsumo: id, estado: { [Op.ne]: 'AGOTADO' } },

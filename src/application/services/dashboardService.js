@@ -156,9 +156,13 @@ class DashboardService {
         periodo
       } = range;
 
-      const [todasVentas, rawClientes, usuariosTotal, usuariosActivos, criticosList, productosTotal] = await Promise.all([
+      const [todasVentas, todasCompras, rawClientes, usuariosTotal, usuariosActivos, criticosList, productosTotal] = await Promise.all([
         Venta.findAll({
-          attributes: ['fechaVenta', 'total', 'estadoEntrega', 'estadoAprobacion', 'observaciones'],
+          attributes: ['idCliente', 'fechaVenta', 'total', 'estadoEntrega', 'estadoAprobacion', 'observaciones'],
+          raw: true
+        }).catch(() => []),
+        Compra.findAll({
+          attributes: ['fechaCompra', 'total', 'estado'],
           raw: true
         }).catch(() => []),
         Cliente.findAll({
@@ -203,10 +207,31 @@ class DashboardService {
 
       const totalVentasPeriodo = pedidosPeriodo.reduce((sum, v) => sum + parseFloat(v.total || 0), 0);
       const pedidosTotal = pedidosPeriodo.length;
+      const ticketPromedio = pedidosTotal > 0 ? Math.round(totalVentasPeriodo / pedidosTotal) : 0;
+
+      // Compras válidas del período y margen operativo real
+      const comprasValidas = (Array.isArray(todasCompras) ? todasCompras : []).filter((c) => {
+        const st = String(c?.estado || '').toUpperCase().trim();
+        return st !== 'CANCELADA' && st !== 'ANULADA';
+      });
+      const comprasPeriodo = (startDate || endDate)
+        ? comprasValidas.filter((c) => {
+            if (!c.fechaCompra) return false;
+            const d = new Date(c.fechaCompra);
+            if (isNaN(d.getTime())) return false;
+            return (!startDate || d >= startDate) && (!endDate || d <= endDate);
+          })
+        : comprasValidas;
+      const totalComprasPeriodo = comprasPeriodo.reduce((sum, c) => sum + parseFloat(c.total || 0), 0);
+      const utilidadBrutaPeriodo = Math.round(totalVentasPeriodo - totalComprasPeriodo);
+      const margenOperativoPct = totalVentasPeriodo > 0
+        ? parseFloat((((totalVentasPeriodo - totalComprasPeriodo) / totalVentasPeriodo) * 100).toFixed(1))
+        : 0;
 
       // Cálculo de variación porcentual sin solapamiento contra el periodo equivalente anterior
       let ventasVariacion = 0;
       let pedidosVariacion = 0;
+      let ticketVariacion = 0;
       const labelVariacion = range.labelVariacion || 'vs período anterior';
 
       if (prevStart && prevEnd) {
@@ -228,6 +253,8 @@ class DashboardService {
         const curCount = refCurrentList.length;
         const prevTotal = refPrevList.reduce((sum, v) => sum + parseFloat(v.total || 0), 0);
         const prevCount = refPrevList.length;
+        const curTicket = curCount > 0 ? curTotal / curCount : 0;
+        const prevTicket = prevCount > 0 ? prevTotal / prevCount : 0;
 
         if (prevTotal > 0) {
           ventasVariacion = parseFloat((((curTotal - prevTotal) / prevTotal) * 100).toFixed(1));
@@ -239,6 +266,12 @@ class DashboardService {
           pedidosVariacion = parseFloat((((curCount - prevCount) / prevCount) * 100).toFixed(1));
         } else if (curCount > 0) {
           pedidosVariacion = 100;
+        }
+
+        if (prevTicket > 0) {
+          ticketVariacion = parseFloat((((curTicket - prevTicket) / prevTicket) * 100).toFixed(1));
+        } else if (curTicket > 0) {
+          ticketVariacion = 100;
         }
       }
 
@@ -283,6 +316,11 @@ class DashboardService {
         pedidosTotal,
         pedidosVariacion,
         frecuenciaVentas,
+        ticketPromedio,
+        ticketVariacion,
+        comprasPeriodo: Math.round(totalComprasPeriodo),
+        utilidadBrutaPeriodo,
+        margenOperativoPct,
         clientesTotal,
         clientesActivos: clientesActivos ?? clientesTotal,
         usuariosTotal,
